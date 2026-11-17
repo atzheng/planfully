@@ -1,0 +1,8 @@
+From: Alice <alice@example.com>
+To: t@trips.example.com
+Subject: Flight
+Date: Mon, 02 Mar 2026 10:00:00 +0000
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+
+<html><body><p>Flight <b>XY12</b> departs 09:00.</p></body></html>

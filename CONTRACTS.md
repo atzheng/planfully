@@ -189,7 +189,15 @@ type ParsedEmail = { from: string; to: string; suffix: string; subject: string; 
                      attachments: { filename: string; mime: string; bytes: Uint8Array }[];
                      sourceAttachment: Attachment }   // the sealed raw .eml, already stored
 type EmailRoute = (ctx: { env: Env; trip: TripRow; email: ParsedEmail }) => Promise<void>
-// email/handler.ts picks routes[suffix] ?? routes[''];  '' -> routes/default.ts, 'receipts' -> routes/receipts.ts
+// email/handler.ts exports handleEmail(message, env, ctx) and a mutable `routes` map; it picks routes[suffix] ?? routes[''];  '' -> routes/default.ts, 'receipts' -> routes/receipts.ts
+
+// email/auth.ts: sender check. From must hold exactly one mailbox (postal-mime addressParser; zero, several,
+// group syntax or several From headers fail closed); address lowercased, trailing dot dropped.
+// Reads the FIRST Authentication-Results header (Cloudflare prepends it; authserv-id must be mx.cloudflare.net,
+// later headers are sender-supplied and ignored). Passes only if a clause is dmarc=pass with header.from, or
+// spf=pass with smtp.mailfrom, or dkim=pass with header.d, STRICTLY equal to the From domain (no subdomain
+// matching); a pass with no domain does not count. planfully-x46.6 verifies real Cloudflare headers.
+// A message whose rawSize + 61 (seal overhead) exceeds the 25 MB blob cap is rejected ('message too large').
 
 // llm/parse.ts
 type ParsedEvent = Omit<Event, 'id'|'attachments'|'source'|'createdAt'|'pinned'|'deleted'>
@@ -212,7 +220,7 @@ Never log email content, event content or tokens.
 - **`filters/filter.ts`:** `type Filter`, `filterEvents(events, filter)`, `useFilter()`, `useFilteredEvents()`.
 - **`event/EventSheet.tsx`:** mounted once in the shell; open an event by setting query key `e`. Views never render their own detail UI.
 - **`timeline/scale.ts`:** `type TimeScale = { pxPerHour: number; originMs: number; toY(ms: number): number; toMs(y: number): number }`, `makeScale(originMs, pxPerHour)`, and `useTimeScale()` from a context provided by `Timeline`. Anything drawn beside the axis (weather) positions itself with this and nothing else.
-- **`timeline/layout.ts`:** `layoutEvents(events, scale, lanes): { lanes: { key, label }[]; blocks: { eventId, laneKey, top, height, column, columns }[]; unscheduled: Event[] }` — pure, unit-tested.
+- **`timeline/layout.ts`:** `layoutEvents(events, scale, lanes: { mode: 'none'|'type'|'participant'; roster: readonly RosterMember[] }): { lanes: { key, label }[]; blocks: { eventId, laneKey, top, height, column, columns }[]; unscheduled: Event[] }` — pure, unit-tested. Also `ticks(scale, fromMs, toMs, tz): { ms, label, kind: 'hour'|'day'|'week' }[]` (scale.ts) and `initialScrollMs(events, nowMs)` (layout.ts). Exported from scale.ts: `MIN_PX_PER_HOUR` (1), `MAX_PX_PER_HOUR` (240) and tick thresholds (hour >= 30 px/h, day >= 4, else week). Participant mode adds an `_other` lane for ids not in the roster.
 - **Time display:** blocks are positioned by absolute instant. The axis is labelled in one display zone (query key `tz`, default the browser's zone); each event's own local times are shown in its label and sheet.
 
 ## 8. Config

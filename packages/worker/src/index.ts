@@ -1,5 +1,6 @@
-import { app } from './api/app';
+import { handleEmail } from './email/handler';
 import type { Env } from './env';
+import { app } from './api/app';
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
@@ -10,8 +11,7 @@ export default {
     return env.ASSETS.fetch(request);
   },
 
-  // Stub: planfully-2jd.1 replaces this.
-  async email(message: ForwardableEmailMessage): Promise<void> {
-    message.setReject('not configured');
+  async email(message: ForwardableEmailMessage, env: Env, ctx: ExecutionContext): Promise<void> {
+    await handleEmail(message, env, ctx);
   },
 };
