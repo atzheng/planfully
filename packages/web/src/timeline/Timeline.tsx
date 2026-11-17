@@ -1,11 +1,11 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import type { Event, RosterMember } from '@planfully/shared';
+import type { Event, EventType, RosterMember } from '@planfully/shared';
 import { useFilteredEvents } from '../filters/filter';
-import { stringCodec, useQueryState } from '../lib/queryState';
+import { enumCodec, stringCodec, stringListCodec, useQueryState } from '../lib/queryState';
 import { useTrip } from '../trip/store';
-import { layoutEvents, initialScrollMs } from './layout';
-import type { Layout } from './layout';
+import { initialScrollMs, LANE_MODES, layoutEvents, withoutEmptyLanes } from './layout';
+import type { Layout, LaneMode } from './layout';
 import {
   dayHeading,
   localStartLabel,
@@ -39,23 +39,33 @@ import styles from './Timeline.module.css';
 
 /** Height of the sticky day heading; the canvas starts below it. */
 const HEADING_PX = 28;
+/** Height of the sticky lane header row (only present in a lane mode). */
+const LANE_HEAD_PX = 32;
+const LANE_MODE_LABEL: Record<LaneMode, string> = {
+  none: 'Single',
+  type: 'By type',
+  participant: 'By person',
+};
+const laneModeCodec = enumCodec(LANE_MODES);
 /** Context kept above the target when scrolling to a time. */
 const SCROLL_LEAD_PX = 48;
 const NO_ROSTER: readonly RosterMember[] = [];
+const NO_WHO: string[] = [];
+const NO_BLOCKS: Layout['blocks'] = [];
 const browserZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 
 const Blocks = memo(function Blocks({
-  layout,
+  blocks,
   byId,
   onOpen,
 }: {
-  layout: Layout;
+  blocks: Layout['blocks'];
   byId: Map<string, Event>;
   onOpen: (id: string) => void;
 }) {
   return (
     <>
-      {layout.blocks.map((b) => {
+      {blocks.map((b) => {
         const e = byId.get(b.eventId);
         if (!e) return null;
         const time = localStartLabel(e);
@@ -113,9 +123,23 @@ const Ticks = memo(function Ticks({ list, scale }: { list: Tick[]; scale: TimeSc
           key={t.ms}
           className={`${styles.tick} ${styles[t.kind]}`}
           style={{ top: scale.toY(t.ms) }}
+        />
+      ))}
+    </>
+  );
+});
+
+const TickLabels = memo(function TickLabels({ list, scale }: { list: Tick[]; scale: TimeScale }) {
+  return (
+    <>
+      {list.map((t) => (
+        <span
+          key={t.ms}
+          className={`${styles.tickLabel} ${styles[t.kind]}`}
+          style={{ top: scale.toY(t.ms) + 2 }}
         >
-          <span className={styles.tickLabel}>{t.label}</span>
-        </div>
+          {t.label}
+        </span>
       ))}
     </>
   );
@@ -127,6 +151,8 @@ export function Timeline({ gutter }: { gutter?: ReactNode } = {}) {
   const roster = useTrip((s) => s.meta?.roster) ?? NO_ROSTER;
   const [tzRaw] = useQueryState('tz', stringCodec, '');
   const [, setOpenId] = useQueryState('e', stringCodec, '');
+  const [who] = useQueryState('who', stringListCodec, NO_WHO);
+  const [laneMode, setLaneMode] = useQueryState('lanes', laneModeCodec, 'none');
   const { pxPerHour, setPx } = useZoom();
 
   const zone = useMemo(() => validZone(tzRaw, browserZone()), [tzRaw]);
@@ -149,9 +175,25 @@ export function Timeline({ gutter }: { gutter?: ReactNode } = {}) {
   );
   if (range) lastScale.current = scale;
   const layout = useMemo(
-    () => layoutEvents(events, scale, { mode: 'none', roster }),
-    [events, scale, roster],
+    () =>
+      withoutEmptyLanes(
+        layoutEvents(events, scale, { mode: laneMode, roster, only: who }),
+        laneMode,
+      ),
+    [events, scale, roster, laneMode, who],
   );
+  const blocksByLane = useMemo(() => {
+    const m = new Map<string, Layout['blocks']>();
+    for (const b of layout.blocks) {
+      const list = m.get(b.laneKey);
+      if (list) list.push(b);
+      else m.set(b.laneKey, [b]);
+    }
+    return m;
+  }, [layout]);
+  const laneHead = laneMode === 'none' ? 0 : LANE_HEAD_PX;
+  /** Scroller y at which the time axis starts (day heading plus lane header row). */
+  const topPx = HEADING_PX + laneHead;
   const byId = useMemo(() => new Map(events.map((e) => [e.id, e])), [events]);
   const tickList = useMemo(
     () => (range ? ticks(scale, range.fromMs, range.toMs, zone) : []),
@@ -174,25 +216,25 @@ export function Timeline({ gutter }: { gutter?: ReactNode } = {}) {
   const scrollToMs = useCallback(
     (ms: number, behavior: ScrollBehavior = 'smooth') => {
       scroller.current?.scrollTo({
-        top: Math.max(0, scale.toY(ms) + HEADING_PX - SCROLL_LEAD_PX),
+        top: Math.max(0, scale.toY(ms) + topPx - SCROLL_LEAD_PX),
         behavior,
       });
     },
-    [scale],
+    [scale, topPx],
   );
 
   const measure = useCallback(() => {
     const el = scroller.current;
     if (!el || !range) return;
-    anchorMs.current = anchorMsAt(scale, el.scrollTop, HEADING_PX);
+    anchorMs.current = anchorMsAt(scale, el.scrollTop, topPx);
     anchorY.current = 0;
-    const topMs = scale.toMs(el.scrollTop - HEADING_PX);
-    const botMs = scale.toMs(el.scrollTop + el.clientHeight - HEADING_PX);
+    const topMs = scale.toMs(el.scrollTop - topPx);
+    const botMs = scale.toMs(el.scrollTop + el.clientHeight - topPx);
     const r = roundRangeToHours(topMs, botMs);
     setVisible((v) => (v.fromMs === r.fromMs && v.toMs === r.toMs ? v : r));
     const h = Math.min(Math.max(topMs, scale.originMs), range?.toMs ?? scale.originMs);
     setHeadingMs(Math.floor(h / 60_000) * 60_000);
-  }, [scale, range]);
+  }, [scale, range, topPx]);
 
   // Open at today (or the trip's first day), once, when the axis first exists.
   const scrolled = useRef(false);
@@ -200,21 +242,24 @@ export function Timeline({ gutter }: { gutter?: ReactNode } = {}) {
     if (scrolled.current || !range) return;
     scrolled.current = true;
     scrollToMs(initialScrollMs(events, Date.now()), 'auto');
-    anchorMs.current = anchorMsAt(scale, scroller.current?.scrollTop ?? 0, HEADING_PX);
-  }, [range, events, scrollToMs, scale]);
+    anchorMs.current = anchorMsAt(scale, scroller.current?.scrollTop ?? 0, topPx);
+  }, [range, events, scrollToMs, scale, topPx]);
   // Keep the time at the top of the viewport at the same screen y when the scale changes (filters, zoom).
   const lastAnchoredScale = useRef(scale);
+  const lastTopPx = useRef(topPx);
   useLayoutEffect(() => {
     const el = scroller.current;
-    if (range && el && lastAnchoredScale.current !== scale && anchorMs.current !== null) {
+    const changed = lastAnchoredScale.current !== scale || lastTopPx.current !== topPx;
+    lastTopPx.current = topPx;
+    if (range && el && changed && anchorMs.current !== null) {
       el.scrollTop =
         anchorY.current === 0
-          ? scrollTopForAnchor(scale, anchorMs.current, HEADING_PX)
-          : scrollTopForPointer(scale, anchorMs.current, HEADING_PX, anchorY.current);
+          ? scrollTopForAnchor(scale, anchorMs.current, topPx)
+          : scrollTopForPointer(scale, anchorMs.current, topPx, anchorY.current);
     }
     if (range) lastAnchoredScale.current = scale;
     measure();
-  }, [measure, height, scale, range]);
+  }, [measure, height, scale, range, topPx]);
   useEffect(() => {
     const el = scroller.current;
     if (!el || typeof ResizeObserver === 'undefined') return;
@@ -236,13 +281,13 @@ export function Timeline({ gutter }: { gutter?: ReactNode } = {}) {
     (px: number, y: number, ms?: number) => {
       const el = scroller.current;
       if (!el) return;
-      const anchor = ms ?? scaleRef.current.toMs(el.scrollTop + y - HEADING_PX);
+      const anchor = ms ?? scaleRef.current.toMs(el.scrollTop + y - topPx);
       anchorMs.current = anchor;
       anchorY.current = y;
       pxRef.current = px;
       setPx(px);
     },
-    [setPx],
+    [setPx, topPx],
   );
   const centreY = () => (scroller.current?.clientHeight ?? 0) / 2;
   const zoomButton = (dir: 1 | -1) => zoomTo(buttonPx(pxRef.current, dir), centreY());
@@ -250,7 +295,7 @@ export function Timeline({ gutter }: { gutter?: ReactNode } = {}) {
     const r = rangeRef.current;
     const el = scroller.current;
     if (!r || !el) return;
-    zoomTo(fitPx(r.fromMs, r.toMs, el.clientHeight - HEADING_PX), HEADING_PX, r.fromMs);
+    zoomTo(fitPx(r.fromMs, r.toMs, el.clientHeight - topPx), topPx, r.fromMs);
   };
 
   useEffect(() => {
@@ -274,7 +319,7 @@ export function Timeline({ gutter }: { gutter?: ReactNode } = {}) {
         pinch = {
           dist: dist(ev.touches),
           px: pxRef.current,
-          ms: scaleRef.current.toMs(el.scrollTop + midY(ev.touches) - HEADING_PX),
+          ms: scaleRef.current.toMs(el.scrollTop + midY(ev.touches) - topPx),
         };
       } else pinch = null;
     };
@@ -338,6 +383,20 @@ export function Timeline({ gutter }: { gutter?: ReactNode } = {}) {
             Fit trip
           </button>
         </div>
+        <div className={styles.zoomBar} role="group" aria-label="Lanes">
+          {LANE_MODES.map((m) => (
+            <button
+              key={m}
+              type="button"
+              className={`${styles.zoomBtn} ${laneMode === m ? styles.modeOn : ''}`}
+              aria-pressed={laneMode === m}
+              data-testid={`lanes-${m}`}
+              onClick={() => setLaneMode(m)}
+            >
+              {LANE_MODE_LABEL[m]}
+            </button>
+          ))}
+        </div>
         <button
           type="button"
           className={styles.today}
@@ -373,28 +432,78 @@ export function Timeline({ gutter }: { gutter?: ReactNode } = {}) {
                   </div>
                   <div
                     className={`${styles.canvas} ${gutter ? styles.withGutter : ''}`}
-                    style={{ height, marginTop: HEADING_PX }}
+                    style={
+                      {
+                        marginTop: HEADING_PX,
+                        ['--lanes' as string]: Math.max(1, layout.lanes.length),
+                        ['--top-px' as string]: `${topPx}px`,
+                      } as React.CSSProperties
+                    }
+                    data-lane-mode={laneMode}
                   >
-                    {gutter && (
-                      <div className={styles.gutter} data-slot="timeline-gutter">
-                        {gutter}
+                    {laneMode !== 'none' && (
+                      <div
+                        className={styles.laneHeads}
+                        style={{ height: LANE_HEAD_PX, top: HEADING_PX }}
+                        data-testid="lane-heads"
+                      >
+                        {gutter && <div className={styles.headSpacer} />}
+                        <div className={styles.headSpacer} />
+                        <div className={styles.laneHeadRow}>
+                          {layout.lanes.map((l) => (
+                            <div
+                              key={l.key}
+                              className={styles.laneHead}
+                              data-testid="lane-head"
+                              data-lane={l.key}
+                              title={l.label}
+                            >
+                              {laneMode === 'type' && (
+                                <span aria-hidden="true">{TYPE_ICON[l.key as EventType]}</span>
+                              )}
+                              <span className={styles.laneName}>{l.label}</span>
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     )}
-                    <div className={styles.tickLayer} aria-hidden="true">
-                      <Ticks list={tickList} scale={scale} />
+                    <div className={styles.body} style={{ height }}>
+                      {gutter && (
+                        <div className={styles.gutter} data-slot="timeline-gutter">
+                          {gutter}
+                        </div>
+                      )}
+                      <div className={styles.tickLayer} aria-hidden="true">
+                        <Ticks list={tickList} scale={scale} />
+                      </div>
+                      <div className={styles.axis} aria-hidden="true">
+                        <TickLabels list={tickList} scale={scale} />
+                      </div>
+                      <div className={styles.lanes}>
+                        {layout.lanes.map((l) => (
+                          <div
+                            key={l.key}
+                            className={styles.lane}
+                            data-testid="lane"
+                            data-lane={l.key}
+                          >
+                            <Blocks
+                              blocks={blocksByLane.get(l.key) ?? NO_BLOCKS}
+                              byId={byId}
+                              onOpen={setOpenId}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                      {showNow && (
+                        <div
+                          className={styles.now}
+                          data-testid="now-line"
+                          style={{ top: scale.toY(nowMs) }}
+                          aria-hidden="true"
+                        />
+                      )}
                     </div>
-                    <div className={styles.axis} />
-                    <div className={styles.lanes}>
-                      <Blocks layout={layout} byId={byId} onOpen={setOpenId} />
-                    </div>
-                    {showNow && (
-                      <div
-                        className={styles.now}
-                        data-testid="now-line"
-                        style={{ top: scale.toY(nowMs) }}
-                        aria-hidden="true"
-                      />
-                    )}
                   </div>
                 </>
               )}
