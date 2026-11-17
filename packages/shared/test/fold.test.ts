@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-non-null-assertion -- test assertions on known fixtures */
 import { describe, expect, it } from 'vitest';
-import { fold, planCompaction } from '../src/fold';
-import type { OpenedRecord, RecordBody } from '../src/records';
+import { fold, planCompaction, type CompactionPlan } from '../src/fold';
+import { RecordBodySchema, type OpenedRecord, type RecordBody } from '../src/records';
 import type { Attachment, Event } from '../src/schema';
 import { flightEvent, lodgingEvent } from './fixtures';
 
@@ -304,6 +304,90 @@ describe('planCompaction', () => {
   });
 });
 
+describe('compaction races and aliases', () => {
+  const base = [
+    put(1, ev('a', { name: 'orig' }), 't'),
+    put(2, ev('b', { notes: 'n' }), 't'),
+    patch(3, 'a', { notes: 'p1' }),
+    patch(4, 'b', { needsReview: true }),
+  ];
+  const compactedPut = (log: OpenedRecord[], seq: number) => {
+    const [p] = planCompaction(log);
+    return { rec: rec(seq, p!.write.body, p!.write.dedupe), plan: p! };
+  };
+
+  it('a patch written between plan and write survives compaction', () => {
+    const { rec: c, plan } = compactedPut(base, 6);
+    const concurrent = patch(5, 'a', { name: 'USER EDIT' });
+    const expected = fold([...base, concurrent]);
+    expect(expected[0]!.name).toBe('USER EDIT');
+    const after = [concurrent, c]; // seqs 1-4 deleted
+    expect(plan.deleteSeqs).toEqual([1, 2, 3, 4]);
+    expect(fold(after)).toEqual(expected);
+    expect(fold([...base, ...after])).toEqual(expected);
+  });
+
+  it('a patch to an alias still resolves after compaction', () => {
+    const { rec: c } = compactedPut(base, 6);
+    const stale = patch(7, 'b', { name: 'via alias' });
+    const [e] = fold([c, stale]);
+    expect(e!.id).toBe('a');
+    expect(e!.name).toBe('via alias');
+    expect(fold([c, del(8, 'b')])).toEqual([]);
+  });
+
+  it('a compacted group keeps its canonical id when a later put bridges another group', () => {
+    const { rec: c } = compactedPut(base, 10);
+    const other = put(7, ev('z', { name: 'z' }), 'u');
+    const bridge = put(11, ev('z', { name: 'bridged' }), 't');
+    const [e] = fold([c, other, bridge]);
+    // the compacted group counts as seq 1 (its firstSeq), earlier than z's seq 7
+    expect(e!.id).toBe('a');
+  });
+
+  it('re-compaction carries firstSeq and aliases forward', () => {
+    const { rec: c1 } = compactedPut(base, 6);
+    const more = [
+      c1,
+      patch(7, 'b', { name: 'two' }),
+      put(8, ev('c', { notes: 'later' }), 't'),
+      patch(9, 'a', { type: 'dining' }),
+    ];
+    const before = fold(more);
+    const [p2] = planCompaction(more);
+    expect(p2!.deleteSeqs).toEqual([6, 7, 8, 9]);
+    const body = p2!.write.body;
+    expect(body.kind === 'put' && body.compaction).toEqual({
+      firstSeq: 1,
+      throughSeq: 9,
+      aliases: ['b', 'c'],
+    });
+    const c2 = rec(12, p2!.write.body, p2!.write.dedupe);
+    expect(fold([c2])).toEqual(before);
+    expect(fold([c2, patch(13, 'c', { name: 'alias after 2nd' })])[0]!.name).toBe(
+      'alias after 2nd',
+    );
+  });
+
+  it('a snapshot overrides pins and sources of older records still present', () => {
+    const log = [
+      put(1, ev('a', { name: 'x' }), 't'),
+      patch(2, 'a', { name: 'mine' }),
+      put(3, ev('a', { name: 'email' }), 't'),
+      put(4, ev('a', { notes: 'q' }), 't'),
+    ];
+    const { rec: c } = compactedPut(log, 9);
+    expect(fold([...log, c])).toEqual(fold(log));
+  });
+
+  it('the compaction marker round-trips through the record schema', () => {
+    const { plan } = compactedPut(base, 6);
+    expect(RecordBodySchema.parse(JSON.parse(JSON.stringify(plan.write.body)))).toEqual(
+      plan.write.body,
+    );
+  });
+});
+
 // ---- property test -------------------------------------------------------------------------
 
 /** mulberry32: tiny seeded PRNG so failures reproduce. */
@@ -318,18 +402,54 @@ function prng(seed: number): () => number {
   };
 }
 
-function randomLog(seed: number): OpenedRecord[] {
-  const r = prng(seed);
+/** Fisher-Yates with a PRNG created once by the caller. */
+function shuffle<T>(xs: T[], r: () => number): T[] {
+  const out = [...xs];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(r() * (i + 1));
+    [out[i], out[j]] = [out[j]!, out[i]!];
+  }
+  return out;
+}
+
+const IDS = ['a', 'b', 'c', 'd', 'e', 'f'];
+const TAGS = ['t1', 't2', 't3', null, null];
+
+/**
+ * Random records with seqs from `startSeq`. When `existing` is given, puts never bridge
+ * existing groups: they reuse the (id, tag) pair of an existing put or use fresh ones.
+ * Bridging after compaction is a documented limitation (CONTRACTS.md section 3).
+ */
+function randomRecords(
+  r: () => number,
+  tagPrefix: string,
+  startSeq: number,
+  n: number,
+  existing: OpenedRecord[] | null,
+): OpenedRecord[] {
   const pick = <T>(xs: T[]): T => xs[Math.floor(r() * xs.length)]!;
-  const ids = ['a', 'b', 'c', 'd', 'e', 'f'];
-  const tags = ['t1', 't2', 't3', null, null];
-  const n = 1 + Math.floor(r() * 30);
   const log: OpenedRecord[] = [];
+  const puts = existing ? existing.filter((x) => x.body.kind === 'put') : [];
+  const idOf = (x: OpenedRecord): string => (x.body.kind === 'put' ? x.body.event.id : '');
+  let fresh = 0;
   for (let i = 0; i < n; i++) {
-    const seq = (i + 1) * 3;
+    const seq = startSeq + i * 3;
     const k = r();
     if (k < 0.55) {
-      const e: Event = ev(pick(ids), {
+      let id = pick(IDS);
+      let tag = pick(TAGS);
+      if (existing) {
+        if (puts.length > 0 && r() < 0.7) {
+          const src = pick(puts);
+          id = idOf(src);
+          tag = src.dedupe;
+        } else {
+          id = `${tagPrefix}-${fresh}`;
+          tag = r() < 0.5 ? `${tagPrefix}-t${fresh}` : null;
+          fresh++;
+        }
+      }
+      const e: Event = ev(id, {
         name: `n${Math.floor(r() * 5)}`,
         status: pick(['confirmed', 'cancelled']),
         source: pick(['email', 'email', 'manual']),
@@ -337,48 +457,86 @@ function randomLog(seed: number): OpenedRecord[] {
       });
       if (r() < 0.5) e.notes = `note${Math.floor(r() * 3)}`;
       if (r() < 0.3) e.start = { local: '2026-06-01T10:00', tz: 'Europe/Paris' };
-      if (r() < 0.2) e.pinned = [pick(['notes', 'name'])];
-      log.push(put(seq, e, pick(tags)));
-    } else if (k < 0.9) {
-      const fields: Record<string, unknown> = {};
-      if (r() < 0.5) fields.name = `p${Math.floor(r() * 5)}`;
-      if (r() < 0.4) fields.notes = `pn${Math.floor(r() * 3)}`;
-      if (r() < 0.3) fields.status = pick(['confirmed', 'cancelled']);
-      if (r() < 0.3) fields.attachments = [att(pick(['x', 'y', 'w']))];
-      if (r() < 0.1) fields.deleted = false;
-      log.push(patch(seq, pick([...ids, 'ghost']), fields));
+      if (r() < 0.2) e.pinned = [pick(['notes', 'name', 'attachments'])];
+      const p = put(seq, e, tag);
+      if (existing) puts.push(p);
+      log.push(p);
     } else {
-      log.push(del(seq, pick([...ids, 'ghost'])));
+      const ids = existing ? puts.map(idOf) : IDS;
+      const target = pick([...ids, 'ghost']);
+      if (k < 0.9) {
+        const fields: Record<string, unknown> = {};
+        if (r() < 0.5) fields.name = `p${Math.floor(r() * 5)}`;
+        if (r() < 0.4) fields.notes = `pn${Math.floor(r() * 3)}`;
+        if (r() < 0.3) fields.status = pick(['confirmed', 'cancelled']);
+        if (r() < 0.3) fields.attachments = [att(pick(['x', 'y', 'w']))];
+        if (r() < 0.1) fields.deleted = false;
+        log.push(patch(seq, target, fields));
+      } else {
+        log.push(del(seq, target));
+      }
     }
   }
   return log;
 }
 
-function applyPlan(log: OpenedRecord[], withDeletes: boolean, minRecords: number): OpenedRecord[] {
-  const plans = planCompaction(log, minRecords);
-  const del = new Set(withDeletes ? plans.flatMap((p) => p.deleteSeqs) : []);
-  let seq = Math.max(0, ...log.map((l) => l.seq)) + 1;
+const maxSeq = (log: OpenedRecord[]): number => Math.max(0, ...log.map((l) => l.seq));
+
+/** Applies plans: writes land at fresh seqs after everything; deletes are optional. */
+function applyPlans(log: OpenedRecord[], plans: CompactionPlan[], withDeletes: boolean) {
+  const gone = new Set(withDeletes ? plans.flatMap((p) => p.deleteSeqs) : []);
+  let seq = maxSeq(log) + 1;
   return [
-    ...log.filter((l) => !del.has(l.seq)),
+    ...log.filter((l) => !gone.has(l.seq)),
     ...plans.map((p) => rec(seq++, p.write.body, p.write.dedupe)),
   ];
 }
 
 describe('fold properties', () => {
-  it('200 random logs: compaction (with or without deletes) and shuffling never change the result', () => {
+  it('200 random logs: compaction, concurrent writes, later writes and shuffling never change the result', () => {
     let compacted = 0;
+    let recompacted = 0;
     for (let seed = 1; seed <= 200; seed++) {
-      const log = randomLog(seed);
-      const minRecords = 2 + (seed % 3);
-      const expected = fold(log);
-      if (planCompaction(log, minRecords).length > 0) compacted++;
+      const r = prng(seed);
       const ctx = `seed ${seed}`;
-      expect(fold(applyPlan(log, true, minRecords)), ctx).toEqual(expected);
-      expect(fold(applyPlan(log, false, minRecords)), ctx).toEqual(expected);
-      const shuffled = [...log].sort(() => prng(seed)() - 0.5).reverse();
-      expect(fold(shuffled), ctx).toEqual(expected);
+      const log = randomRecords(r, `s${seed}`, 3, 1 + Math.floor(r() * 30), null);
+      const plans = planCompaction(log, 2 + (seed % 3));
+      if (plans.length > 0) compacted++;
+      expect(fold(shuffle(log, r)), ctx).toEqual(fold(log));
+
+      // (a) concurrent writes land between planning and writing the compacted puts
+      const concurrent = randomRecords(r, `c${seed}`, maxSeq(log) + 3, Math.floor(r() * 6), log);
+      const full = [...log, ...concurrent];
+      const gone = new Set(plans.flatMap((p) => p.deleteSeqs));
+      const kept = [...log.filter((l) => !gone.has(l.seq)), ...concurrent];
+      const written = applyPlans(
+        [...log, ...concurrent],
+        plans.map((p) => ({ ...p, deleteSeqs: [] })),
+        false,
+      ).slice(full.length);
+      const withDeletes = [...kept, ...written];
+      expect(fold(withDeletes), ctx).toEqual(fold(full));
+      expect(fold([...full, ...written]), ctx).toEqual(fold(full));
+      expect(fold(shuffle(withDeletes, r)), ctx).toEqual(fold(full));
+
+      // (b) keep appending after compaction, compare against the uncompacted log
+      const later = randomRecords(
+        r,
+        `l${seed}`,
+        maxSeq(withDeletes) + 3,
+        1 + Math.floor(r() * 10),
+        full,
+      );
+      const expected = fold([...full, ...later]);
+      expect(fold([...withDeletes, ...later]), ctx).toEqual(expected);
+
+      // compact the compacted log again
+      const plans2 = planCompaction([...withDeletes, ...later], 2);
+      if (plans2.length > 0) recompacted++;
+      expect(fold(applyPlans([...withDeletes, ...later], plans2, true)), ctx).toEqual(expected);
+      expect(fold(applyPlans([...withDeletes, ...later], plans2, false)), ctx).toEqual(expected);
     }
-    // make sure the property actually exercised compaction
     expect(compacted).toBeGreaterThan(50);
+    expect(recompacted).toBeGreaterThan(50);
   });
 });

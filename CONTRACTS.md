@@ -90,7 +90,7 @@ Plaintext record body, JSON-encoded then sealed:
 
 ```ts
 type RecordBody =
-  | { kind: 'put';    event: Event }
+  | { kind: 'put';    event: Event; compaction?: { firstSeq: number; throughSeq: number; aliases: string[] } }
   | { kind: 'patch';  target: string; fields: Partial<Omit<Event, 'id'>> }
   | { kind: 'delete'; target: string }        // same as patch { deleted: true }
 ```
@@ -110,7 +110,7 @@ type OpenedRecord = { seq: number; dedupe: string | null; createdAt: string; bod
 4. **delete.** Sets `deleted: true` and pins it.
 5. Output omits events with `deleted: true`. A patch or delete whose target is unknown is ignored.
 
-`planCompaction(records: OpenedRecord[], minRecords = 4): { write: { body: RecordBody; dedupe: string | null }; deleteSeqs: number[] }[]` — for each group with at least `minRecords` records, one `put` holding the folded event (including `pinned` and `deleted`), carrying the group's dedupe tag, and the seqs it replaces. Folding the log before and after applying a plan must give the same events, including when both old and new records are present.
+`planCompaction(records: OpenedRecord[], minRecords = 4): { write: { body: RecordBody; dedupe: string | null }; deleteSeqs: number[] }[]` — for each group with at least `minRecords` records, one `put` holding the folded event (including `pinned` and `deleted`) and a `compaction` marker, carrying the group's dedupe tag, and the seqs it replaces. The marker is `{ firstSeq: seq of the group's earliest put (or its own firstSeq if already compacted), throughSeq: max seq replaced, aliases: every non-canonical put id }`. Folding the log before and after applying a plan must give the same events, including when both old and new records are present.
 
 Decisions made while implementing `fold.ts` (ambiguities in the rules above):
 
@@ -121,7 +121,14 @@ Decisions made while implementing `fold.ts` (ambiguities in the rules above):
 - **Attachments** from puts always union by id (existing first), even if `attachments` is pinned. A patch replaces the list; a later email that re-lists a removed attachment brings it back.
 - **createdAt** is the earliest put's. **id** is always the canonical id.
 - **Output order** is `(createdAt, id)` ascending, so it is stable across compaction.
-- **planCompaction** counts all records in a group (puts plus applicable patches/deletes) toward `minRecords`, writes the folded event (including `pinned` and `deleted`) with the group's tag, and skips groups joined by more than one distinct dedupe tag (one record carries one tag). After compaction aliases are gone: a later patch targeting an alias (not the canonical id) is ignored, so writers should target the canonical id from the folded output.
+- **Compacted puts.** A put with `compaction` is a snapshot of a whole group. In replay order it sits right after `throughSeq` (sort key `throughSeq + 0.5`, ties by seq); for choosing the canonical id and for the orphan rule it counts as `firstSeq`. Its `aliases` and `event.id` join the union-find and the alias lookup, so patches to an alias still resolve. Replaying it sets the state to its event wholesale (regardless of source and pins); records with seq above `throughSeq` then apply normally, including ones that landed in the log before the compacted put did (a concurrent edit between plan and write is kept). Old records at or below `throughSeq` may still be present: they replay first and the snapshot overrides them.
+- **planCompaction** counts all records in a group (puts plus applicable patches/deletes) toward `minRecords`. Re-compacting a group that already holds a compacted put carries its `firstSeq` and aliases forward (they are recomputed from the group). Groups joined by more than one distinct dedupe tag are skipped (one record carries one tag).
+
+Known limitations (accepted for now):
+
+- A later email put can re-add an attachment that a patch removed.
+- A late put that bridges two groups (shared tag or id) makes patches apply retroactively across the merged group, and a compacted snapshot of one group then overrides the other group's earlier puts.
+- Groups with two or more distinct dedupe tags are never compacted.
 
 ## 4. Crypto (`crypto.ts`)
 

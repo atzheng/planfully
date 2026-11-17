@@ -2,7 +2,22 @@ import { z } from 'zod';
 import { EventSchema } from './schema';
 
 export const RecordBodySchema = z.discriminatedUnion('kind', [
-  z.strictObject({ kind: z.literal('put'), event: EventSchema }),
+  z.strictObject({
+    kind: z.literal('put'),
+    event: EventSchema,
+    /**
+     * Present on puts written by compaction: the event is a snapshot of a whole group.
+     * `firstSeq` is the seq of the group's earliest put, `throughSeq` the last seq it replaces,
+     * `aliases` the group's non-canonical put ids.
+     */
+    compaction: z
+      .strictObject({
+        firstSeq: z.number().int().nonnegative(),
+        throughSeq: z.number().int().nonnegative(),
+        aliases: z.array(z.string()),
+      })
+      .optional(),
+  }),
   z.strictObject({
     kind: z.literal('patch'),
     target: z.string().min(1),
