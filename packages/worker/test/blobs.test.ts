@@ -1,5 +1,5 @@
 import { env, exports } from 'cloudflare:workers';
-import { beforeAll, describe, expect, test } from 'vitest';
+import { beforeAll, describe, expect, test, vi } from 'vitest';
 import { hashAccessToken } from '@planfully/shared';
 import { BlobExistsError, getBlob, putBlob } from '../src/storage/blobs';
 import { applyMigrations, makeTrip } from './helpers';
@@ -100,6 +100,31 @@ describe('blobs API', () => {
       duplex: 'half',
     });
     expect(res.status).toBe(411);
+  });
+});
+
+describe('id case and R2 failures', () => {
+  test('uppercase id is the same blob as lowercase (immutability holds)', async () => {
+    const t = await trip('tok-k');
+    const id = crypto.randomUUID();
+    expect((await put(url(t.id, id), t.auth, new Uint8Array([1]))).status).toBe(201);
+    expect((await put(url(t.id, id.toUpperCase()), t.auth, new Uint8Array([2]))).status).toBe(409);
+    const res = await exports.default.fetch(url(t.id, id.toUpperCase()), { headers: t.auth });
+    expect(Array.from(new Uint8Array(await res.arrayBuffer()))).toEqual([1]);
+  });
+
+  test('an R2 failure is not reported as 413', async () => {
+    const t = await trip('tok-l');
+    const spy = vi.spyOn(env.BLOBS, 'put').mockImplementation(async (_k, v) => {
+      await (v as ReadableStream).cancel().catch(() => undefined);
+      throw new Error('r2 down');
+    });
+    try {
+      const res = await put(url(t.id, crypto.randomUUID()), t.auth, new Uint8Array([1, 2]));
+      expect(res.status).toBe(500);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
 

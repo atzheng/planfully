@@ -9,8 +9,9 @@ export function isBlobId(id: string): boolean {
   return UUID.test(id);
 }
 
+/** R2 keys are case-sensitive, so ids are lowercased: `<uuid>` and its uppercase form are one blob. */
 export function blobKey(tripId: string, blobId: string): string {
-  return `trips/${tripId}/blobs/${blobId}`;
+  return `trips/${tripId}/blobs/${blobId.toLowerCase()}`;
 }
 
 /** Thrown when a blob with this id is already stored (blobs are immutable). */
@@ -67,7 +68,10 @@ export async function putBlobStream(
     if (putRes.value === null) throw new BlobExistsError();
     return;
   }
-  throw new BlobTooLargeError();
+  // The source or the length check failed: too many/few bytes (or the client aborted).
+  if (pipeRes.status === 'rejected') throw new BlobTooLargeError();
+  // Body piped fine but R2 itself failed: propagate (the app turns it into a 500).
+  throw putRes.status === 'rejected' ? putRes.reason : new Error('blob put failed');
 }
 
 export async function getBlob(
