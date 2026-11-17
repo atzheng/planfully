@@ -54,10 +54,56 @@ describe('diffFields', () => {
     }
   });
 
-  test('confirmation and notes can be blanked with an empty string', () => {
+  test('each cleared field becomes null', () => {
+    const orig: Event = { ...base, endLocation: { name: 'LIS' } };
+    const cases: [Partial<ReturnType<typeof initialValues>>, object][] = [
+      [{ confirmation: '' }, { confirmation: null }],
+      [{ notes: '  ' }, { notes: null }],
+      [{ locationName: '', locationAddress: '' }, { location: null }],
+      [{ endLocationName: '', endLocationAddress: '' }, { endLocation: null }],
+      [{ endDate: '', endTime: '' }, { end: null }],
+      [
+        { startDate: '', startTime: '', endDate: '', endTime: '' },
+        { start: null, end: null },
+      ],
+    ];
+    for (const [over, expected] of cases) {
+      const r = build(over, orig);
+      expect(r.ok).toBe(true);
+      if (r.ok) expect(diffFields(orig, r.fields)).toEqual(expected);
+    }
+  });
+
+  test('blank fields that were already absent produce no patch', () => {
+    const bare: Event = {
+      ...base,
+      confirmation: undefined,
+      notes: undefined,
+      location: undefined,
+      end: undefined,
+    };
+    const r = build({}, bare);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(diffFields(bare, r.fields)).toEqual({});
+  });
+
+  test('an event with an end but no start can be edited', () => {
+    const odd: Event = { ...base, start: undefined };
+    const r = build({ name: 'Renamed' }, odd);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(diffFields(odd, r.fields)).toEqual({ name: 'Renamed' });
+  });
+
+  test('clearing the start while keeping an end is an error', () => {
+    const r = build({ startDate: '', startTime: '' });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.errors.startDate).toMatch(/start before an end/);
+  });
+
+  test('blanking confirmation and notes together gives two nulls', () => {
     const r = build({ confirmation: '', notes: '' });
     expect(r.ok).toBe(true);
-    if (r.ok) expect(diffFields(base, r.fields)).toEqual({ confirmation: '', notes: '' });
+    if (r.ok) expect(diffFields(base, r.fields)).toEqual({ confirmation: null, notes: null });
   });
 });
 
@@ -78,12 +124,6 @@ describe('buildFields validation', () => {
     // Start 11:30 Paris = 10:30 Lisbon, so an end of 10:00 Lisbon is earlier.
     const r = build({ startTime: '11:30', endTime: '10:00' });
     expect(r.ok).toBe(false);
-  });
-
-  test('a time that was set cannot be removed', () => {
-    const r = build({ startDate: '', startTime: '' });
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.errors.startDate).toMatch(/cannot be removed/);
   });
 
   test('half-filled time and bad zone are errors', () => {

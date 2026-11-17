@@ -8,11 +8,13 @@ import {
   fromInstant,
   type Event,
   type EventType,
+  type RecordBody,
   type Location,
   type LocalTime,
 } from '@planfully/shared';
 
-export type EventFields = Partial<Omit<Event, 'id'>>;
+/** Fields of an edit patch (CONTRACTS.md section 3): optional fields are `null` to clear them. */
+export type EventFields = Extract<RecordBody, { kind: 'patch' }>['fields'];
 
 export type FormValues = {
   name: string;
@@ -112,25 +114,26 @@ function buildLocation(
   name: string,
   address: string,
   original: Location | undefined,
-): Location | undefined {
+): Location | null | undefined {
   const n = name.trim();
   const a = address.trim();
   if (n === (original?.name ?? '').trim() && a === (original?.address ?? '').trim()) {
     return original;
   }
+  if (!n && !a) return original ? null : undefined;
   // Text changed: coordinates and place id would now point somewhere else, so they are dropped.
   const loc: Location = {};
   if (n) loc.name = n;
   if (a) loc.address = a;
-  return original || n || a ? loc : undefined;
+  return loc;
 }
 
 export type BuildResult = { ok: true; fields: EventFields } | { ok: false; errors: FormErrors };
 
 /**
- * Validate the form and produce full event fields. Clearing is limited by CONTRACTS.md section 7
- * (the form does not use patch null yet, CONTRACTS.md section 3): confirmation and notes blank to '', locations to {}, but a time
- * that was set cannot be removed.
+ * Validate the form and produce full event fields. A field that had a value and is now blank
+ * becomes `null` (clears it, CONTRACTS.md section 3); blank start and end make the event
+ * unscheduled. An end without a start is an error.
  */
 export function buildFields(v: FormValues, original: Partial<Event> = {}): BuildResult {
   const errors: FormErrors = {};
@@ -141,16 +144,11 @@ export function buildFields(v: FormValues, original: Partial<Event> = {}): Build
   const end = buildLocalTime(v.endDate, v.endTime, v.endTz);
   if (start.error) errors.startDate = start.error;
   if (end.error) errors.endDate = end.error;
-  if (!start.value && !start.error && original.start) {
-    errors.startDate = 'A time cannot be removed once set. Change it instead.';
-  }
-  if (!end.value && !end.error && original.end) {
-    errors.endDate = 'A time cannot be removed once set. Change it instead.';
-  }
   if (start.value && end.value && !errors.startDate && !errors.endDate) {
     if (toInstant(end.value) < toInstant(start.value)) errors.endDate = 'End is before the start';
   }
-  if (end.value && !start.value && !errors.endDate && !errors.startDate) {
+  // An end with no start is allowed (schema), unless the user just blanked a start that was set.
+  if (end.value && !start.value && original.start && !errors.endDate && !errors.startDate) {
     errors.startDate = 'Enter a start before an end';
   }
 
@@ -161,16 +159,20 @@ export function buildFields(v: FormValues, original: Partial<Event> = {}): Build
     participants: v.participants,
   };
   if (start.value) fields.start = start.value;
+  else if (!start.error && original.start) fields.start = null;
   if (end.value) fields.end = end.value;
+  else if (!end.error && original.end) fields.end = null;
   const confirmation = keepIfSame(v.confirmation, original.confirmation);
-  if (confirmation || original.confirmation !== undefined) fields.confirmation = confirmation;
+  if (confirmation) fields.confirmation = confirmation;
+  else if (original.confirmation !== undefined) fields.confirmation = null;
   const notes = keepIfSame(v.notes, original.notes);
-  if (notes || original.notes !== undefined) fields.notes = notes;
+  if (notes) fields.notes = notes;
+  else if (original.notes !== undefined) fields.notes = null;
   const loc = buildLocation(v.locationName, v.locationAddress, original.location);
-  if (loc) fields.location = loc;
+  if (loc !== undefined) fields.location = loc;
   if (isTransport(v.type)) {
     const endLoc = buildLocation(v.endLocationName, v.endLocationAddress, original.endLocation);
-    if (endLoc) fields.endLocation = endLoc;
+    if (endLoc !== undefined) fields.endLocation = endLoc;
   } else if (original.endLocation) {
     // The arrival fields are hidden for non-transport types; leave any existing value alone.
     fields.endLocation = original.endLocation;
@@ -182,7 +184,7 @@ export function buildFields(v: FormValues, original: Partial<Event> = {}): Build
       attachments: [],
       source: 'manual',
       createdAt: 'x',
-      ...fields,
+      ...Object.fromEntries(Object.entries(fields).filter(([, x]) => x !== null)),
       id: 'x',
     });
     if (!probe.success) {
@@ -206,6 +208,10 @@ export function diffFields(original: Event, next: EventFields): EventFields {
   for (const [k, v] of Object.entries(next)) {
     if (v === undefined) continue;
     const prev = (original as Record<string, unknown>)[k];
+    if (v === null) {
+      if (prev !== undefined) out[k] = null; // clearing something already absent is no change
+      continue;
+    }
     if (k === 'participants') {
       if (same([...(prev as string[])].sort(), [...(v as string[])].sort())) continue;
     } else if (same(prev, v)) continue;
