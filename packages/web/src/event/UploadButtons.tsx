@@ -3,6 +3,7 @@
 import { useRef, useState } from 'react';
 import { fromInstant, type Attachment, type Event } from '@planfully/shared';
 import { ApiError } from '../lib/api';
+import { getTripQueue } from '../offline/queue';
 import { useTripActions } from '../trip/actions';
 import { FileTooLargeError, uploadAttachment, type UploadContext } from '../trip/attachments';
 import { useTrip, useTripStore } from '../trip/store';
@@ -50,6 +51,7 @@ type Progress = { done: number; total: number; current: string } | null;
 function useUploader() {
   const tripId = useTrip((s) => s.tripId);
   const keys = useTrip((s) => s.keys);
+  const store = useTripStore();
   const [progress, setProgress] = useState<Progress>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -59,7 +61,7 @@ function useUploader() {
     each: (file: File, ctx: UploadContext) => Promise<void>,
   ): Promise<void> {
     if (!keys || files.length === 0) return;
-    const ctx: UploadContext = { tripId, ...keys };
+    const ctx: UploadContext = { tripId, ...keys, queue: getTripQueue(store) };
     const failures: string[] = [];
     setError(null);
     for (let i = 0; i < files.length; i++) {

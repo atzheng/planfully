@@ -49,35 +49,57 @@ Libraries, fixed: pnpm, TypeScript, vitest, zod, luxon (time), `@noble/curves` +
 ## 2. Shared types (`schema.ts`, `time.ts`)
 
 ```ts
-type EventType = 'flight'|'train'|'bus'|'ferry'|'car'|'lodging'|'dining'
-               |'activity'|'attraction'|'receipt'|'other'
-type LocalTime = { local: string; tz: string }   // local: 'YYYY-MM-DDTHH:mm', tz: IANA zone
-type Location  = { name?: string; address?: string; lat?: number; lng?: number; placeId?: string }
-type Attachment = { id: string; filename: string; mime: string; size: number;
-                    kind: 'file' | 'source-email' }      // id = blob id
+type EventType =
+  | 'flight'
+  | 'train'
+  | 'bus'
+  | 'ferry'
+  | 'car'
+  | 'lodging'
+  | 'dining'
+  | 'activity'
+  | 'attraction'
+  | 'receipt'
+  | 'other';
+type LocalTime = { local: string; tz: string }; // local: 'YYYY-MM-DDTHH:mm', tz: IANA zone
+type Location = { name?: string; address?: string; lat?: number; lng?: number; placeId?: string };
+type Attachment = {
+  id: string;
+  filename: string;
+  mime: string;
+  size: number;
+  kind: 'file' | 'source-email';
+}; // id = blob id
 type Event = {
-  id: string                     // uuid
-  name: string
-  type: EventType
-  start?: LocalTime
-  end?: LocalTime
-  confirmation?: string
-  location?: Location
-  endLocation?: Location         // arrival point for transport
-  attachments: Attachment[]
-  participants: string[]         // roster ids; [] means everyone
-  status: 'confirmed' | 'cancelled'
-  notes?: string
-  source: 'email' | 'manual'
-  needsReview?: boolean
-  createdAt: string              // ISO instant
-  pinned?: string[]              // field names set by hand; see section 3
-  deleted?: boolean              // tombstone; see section 3
-}
-type RosterMember = { id: string; name: string; aliases: string[] }
-type TripMeta = { id: string; name: string; address: string /* full lowercase: slug-xxxxxx@domain */; domain: string;
-                  publicKey: string /* base64url */; roster: RosterMember[];
-                  allowedSenders: string[]; createdAt: string }
+  id: string; // uuid
+  name: string;
+  type: EventType;
+  start?: LocalTime;
+  end?: LocalTime;
+  confirmation?: string;
+  location?: Location;
+  endLocation?: Location; // arrival point for transport
+  attachments: Attachment[];
+  participants: string[]; // roster ids; [] means everyone
+  status: 'confirmed' | 'cancelled';
+  notes?: string;
+  source: 'email' | 'manual';
+  needsReview?: boolean;
+  createdAt: string; // ISO instant
+  pinned?: string[]; // field names set by hand; see section 3
+  deleted?: boolean; // tombstone; see section 3
+};
+type RosterMember = { id: string; name: string; aliases: string[] };
+type TripMeta = {
+  id: string;
+  name: string;
+  address: string /* full lowercase: slug-xxxxxx@domain */;
+  domain: string;
+  publicKey: string /* base64url */;
+  roster: RosterMember[];
+  allowedSenders: string[];
+  createdAt: string;
+};
 ```
 
 Each type has a zod schema named `<Type>Schema`. `eventsJsonSchema` is the JSON Schema for `ParsedEvent[]` (section 6) for LLM structured output.
@@ -90,16 +112,25 @@ Plaintext record body, JSON-encoded then sealed:
 
 ```ts
 type RecordBody =
-  | { kind: 'put';    event: Event; compaction?: { firstSeq: number; throughSeq: number; aliases: string[] } }
-  | { kind: 'patch';  target: string; fields: Partial<Omit<Event, 'id'>> /* optional fields may be null: clears them */ }
-  | { kind: 'delete'; target: string }        // same as patch { deleted: true }
+  | {
+      kind: 'put';
+      event: Event;
+      compaction?: { firstSeq: number; throughSeq: number; aliases: string[] };
+    }
+  | { kind: 'patch'; target: string; fields: Partial<Omit<Event, 'id'>> } // optional fields may be null: clears them
+  | { kind: 'delete'; target: string }; // same as patch { deleted: true }
 ```
 
 What the server stores and returns (it never sees the body):
 
 ```ts
-type StoredRecord = { seq: number; dedupe: string | null; ciphertext: string /* base64 */; createdAt: string }
-type OpenedRecord = { seq: number; dedupe: string | null; createdAt: string; body: RecordBody }
+type StoredRecord = {
+  seq: number;
+  dedupe: string | null;
+  ciphertext: string /* base64 */;
+  createdAt: string;
+};
+type OpenedRecord = { seq: number; dedupe: string | null; createdAt: string; body: RecordBody };
 ```
 
 `fold(records: OpenedRecord[]): Event[]` — process in `seq` order:
@@ -161,18 +192,18 @@ toBase64 / fromBase64 / toBase64Url / fromBase64Url
 
 JSON unless noted. Errors: `{ "error": string }` with a 4xx/5xx status. Trip routes need `Authorization: Bearer <accessToken>`; the server compares `hashAccessToken(token)` with the stored hash.
 
-| Route | Request | Response |
-|---|---|---|
-| `GET /api/health` | | `{ ok: true }` |
-| `POST /api/trips` (`Authorization: Bearer <ADMIN_SECRET>`) | `{ name, publicKey, accessTokenHash, roster, allowedSenders }` | 201 `{ id, address, domain }` (`address` is the full `slug-xxxxxx@domain`) |
-| `GET /api/trips/:id` | | `TripMeta` |
-| `PATCH /api/trips/:id` | `{ name?, roster?, allowedSenders? }` | `TripMeta` |
-| `GET /api/trips/:id/records?since=N` | | `{ records: StoredRecord[], latestSeq: number, more: boolean }` (seq > N, ascending; paged, see below) |
-| `POST /api/trips/:id/records` | `{ ciphertext, dedupe? }` | 201 `{ seq }` |
-| `DELETE /api/trips/:id/records/:seq` | | 204 |
-| `PUT /api/trips/:id/blobs/:blobId` | raw bytes, `application/octet-stream` | 201 |
-| `GET /api/trips/:id/blobs/:blobId` | | raw bytes |
-| `GET /api/trips/:id/geocode?q=` | | `{ results: Location[] }` |
+| Route                                                      | Request                                                        | Response                                                                                               |
+| ---------------------------------------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `GET /api/health`                                          |                                                                | `{ ok: true }`                                                                                         |
+| `POST /api/trips` (`Authorization: Bearer <ADMIN_SECRET>`) | `{ name, publicKey, accessTokenHash, roster, allowedSenders }` | 201 `{ id, address, domain }` (`address` is the full `slug-xxxxxx@domain`)                             |
+| `GET /api/trips/:id`                                       |                                                                | `TripMeta`                                                                                             |
+| `PATCH /api/trips/:id`                                     | `{ name?, roster?, allowedSenders? }`                          | `TripMeta`                                                                                             |
+| `GET /api/trips/:id/records?since=N`                       |                                                                | `{ records: StoredRecord[], latestSeq: number, more: boolean }` (seq > N, ascending; paged, see below) |
+| `POST /api/trips/:id/records`                              | `{ ciphertext, dedupe? }`                                      | 201 `{ seq }`                                                                                          |
+| `DELETE /api/trips/:id/records/:seq`                       |                                                                | 204                                                                                                    |
+| `PUT /api/trips/:id/blobs/:blobId`                         | raw bytes, `application/octet-stream`                          | 201                                                                                                    |
+| `GET /api/trips/:id/blobs/:blobId`                         |                                                                | raw bytes                                                                                              |
+| `GET /api/trips/:id/geocode?q=`                            |                                                                | `{ results: Location[] }`                                                                              |
 
 `seq` comes from a per-trip counter (`trips.next_seq`, incremented in the same D1 batch as the insert). It strictly increases and is never reused, even after deletes. Blob ids are UUIDs chosen by the writer. Limits: record ciphertext 256 KB, blob 25 MB.
 
@@ -243,9 +274,10 @@ Never log email content, event content or tokens.
   - `append(opened)`: for the write path; merges already-opened records by `seq` (duplicates ignored) and re-folds. It does not advance `cursor`, so the next sync still fetches records written by others in between. `setMeta` replaces `meta` after a PATCH.
   - Sync: `since=cursor`, paging while `more`; triggered on window focus, on visibilitychange to visible, and every 60 s while the page is visible. Concurrent calls share one request.
   - `createTripStore({ tripId, fragment, api?, intervalMs?, backoffMs? })` builds a store without React (for tests and caching); `openRecords(privateKey, stored)` is also exported.
-  - `trip/actions.ts`: `createTripActions(store, { api?, sendRecord? })` and the hook `useTripActions()` return `putEvent(e: NewEvent): Promise<Event>` (id `crypto.randomUUID()`, source `manual`, createdAt now, no dedupe tag), `patchEvent(id, fields)`, `deleteEvent(id)`. Each shows a temporary record at once, seals, sends via the single `sendRecord(sealed): Promise<{ seq }>` step, then swaps in the real seq; on failure it removes the temp record, sets `lastError` and rethrows. Store additions: `pending: number`, `lastError: TripError | null`, and the write-path hooks `addOptimistic(body)` (temp seq near `MAX_SAFE_INTEGER` so it folds last), `settleOptimistic(tempSeq, real?)`, `setWriteState({ pendingDelta?, lastError? })`; `useTripStore()` returns the store. Records appended during the initial load are kept when the load result arrives. Sends are serialized per actions instance in call order (a patch cannot outrun its put); a patch or delete queued behind a failed put is dropped and rejects. `lastError` is only cleared by the UI (`setWriteState({ lastError: null })`), never by a later success. A patch may set an optional field to `null` to clear it (section 3); the web edit form still blanks with empty values (`notes: ''`) and does not yet use null (follow-up). `isTempSeq(seq)` (store.ts) identifies temp records; compaction and offline caches must skip them. Compaction (`trip/compact.ts`): `compactTrip(store, api?, isOnline?): Promise<boolean>` runs `planCompaction` over the non-temp records: seal, `postRecord` (dedupe only when non-null), and only then `deleteRecord` for each replaced seq (404 ignored), updating the store with `append` and the new `removeRecords(seqs)`. It returns false without doing anything when offline, not ready or `pending > 0`, and re-checks `pending` before each append. The store calls it after the first successful load/sync (once per store; retried if it could not start) when its `api` has `postRecord` and `deleteRecord` (`TripApi` now includes them as optional). It does nothing while `skipped > 0` (unreadable records are invisible to the plan, and the snapshot could override them for newer clients) and stops deleting if a write starts. Version skew: an older client that strips the `compaction` key treats a compacted put as a plain put at a high seq, so patches between the replaced seqs and it may be lost for that client; roll out schema changes with this in mind. fh8.2/fh8.3: any persisted record cache must also apply `removeRecords` (or be reloaded) after compaction, or deleted records reappear from the cache. `isTempSeq` now lives in `trip/tempSeq.ts` (re-exported from store.ts; breaks the store/compact import cycle).
-- **Offline cache (`offline/db.ts`, fh8.2):** IndexedDB `planfully` v1 via `idb`: `trips { tripId, secret, meta, lastSeq, openedAt }`, `records [tripId, seq] -> StoredRecord` (sealed), `blobs { blobId, tripId, bytes }` (sealed, index `tripId`). `createOfflineDb(name?)` / `getOfflineDb()` (null without IndexedDB) / `setOfflineDb()` (tests). The secret is stored in plain form by design (the landing page's recent-trips list links to `/t/<id>#<secret>`). `createTripStore` takes `cache?: OfflineDb | null`. Flow: after deriving keys, if the cached secret equals the fragment, the store opens the cached records and is `status: 'ready'` at once (`cursor = lastSeq`), then syncs; the first sync also refreshes `meta`. A full load (`since=0`) replaces the cached records; syncs add to them. `lastSeq` is the store `cursor`, never max(seq). The sealed pages as received are cached, so records that fail to open stay cached (and counted in `skipped`). Temp records are never persisted; `removeRecords` is applied to the cache. `append()` and `settleOptimistic(_, real)` also persist records with real seqs (re-sealed with the public key; `lastSeq` untouched), so compaction's put survives an offline reload before the next sync. A cached trip whose last full load (`fullLoadAt`) is older than 7 days is reloaded from since=0 on its first sync, replacing the cache (drops stale pre-compaction records). A 401/403/404 on a trip loaded from the cache only sets `revokedAt` on its row (data kept, since these can be transient); the landing page shows "Link no longer works" with Forget, and the next successful snapshot clears the flag. `putBlob`/`putRecords` skip trips with no cached row (no orphans after Forget). The store keeps the raw secret in memory until the first snapshot has been written to the cache: a deliberate exception to "not retained after key derivation". A stopped store does not write (hashchange to another secret replaces the store; a different cached secret is ignored and replaced). `offline: boolean` is true while the last sync failed on the network (`status` stays `'ready'`; `error` is still set as before). `TripApi` gains optional `getBlob`; after each sync small attachments (< 5 MB) are cached in the background (`prefetchAttachments`); `fetchAttachment` checks the blob cache first and caches sealed bytes after a network fetch. `forgetTrip(tripId)` removes that trip's secret, records and blobs only.
-- **`trip/attachments.ts`:** `type AttachmentContext = { tripId: string; accessToken: string; privateKey: Uint8Array }` (from `useTrip`: `tripId` and `keys`); `fetchAttachment(a: Attachment, ctx: AttachmentContext): Promise<Blob>` (fetch, open, wrap with `a.mime`); `uploadAttachment(file: File, ctx: UploadContext): Promise<Attachment>` with `UploadContext = AttachmentContext & { publicKey: Uint8Array }` (spread `{ tripId, ...keys }` from `useTrip`; ecw.4). It refuses files over `MAX_UPLOAD_BYTES` (25 MB minus the 61-byte seal overhead, matching the Worker's cap on the sealed blob) with `FileTooLargeError` before reading or sealing, then seals, PUTs a new UUID blob and returns `{ kind: 'file', filename, mime: file.type || 'application/octet-stream', size }`. UI: `event/UploadButtons.tsx` exports `AttachButton({ event })` (event sheet actions row; one patch with all uploaded files) and `AddReceiptButton()` (currently in the shell's `data-slot="actions"`; one `receipt` event per file, name = filename without extension, start = now in the browser zone).
+  - `trip/actions.ts`: `createTripActions(store, { queue? })` and the hook `useTripActions()` return `putEvent(e: NewEvent): Promise<Event>` (id `crypto.randomUUID()`, source `manual`, createdAt now, no dedupe tag), `patchEvent(id, fields)`, `deleteEvent(id)`. Each shows a temporary record at once and hands it to the offline queue (`offline/queue.ts`, below), which seals, stores and sends it, then swaps in the real seq. The returned promise settles after the first send attempt: it resolves when sent or left queued (offline), and rejects only when the server refused it (temp record removed, `lastError` set) or it could not be stored. The old `sendRecord` option is gone (the queue is the single send step). Store additions: `pending: number`, `lastError: TripError | null`, and the write-path hooks `addOptimistic(body)` (temp seq near `MAX_SAFE_INTEGER` so it folds last), `settleOptimistic(tempSeq, real?)`, `setWriteState({ pendingDelta?, lastError? })`; `useTripStore()` returns the store. Records appended during the initial load are kept when the load result arrives. Sends are serialized by the queue in call order (a patch cannot outrun its put); a patch or delete queued behind a refused put is dropped and rejects, also across restarts. Store additions: `queueStalled: boolean` (`setWriteState({ queueStalled })`); `pending` counts record writes not yet acknowledged (in flight or queued), so compaction waits for 0. `lastError` is only cleared by the UI (`setWriteState({ lastError: null })`), never by a later success. A patch may set an optional field to `null` to clear it (section 3); the web edit form still blanks with empty values (`notes: ''`) and does not yet use null (follow-up). `isTempSeq(seq)` (store.ts) identifies temp records; compaction and offline caches must skip them. Compaction (`trip/compact.ts`): `compactTrip(store, api?, isOnline?): Promise<boolean>` runs `planCompaction` over the non-temp records: seal, `postRecord` (dedupe only when non-null), and only then `deleteRecord` for each replaced seq (404 ignored), updating the store with `append` and the new `removeRecords(seqs)`. It returns false without doing anything when offline, not ready or `pending > 0`, and re-checks `pending` before each append. The store calls it after the first successful load/sync (once per store; retried if it could not start) when its `api` has `postRecord` and `deleteRecord` (`TripApi` now includes them as optional). It does nothing while `skipped > 0` (unreadable records are invisible to the plan, and the snapshot could override them for newer clients) and stops deleting if a write starts. Version skew: an older client that strips the `compaction` key treats a compacted put as a plain put at a high seq, so patches between the replaced seqs and it may be lost for that client; roll out schema changes with this in mind. fh8.2/fh8.3: any persisted record cache must also apply `removeRecords` (or be reloaded) after compaction, or deleted records reappear from the cache. `isTempSeq` now lives in `trip/tempSeq.ts` (re-exported from store.ts; breaks the store/compact import cycle).
+- **Offline cache (`offline/db.ts`, fh8.2):** IndexedDB `planfully` v2 via `idb` (v2 adds `queue`): `trips { tripId, secret, meta, lastSeq, openedAt }`, `records [tripId, seq] -> StoredRecord` (sealed), `blobs { blobId, tripId, bytes }` (sealed, index `tripId`). `createOfflineDb(name?)` / `getOfflineDb()` (null without IndexedDB) / `setOfflineDb()` (tests). The secret is stored in plain form by design (the landing page's recent-trips list links to `/t/<id>#<secret>`). `createTripStore` takes `cache?: OfflineDb | null`. Flow: after deriving keys, if the cached secret equals the fragment, the store opens the cached records and is `status: 'ready'` at once (`cursor = lastSeq`), then syncs; the first sync also refreshes `meta`. A full load (`since=0`) replaces the cached records; syncs add to them. `lastSeq` is the store `cursor`, never max(seq). The sealed pages as received are cached, so records that fail to open stay cached (and counted in `skipped`). Temp records are never persisted; `removeRecords` is applied to the cache. `append()` and `settleOptimistic(_, real)` also persist records with real seqs (re-sealed with the public key; `lastSeq` untouched), so compaction's put survives an offline reload before the next sync. A cached trip whose last full load (`fullLoadAt`) is older than 7 days is reloaded from since=0 on its first sync, replacing the cache (drops stale pre-compaction records). A 401/403/404 on a trip loaded from the cache only sets `revokedAt` on its row (data kept, since these can be transient); the landing page shows "Link no longer works" with Forget, and the next successful snapshot clears the flag. `putBlob`/`putRecords` skip trips with no cached row (no orphans after Forget). The store keeps the raw secret in memory until the first snapshot has been written to the cache: a deliberate exception to "not retained after key derivation". A stopped store does not write (hashchange to another secret replaces the store; a different cached secret is ignored and replaced). `offline: boolean` is true while the last sync failed on the network (`status` stays `'ready'`; `error` is still set as before). `TripApi` gains optional `getBlob`; after each sync small attachments (< 5 MB) are cached in the background (`prefetchAttachments`); `fetchAttachment` checks the blob cache first and caches sealed bytes after a network fetch. `forgetTrip(tripId)` removes that trip's secret, records and blobs only.
+- **Offline edit queue (`offline/queue.ts`, fh8.3):** IndexedDB store `queue` (autoIncrement `id`, index `tripId`) holding `QueueItem { id, tripId, kind: 'record' | 'blob', payload /* sealed */, blobId?, op?, eventId?, blobIds?, createdAt }` (`eventId`/`blobIds` are UUIDs used only to drop dependents, never content); `forgetTrip` clears it. `createTripQueue(store, { storage?, api?, backoffMs? })` / `getTripQueue(store)` (one per store; memory-only where IndexedDB is missing) expose `enqueueRecord(body)`, `enqueueBlob(blobId, sealed)`, `flush()`, `start()`, `stop()`. `TripProvider` starts it. Records: temp record + `pending` +1 at once, then seal, append, flush; on start, persisted records are opened and shown as temp records on top of the cached log. Flush is strictly FIFO, one item at a time, under a per-trip Web Lock (`ifAvailable`; in-process mutex only where unsupported). Network failure (fetch error, 5xx, 408, 429) and 401/403/404 stop the flush, keep everything queued and visible, set `queueStalled`, and retry on `online`, focus, visibility and backoff (2, 5, 15, 30, 60 s). Any other 4xx drops the item, rolls back its temp record, sets `lastError`, and drops dependents (later patch/delete of a dropped put; records whose attachments reference a dropped blob). Sent records settle with the real seq and are persisted to the cache. A queue item sent by another tab is noticed (item gone) and its temp record removed; the real record arrives with the next sync. A POST whose response was lost is sent again; the duplicate put/patch lands before any later item of ours, so folding is unchanged (tested). TripShell shows "N changes waiting to sync" while `queueStalled`. When stalled on 401/403/404 (`queueAccessLost`) it says the link no longer has access and offers Discard (confirm; `queue.discard()` drops the items and rolls back). `lastError` is shown in a dismissible TripShell banner when the event sheet is closed. Sends abort after 30 s (records) / 120 s (blobs) and are retried; a refused blob sets `lastError` naming the file. A tab that does not get the Web Lock retries with backoff. `offline/db.ts`: the open waits at most 3 s (a tab holding an older version open blocks the upgrade; this tab closes its own handle on `blocking`), then the cache fails fast and the queue (`resilientQueueStorage`) continues in memory; the first load waits at most 1.5 s for the cache. Known limitation: a put or patch repeated after a lost response lands after anything another device wrote in between and can overwrite that device's edit to the same fields; and an edit is lost if the tab dies between showing it and storing it in the queue.
+- **`trip/attachments.ts`:** `type AttachmentContext = { tripId: string; accessToken: string; privateKey: Uint8Array }` (from `useTrip`: `tripId` and `keys`); `fetchAttachment(a: Attachment, ctx: AttachmentContext): Promise<Blob>` (fetch, open, wrap with `a.mime`); `uploadAttachment(file: File, ctx: UploadContext): Promise<Attachment>` with `UploadContext = AttachmentContext & { publicKey: Uint8Array }` (spread `{ tripId, ...keys }` from `useTrip`; ecw.4). It refuses files over `MAX_UPLOAD_BYTES` (25 MB minus the 61-byte seal overhead, matching the Worker's cap on the sealed blob) with `FileTooLargeError` before reading or sealing, then seals, writes the sealed bytes to the blob cache and sends a new UUID blob (queued via `ctx.queue` when given: `UploadContext` gains optional `queue?: TripQueue`, so offline it returns at once and the blob goes out before the record that references it; without it, a direct PUT) and returns `{ kind: 'file', filename, mime: file.type || 'application/octet-stream', size }`. UI: `event/UploadButtons.tsx` exports `AttachButton({ event })` (event sheet actions row; one patch with all uploaded files) and `AddReceiptButton()` (currently in the shell's `data-slot="actions"`; one `receipt` event per file, name = filename without extension, start = now in the browser zone).
 - **`filters/filter.ts`:** `type Filter`, `filterEvents(events, filter)`, `useFilter()`, `useFilteredEvents()`.
 - **`event/EventSheet.tsx`:** mounted once in the shell; open an event by setting query key `e`. Views never render their own detail UI.
 - **`timeline/scale.ts`:** `type TimeScale = { pxPerHour: number; originMs: number; toY(ms: number): number; toMs(y: number): number }`, `makeScale(originMs, pxPerHour)`, and `useTimeScale()` from a context provided by `Timeline`. Anything drawn beside the axis (weather) positions itself with this and nothing else. Also in scale.ts: `useVisibleRange(): { fromMs, toMs }` (the time range scrolled into view, rounded outward to whole hours so it changes rarely; side tracks use it to decide what to fetch), `DEFAULT_PX_PER_HOUR` (48). pxPerHour comes only from the zoom state in `timeline/zoom.ts`: `Timeline` calls `useZoom()` (live state, URL key `zoom` = log2(pxPerHour), written with replace 250 ms after the last change); `usePxPerHour()` reads the URL value for other components. Zoom keeps the time under the pointer / pinch midpoint / viewport centre (buttons) at the same screen y by setting `anchorMs`/`anchorY` before the scale change; the layout effect restores scrollTop. `<Timeline gutter={node}/>` renders `node` in a 64px gutter column left of the axis (`data-slot="timeline-gutter"`, same height as the axis, position:relative); the node is inside both providers. `useVisibleRange()` is never empty (`fromMs < toMs`), including on the first frame (it then spans 24 h from the scale origin until the first measurement); it is re-measured on scroll and on scroller resize (ResizeObserver). The scroller stays mounted when the filter matches nothing (empty state is an overlay) and the scroll position is kept by time: `anchorMsAt` / `scrollTopForAnchor` (model.ts) keep the time at the top of the viewport at the same screen y whenever the scale changes (filters, zoom). Lanes (gy4.8): the scroller is the ONE scroller (`overflow: auto` both ways, so zoom anchoring stays on it); gutter and axis are `position: sticky; left` and the lane header row (only in a lane mode, 32px, sticky under the day heading) is part of the canvas, so the time axis starts at `HEADING_PX + laneHead` (`topPx` in Timeline.tsx) and scroll anchoring re-anchors when that changes. Lane columns are `flex: 1 1 0; min-width: 140px`; the page never scrolls sideways. `layout.ts` also exports `LANE_MODES` and `withoutEmptyLanes(layout, mode)` (hides lanes with no blocks except in mode `none`); the `_other` lane is labelled 'Former participants'. Gutter children (the weather strip) position with `scale.toY` alone (the gutter is inside the canvas body); only scroller-space code adds `topPx`. In participant mode the `who` filter limits lanes to the selected participants. The mode control is a toolbar button group (`data-testid=lanes-<mode>`). `timeline/model.ts` holds the pure helpers (`timelineRange`, `validZone`, `localStartLabel`, type icon and hue). The scroller has a fixed height (`100dvh - 250px`, min 320px) and a sticky day heading; the canvas starts 28px below the scroller top.

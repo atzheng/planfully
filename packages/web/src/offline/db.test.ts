@@ -163,4 +163,22 @@ describe('offline db', () => {
     expect((await db.loadRecords('b')).length).toBe(2);
     expect(await db.getBlob('blob-b')).toEqual(new Uint8Array([1, 2, 3]));
   });
+
+  test('queue store lists a trip in send order and forgetTrip clears it', async () => {
+    const item = (tripId: string, kind: 'record' | 'blob') => ({
+      tripId,
+      kind,
+      payload: new Uint8Array([1]),
+      createdAt: 'x',
+    });
+    const a1 = await db.queueAdd(item('a', 'blob'));
+    await db.queueAdd(item('b', 'record'));
+    const a2 = await db.queueAdd(item('a', 'record'));
+    expect((await db.queueList('a')).map((i) => i.id)).toEqual([a1, a2]);
+    await db.queueRemove(a1);
+    expect(await db.queueList('a')).toHaveLength(1);
+    await db.forgetTrip('a');
+    expect(await db.queueList('a')).toHaveLength(0);
+    expect(await db.queueList('b')).toHaveLength(1);
+  });
 });

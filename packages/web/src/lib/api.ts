@@ -29,7 +29,13 @@ export class ApiError extends Error {
 async function request(
   path: string,
   token: string | undefined,
-  init: { method?: string; json?: unknown; body?: BodyInit; contentType?: string } = {},
+  init: {
+    method?: string;
+    json?: unknown;
+    body?: BodyInit;
+    contentType?: string;
+    signal?: AbortSignal;
+  } = {},
 ): Promise<Response> {
   const headers: Record<string, string> = {};
   if (token !== undefined) headers['Authorization'] = `Bearer ${token}`;
@@ -40,7 +46,12 @@ async function request(
   } else if (init.contentType) {
     headers['Content-Type'] = init.contentType;
   }
-  const res = await fetch(path, { method: init.method ?? 'GET', headers, body });
+  const res = await fetch(path, {
+    method: init.method ?? 'GET',
+    headers,
+    body,
+    signal: init.signal,
+  });
   if (!res.ok) {
     let message = res.statusText || `HTTP ${res.status}`;
     try {
@@ -94,9 +105,14 @@ export async function getRecords(
 export async function postRecord(
   a: TripAuth,
   body: { ciphertext: string; dedupe?: string },
+  signal?: AbortSignal,
 ): Promise<{ seq: number }> {
   return json(
-    await request(`${trip(a.tripId)}/records`, a.accessToken, { method: 'POST', json: body }),
+    await request(`${trip(a.tripId)}/records`, a.accessToken, {
+      method: 'POST',
+      json: body,
+      signal,
+    }),
   );
 }
 
@@ -104,11 +120,17 @@ export async function deleteRecord(a: TripAuth, seq: number): Promise<void> {
   await request(`${trip(a.tripId)}/records/${seq}`, a.accessToken, { method: 'DELETE' });
 }
 
-export async function putBlob(a: TripAuth, blobId: string, bytes: Uint8Array): Promise<void> {
+export async function putBlob(
+  a: TripAuth,
+  blobId: string,
+  bytes: Uint8Array,
+  signal?: AbortSignal,
+): Promise<void> {
   await request(`${trip(a.tripId)}/blobs/${encodeURIComponent(blobId)}`, a.accessToken, {
     method: 'PUT',
     body: bytes as BodyInit,
     contentType: 'application/octet-stream',
+    signal,
   });
 }
 

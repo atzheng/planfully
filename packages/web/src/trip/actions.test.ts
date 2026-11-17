@@ -9,6 +9,7 @@ import {
   type RecordBody,
 } from '@planfully/shared';
 import { ApiError } from '../lib/api';
+import { createTripQueue } from '../offline/queue';
 import { createTripActions } from './actions';
 import { createTripStore, type TripApi } from './store';
 
@@ -38,7 +39,8 @@ async function setup(postRecord: ReturnType<typeof vi.fn>) {
   const store = createTripStore({ tripId: 't1', fragment, api, intervalMs: 1e9 });
   store.start();
   await vi.waitFor(() => expect(store.getState().status).toBe('ready'));
-  const actions = createTripActions(store, { api: { postRecord } as never });
+  const queue = createTripQueue(store, { api: { postRecord, putBlob: vi.fn() } as never });
+  const actions = createTripActions(store, { queue });
   return { store, actions };
 }
 
@@ -114,10 +116,10 @@ describe('actions', () => {
     expect(store.getState().events).toEqual([]);
   });
 
-  test('a failed POST rolls back and sets lastError, which a later success does not clear', async () => {
+  test('a refused POST rolls back and sets lastError, which a later success does not clear', async () => {
     const post = vi
       .fn()
-      .mockRejectedValueOnce(new ApiError(500, 'boom'))
+      .mockRejectedValueOnce(new ApiError(400, 'bad'))
       .mockResolvedValueOnce({ seq: 3 });
     const { store, actions } = await setup(post);
     store.getState().append([{ seq: 1, dedupe: null, createdAt: 'x', body: emailPut('e1') }]);
@@ -126,24 +128,13 @@ describe('actions', () => {
     expect(s.events[0]?.name).toBe('TP123');
     expect(s.records.map((r) => r.seq)).toEqual([1]);
     expect(s.pending).toBe(0);
-    expect(s.lastError?.kind).toBe('network');
+    expect(s.lastError?.kind).toBe('unknown');
     await actions.patchEvent('e1', { name: 'Y' });
     s = store.getState();
-    expect(s.lastError?.kind).toBe('network');
+    expect(s.lastError?.kind).toBe('unknown');
     s.setWriteState({ lastError: null });
     expect(store.getState().lastError).toBeNull();
     expect(s.events[0]?.name).toBe('Y');
-  });
-
-  test('sendRecord can be replaced', async () => {
-    const post = vi.fn();
-    const { store, actions: _ } = await setup(post);
-    const sendRecord = vi.fn().mockResolvedValue({ seq: 9 });
-    const actions = createTripActions(store, { sendRecord });
-    await actions.deleteEvent('nope');
-    expect(sendRecord).toHaveBeenCalledOnce();
-    expect((sendRecord.mock.calls[0] as unknown[])[0]).toBeInstanceOf(Uint8Array);
-    expect(post).not.toHaveBeenCalled();
   });
 
   test('a patch to an email event survives a later email put in the same group', async () => {
@@ -179,8 +170,8 @@ describe('actions', () => {
     expect(store.getState().events[0]?.name).toBe('B');
   });
 
-  test('when a put fails, queued patches and deletes for it are dropped, not sent', async () => {
-    const post = vi.fn().mockRejectedValueOnce(new ApiError(500, 'boom'));
+  test('when a put is refused, queued patches and deletes for it are dropped, not sent', async () => {
+    const post = vi.fn().mockRejectedValueOnce(new ApiError(400, 'bad'));
     const { store, actions } = await setup(post);
     const put = actions.putEvent({ name: 'A', type: 'activity' });
     const id = store.getState().events[0]?.id as string;
