@@ -1,7 +1,8 @@
-import { Link, Route, Routes } from 'react-router';
+import { Link, Outlet, Route, Routes, useParams } from 'react-router';
 import { CreateTrip } from './create/CreateTrip';
 import { Settings } from './settings/Settings';
 import { TripShell } from './TripShell';
+import { TripProvider } from './trip/store';
 
 function Landing() {
   return (
@@ -22,13 +23,24 @@ function NotFound() {
   );
 }
 
+function TripLayout() {
+  const { tripId = '' } = useParams();
+  return (
+    <TripProvider tripId={tripId}>
+      <Outlet />
+    </TripProvider>
+  );
+}
+
 export function App() {
   return (
     <Routes>
       <Route path="/" element={<Landing />} />
       <Route path="/new" element={<CreateTrip />} />
-      <Route path="/t/:tripId" element={<TripShell />} />
-      <Route path="/t/:tripId/settings" element={<Settings />} />
+      <Route path="/t/:tripId" element={<TripLayout />}>
+        <Route index element={<TripShell />} />
+        <Route path="settings" element={<Settings />} />
+      </Route>
       <Route path="*" element={<NotFound />} />
     </Routes>
   );

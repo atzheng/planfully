@@ -4,6 +4,7 @@ import { FilterBar } from './filters/FilterBar';
 import { enumCodec, useQueryState } from './lib/queryState';
 import { MapView } from './map/MapView';
 import { Timeline } from './timeline/Timeline';
+import { useTrip } from './trip/store';
 import { Chip } from './ui/Chip';
 import styles from './TripShell.module.css';
 
@@ -12,20 +13,32 @@ const viewCodec = enumCodec(VIEWS);
 
 export function TripShell() {
   const { tripId } = useParams();
+  const trip = useTrip();
   const [view, setView] = useQueryState('view', viewCodec, 'timeline');
 
   return (
     <div className={styles.shell}>
       <header className={styles.header}>
         <h1 className={styles.title} data-slot="trip-name">
-          Trip {tripId}
+          {trip.meta?.name ?? `Trip ${tripId}`}
         </h1>
         <div className={styles.actions} data-slot="actions" />
       </header>
       <div className={styles.filters} data-slot="filters">
         <FilterBar />
       </div>
-      <main className={styles.main}>{view === 'map' ? <MapView /> : <Timeline />}</main>
+      <main className={styles.main}>
+        {trip.status === 'error' ? (
+          <p role="alert">{trip.error?.message}</p>
+        ) : trip.status === 'loading' ? (
+          <p role="status">Loading trip...</p>
+        ) : (
+          <>
+            {trip.error?.kind === 'network' && <p role="status">{trip.error.message}</p>}
+            {view === 'map' ? <MapView /> : <Timeline />}
+          </>
+        )}
+      </main>
       <nav className={styles.switch} aria-label="View">
         {VIEWS.map((v) => (
           <Chip key={v} selected={view === v} onClick={() => setView(v)}>

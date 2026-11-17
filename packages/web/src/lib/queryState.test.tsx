@@ -1,7 +1,7 @@
 import { act, cleanup, render, renderHook, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { MemoryRouter, useLocation } from 'react-router';
-import { afterEach, describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 import { App } from '../App';
 import {
   booleanCodec,
@@ -13,6 +13,15 @@ import {
   stringListCodec,
   useQueryState,
 } from './queryState';
+
+// The shell's view switching is under test here, not loading; stub the trip store as ready.
+vi.mock('../trip/store', () => ({
+  TripProvider: ({ children }: { children: ReactNode }) => children,
+  useTrip: (sel?: (s: unknown) => unknown) => {
+    const state = { status: 'ready', error: null, meta: null, events: [] };
+    return sel ? sel(state) : state;
+  },
+}));
 
 afterEach(cleanup);
 
@@ -115,7 +124,7 @@ describe('app shell', () => {
         <LocationProbe />
       </MemoryRouter>,
     );
-    expect(screen.getByText('Timeline', { selector: 'div' })).toBeTruthy();
+    expect(screen.getByText('0 events')).toBeTruthy();
     act(() => screen.getByRole('button', { name: 'Map' }).click());
     expect(screen.getByTestId('loc').textContent).toBe('/t/x?view=map#abc');
     expect(screen.getByText('MapView')).toBeTruthy();
