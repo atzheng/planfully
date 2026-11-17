@@ -29,9 +29,29 @@ function firstOf(r: OpenedRecord): number {
   return r.body.kind === 'put' && r.body.compaction ? r.body.compaction.firstSeq : r.seq;
 }
 
+/**
+ * A snapshot carries removed attachment ids as extra `aliases` entries
+ * `TOMBSTONE_PREFIX + <snapshot event id> + ':' + <attachment id>`. The compaction schema is
+ * strict, so a new field would make old clients drop the whole snapshot; extra aliases are valid
+ * for them. Old clients treat them as real aliases, so each must be unique to its group: sibling
+ * events from one email share an attachment id, and a shared alias would merge them.
+ */
+export const TOMBSTONE_PREFIX = 'attachment-removed:';
+
 function putIds(r: OpenedRecord): string[] {
   if (r.body.kind !== 'put') return [];
-  return [r.body.event.id, ...(r.body.compaction?.aliases ?? [])];
+  const aliases = (r.body.compaction?.aliases ?? []).filter((a) => !a.startsWith(TOMBSTONE_PREFIX));
+  return [r.body.event.id, ...aliases];
+}
+
+function snapshotTombstones(r: OpenedRecord): Set<string> {
+  const out = new Set<string>();
+  if (r.body.kind === 'put')
+    for (const a of r.body.compaction?.aliases ?? []) {
+      const own = TOMBSTONE_PREFIX + r.body.event.id + ':';
+      if (a.startsWith(own)) out.add(a.slice(own.length));
+    }
+  return out;
 }
 
 function sortedForReplay(records: OpenedRecord[]): OpenedRecord[] {
@@ -201,7 +221,7 @@ function replay(g: Group): Replayed {
       if (b.compaction) {
         // a compacted put is a snapshot: it replaces the state wholesale, whatever the pins say
         state = applyPut(undefined, b.event);
-        tombs = new Set();
+        tombs = snapshotTombstones(rec);
       } else {
         const attachments = b.event.attachments.filter((a) => !tombs.has(a.id));
         state = applyPut(state, { ...b.event, attachments });
@@ -248,7 +268,7 @@ export interface CompactionPlan {
  * behaves as if it still sat where the records it replaces were: patches written after
  * `throughSeq` (even ones that landed before the compacted put did) apply on top of it, and
  * patches to an alias still resolve. A group with several dedupe tags gets one identical
- * snapshot per tag. A group with attachment tombstones is skipped.
+ * snapshot per tag. Attachment tombstones ride in the snapshot's `aliases` (see TOMBSTONE_PREFIX).
  */
 export function planCompaction(records: OpenedRecord[], minRecords = 4): CompactionPlan[] {
   const plans: CompactionPlan[] = [];
@@ -263,14 +283,14 @@ export function planCompaction(records: OpenedRecord[], minRecords = 4): Compact
     )
       continue;
     const { event, tombstones } = replay(g);
-    // A snapshot cannot carry attachment tombstones (the record format has no room for them),
-    // so such groups stay as they are; see CONTRACTS.md section 3.
-    if (tombstones.size > 0) continue;
     const deleteSeqs = g.ops.map((r) => r.seq);
     const compaction = {
       firstSeq: g.firstSeq,
       throughSeq: Math.max(...deleteSeqs),
-      aliases: [...g.ids].filter((id) => id !== g.canonicalId).sort(),
+      aliases: [
+        ...[...g.ids].filter((id) => id !== g.canonicalId).sort(),
+        ...[...tombstones].sort().map((id) => `${TOMBSTONE_PREFIX}${g.canonicalId}:${id}`),
+      ],
     };
     // One record carries one dedupe tag, so a group with several tags gets one identical
     // snapshot per tag (later emails with any of those tags keep joining the group). The
