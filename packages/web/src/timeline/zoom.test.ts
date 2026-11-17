@@ -1,7 +1,10 @@
+// @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest';
 import { makeScale, MAX_PX_PER_HOUR, MIN_PX_PER_HOUR } from './scale';
 import {
+  attachGestureZoom,
   buttonPx,
+  gesturePx,
   clampPx,
   DEFAULT_ZOOM,
   fitPx,
@@ -72,5 +75,31 @@ describe('zoom math', () => {
   it('hides secondary text on short blocks', () => {
     expect(showSecondary(28)).toBe(false);
     expect(showSecondary(60)).toBe(true);
+  });
+});
+
+describe('safari gestures', () => {
+  it('scales relative to the start and prevents page zoom', () => {
+    const el = document.createElement('div');
+    const calls: [number, number][] = [];
+    const off = attachGestureZoom(
+      el,
+      () => 10,
+      (px, y) => calls.push([px, y]),
+    );
+    const fire = (type: string, extra: object) => {
+      const ev = new Event(type, { cancelable: true });
+      Object.assign(ev, extra);
+      el.dispatchEvent(ev);
+      return ev;
+    };
+    expect(fire('gesturestart', { scale: 1 }).defaultPrevented).toBe(true);
+    const ev = fire('gesturechange', { scale: 2, clientY: 120 });
+    expect(ev.defaultPrevented).toBe(true);
+    expect(calls).toEqual([[20, 120]]);
+    expect(gesturePx(10, 0)).toBe(10);
+    off();
+    fire('gesturechange', { scale: 3, clientY: 1 });
+    expect(calls).toHaveLength(1);
   });
 });

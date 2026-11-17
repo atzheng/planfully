@@ -202,7 +202,8 @@
   font: inherit;
   cursor: pointer;
 }
-.zoomBtn:disabled {
+.zoomBtn:disabled,
+.zoomBtn[aria-disabled='true'] {
   opacity: 0.5;
 }
 .zoomBtn:focus-visible {

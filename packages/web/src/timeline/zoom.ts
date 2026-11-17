@@ -44,6 +44,42 @@ export function pinchPx(startPx: number, startDist: number, dist: number): numbe
   return clampPx(startPx * (dist / startDist));
 }
 
+/** Safari trackpad pinch: `scale` is relative to the start of the gesture. */
+export const gesturePx = (startPx: number, scale: number): number =>
+  scale > 0 ? clampPx(startPx * scale) : clampPx(startPx);
+
+type GestureLike = Event & { scale: number; clientY: number };
+
+/**
+ * Safari fires gesturestart/change/end for trackpad pinch instead of ctrl+wheel. Prevents the page
+ * zoom and reports the new px/h with the pointer's y (client coordinates). Returns a cleanup.
+ */
+export function attachGestureZoom(
+  el: HTMLElement,
+  getPx: () => number,
+  onZoom: (px: number, clientY: number) => void,
+): () => void {
+  let start = 0;
+  const onStart = (ev: Event) => {
+    ev.preventDefault();
+    start = getPx();
+  };
+  const onChange = (ev: Event) => {
+    ev.preventDefault();
+    const g = ev as GestureLike;
+    onZoom(gesturePx(start || getPx(), g.scale), g.clientY);
+  };
+  const onEnd = (ev: Event) => ev.preventDefault();
+  el.addEventListener('gesturestart', onStart);
+  el.addEventListener('gesturechange', onChange);
+  el.addEventListener('gestureend', onEnd);
+  return () => {
+    el.removeEventListener('gesturestart', onStart);
+    el.removeEventListener('gesturechange', onChange);
+    el.removeEventListener('gestureend', onEnd);
+  };
+}
+
 /** pxPerHour that fits [fromMs, toMs] into `viewportPx`. */
 export function fitPx(fromMs: number, toMs: number, viewportPx: number): number {
   const hours = (toMs - fromMs) / HOUR_MS;
@@ -79,12 +115,17 @@ export function useZoom(): { pxPerHour: number; setPx(px: number): void } {
   const [px, setPxState] = useState(() => zoomToPx(urlZ));
   const written = useRef(urlZ);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingPx = useRef<number | null>(null);
   const setUrl = useRef(setUrlZ);
   setUrl.current = setUrlZ;
 
   // External URL change (back/forward, link) that our own write did not cause.
   useEffect(() => {
     if (urlZ !== written.current) {
+      // Cancel a pending write so it cannot overwrite the external change.
+      if (timer.current) clearTimeout(timer.current);
+      timer.current = null;
+      pendingPx.current = null;
       written.current = urlZ;
       setPxState(zoomToPx(urlZ));
     }
@@ -94,8 +135,10 @@ export function useZoom(): { pxPerHour: number; setPx(px: number): void } {
     const v = clampPx(next);
     setPxState(v);
     if (timer.current) clearTimeout(timer.current);
+    pendingPx.current = v;
     timer.current = setTimeout(() => {
       timer.current = null;
+      pendingPx.current = null;
       written.current = pxToZoom(v);
       setUrl.current(written.current);
     }, URL_DEBOUNCE_MS);
@@ -104,6 +147,13 @@ export function useZoom(): { pxPerHour: number; setPx(px: number): void } {
   useEffect(
     () => () => {
       if (timer.current) clearTimeout(timer.current);
+      timer.current = null;
+      // Flush on unmount so a quick navigation keeps the zoom.
+      if (pendingPx.current !== null) {
+        written.current = pxToZoom(pendingPx.current);
+        setUrl.current(written.current);
+        pendingPx.current = null;
+      }
     },
     [],
   );

@@ -26,6 +26,7 @@ import {
 } from './scale';
 import type { Tick, TimeScale, VisibleRange } from './scale';
 import {
+  attachGestureZoom,
   buttonPx,
   fitPx,
   pinchPx,
@@ -285,12 +286,18 @@ export function Timeline({ gutter }: { gutter?: ReactNode } = {}) {
     const onEnd = (ev: TouchEvent) => {
       if (ev.touches.length < 2) pinch = null;
     };
+    const detachGesture = attachGestureZoom(
+      el,
+      () => pxRef.current,
+      (px, clientY) => zoomTo(px, yOf(clientY)),
+    );
     el.addEventListener('wheel', onWheel, { passive: false });
     el.addEventListener('touchstart', onStart, { passive: true });
     el.addEventListener('touchmove', onMove, { passive: false });
     el.addEventListener('touchend', onEnd);
     el.addEventListener('touchcancel', onEnd);
     return () => {
+      detachGesture();
       el.removeEventListener('wheel', onWheel);
       el.removeEventListener('touchstart', onStart);
       el.removeEventListener('touchmove', onMove);
@@ -312,8 +319,8 @@ export function Timeline({ gutter }: { gutter?: ReactNode } = {}) {
           <button
             type="button"
             className={styles.zoomBtn}
-            onClick={() => zoomButton(-1)}
-            disabled={pxPerHour <= MIN_PX_PER_HOUR}
+            onClick={() => pxPerHour > MIN_PX_PER_HOUR && zoomButton(-1)}
+            aria-disabled={pxPerHour <= MIN_PX_PER_HOUR}
             aria-label="Zoom out"
           >
             −
@@ -321,8 +328,8 @@ export function Timeline({ gutter }: { gutter?: ReactNode } = {}) {
           <button
             type="button"
             className={styles.zoomBtn}
-            onClick={() => zoomButton(1)}
-            disabled={pxPerHour >= MAX_PX_PER_HOUR}
+            onClick={() => pxPerHour < MAX_PX_PER_HOUR && zoomButton(1)}
+            aria-disabled={pxPerHour >= MAX_PX_PER_HOUR}
             aria-label="Zoom in"
           >
             +
