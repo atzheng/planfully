@@ -160,7 +160,7 @@ JSON unless noted. Errors: `{ "error": string }` with a 4xx/5xx status. Trip rou
 | `POST /api/trips` (`Authorization: Bearer <ADMIN_SECRET>`) | `{ name, publicKey, accessTokenHash, roster, allowedSenders }` | 201 `{ id, address, domain }` |
 | `GET /api/trips/:id` | | `TripMeta` |
 | `PATCH /api/trips/:id` | `{ name?, roster?, allowedSenders? }` | `TripMeta` |
-| `GET /api/trips/:id/records?since=N` | | `{ records: StoredRecord[], latestSeq: number }` (seq > N, ascending) |
+| `GET /api/trips/:id/records?since=N` | | `{ records: StoredRecord[], latestSeq: number, more: boolean }` (seq > N, ascending; paged, see below) |
 | `POST /api/trips/:id/records` | `{ ciphertext, dedupe? }` | 201 `{ seq }` |
 | `DELETE /api/trips/:id/records/:seq` | | 204 |
 | `PUT /api/trips/:id/blobs/:blobId` | raw bytes, `application/octet-stream` | 201 |
@@ -168,6 +168,8 @@ JSON unless noted. Errors: `{ "error": string }` with a 4xx/5xx status. Trip rou
 | `GET /api/trips/:id/geocode?q=` | | `{ results: Location[] }` |
 
 `seq` comes from a per-trip counter (`trips.next_seq`, incremented in the same D1 batch as the insert). It strictly increases and is never reused, even after deletes. Blob ids are UUIDs chosen by the writer. Limits: record ciphertext 256 KB, blob 25 MB.
+
+Record paging: a GET returns at most 500 records. If more remain, `more` is true and `latestSeq` is the last seq in the page; otherwise `more` is false and `latestSeq` is the trip counter (`next_seq`), which can exceed the last returned seq when the tail was deleted. Clients store `latestSeq` as their cursor and, while `more` is true, immediately fetch again with `since=latestSeq`.
 
 ## 6. Worker internals
 

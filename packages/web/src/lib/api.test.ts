@@ -62,14 +62,15 @@ test('patchTrip', async () => {
   expect(JSON.parse(init.body as string)).toEqual({ name: 'New' });
 });
 
-test('getRecords passes since', async () => {
-  reply({ records: [], latestSeq: 0 });
-  await api.getRecords(auth, 7);
+test('getRecords passes since and returns more', async () => {
+  reply({ records: [], latestSeq: 0, more: true });
+  const r = await api.getRecords(auth, 7);
+  expect(r.more).toBe(true);
   expect(call().url).toBe('/api/trips/abc/records?since=7');
 });
 
 test('getRecords defaults since to 0', async () => {
-  reply({ records: [], latestSeq: 0 });
+  reply({ records: [], latestSeq: 0, more: false });
   await api.getRecords(auth);
   expect(call().url).toBe('/api/trips/abc/records?since=0');
 });
