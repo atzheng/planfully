@@ -121,6 +121,21 @@ test('withoutEmptyLanes hides participant lanes with no events but keeps the sin
   expect(withoutEmptyLanes(none, 'none').lanes).toHaveLength(1);
 });
 
+test('empty roster: everyone events land in the single fallback lane', () => {
+  const x = ev('2026-06-01T09:00', null, { participants: [] });
+  const r = layoutEvents([x], scale, { mode: 'participant', roster: [] });
+  expect(r.lanes).toEqual([{ key: '_other', label: 'Everyone' }]);
+  expect(r.blocks.map((b) => b.eventId)).toEqual([x.id]);
+});
+
+test('only: participant mode shows just the selected participants lanes', () => {
+  const all = ev('2026-06-01T09:00', null, { participants: [] });
+  const both = ev('2026-06-01T10:00', null, { participants: ['alice', 'bob'] });
+  const r = layoutEvents([all, both], scale, { mode: 'participant', roster, only: ['bob'] });
+  expect(r.lanes.map((l) => l.key)).toEqual(['bob']);
+  expect(r.blocks.map((b) => b.laneKey)).toEqual(['bob', 'bob']);
+});
+
 test('unscheduled events are separated', () => {
   const u = ev(null, null);
   const s = ev('2026-06-01T09:00', null);

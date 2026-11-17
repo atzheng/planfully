@@ -2,7 +2,7 @@ import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useStat
 import type { ReactNode } from 'react';
 import type { Event, EventType, RosterMember } from '@planfully/shared';
 import { useFilteredEvents } from '../filters/filter';
-import { enumCodec, stringCodec, useQueryState } from '../lib/queryState';
+import { enumCodec, stringCodec, stringListCodec, useQueryState } from '../lib/queryState';
 import { useTrip } from '../trip/store';
 import { initialScrollMs, LANE_MODES, layoutEvents, withoutEmptyLanes } from './layout';
 import type { Layout, LaneMode } from './layout';
@@ -50,6 +50,7 @@ const laneModeCodec = enumCodec(LANE_MODES);
 /** Context kept above the target when scrolling to a time. */
 const SCROLL_LEAD_PX = 48;
 const NO_ROSTER: readonly RosterMember[] = [];
+const NO_WHO: string[] = [];
 const NO_BLOCKS: Layout['blocks'] = [];
 const browserZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 
@@ -114,15 +115,7 @@ const Blocks = memo(function Blocks({
   );
 });
 
-const Ticks = memo(function Ticks({
-  list,
-  scale,
-  labels,
-}: {
-  list: Tick[];
-  scale: TimeScale;
-  labels: boolean;
-}) {
+const Ticks = memo(function Ticks({ list, scale }: { list: Tick[]; scale: TimeScale }) {
   return (
     <>
       {list.map((t) => (
@@ -130,9 +123,23 @@ const Ticks = memo(function Ticks({
           key={t.ms}
           className={`${styles.tick} ${styles[t.kind]}`}
           style={{ top: scale.toY(t.ms) }}
+        />
+      ))}
+    </>
+  );
+});
+
+const TickLabels = memo(function TickLabels({ list, scale }: { list: Tick[]; scale: TimeScale }) {
+  return (
+    <>
+      {list.map((t) => (
+        <span
+          key={t.ms}
+          className={`${styles.tickLabel} ${styles[t.kind]}`}
+          style={{ top: scale.toY(t.ms) + 2 }}
         >
-          {labels && <span className={styles.tickLabel}>{t.label}</span>}
-        </div>
+          {t.label}
+        </span>
       ))}
     </>
   );
@@ -144,6 +151,7 @@ export function Timeline({ gutter }: { gutter?: ReactNode } = {}) {
   const roster = useTrip((s) => s.meta?.roster) ?? NO_ROSTER;
   const [tzRaw] = useQueryState('tz', stringCodec, '');
   const [, setOpenId] = useQueryState('e', stringCodec, '');
+  const [who] = useQueryState('who', stringListCodec, NO_WHO);
   const [laneMode, setLaneMode] = useQueryState('lanes', laneModeCodec, 'none');
   const { pxPerHour, setPx } = useZoom();
 
@@ -167,8 +175,12 @@ export function Timeline({ gutter }: { gutter?: ReactNode } = {}) {
   );
   if (range) lastScale.current = scale;
   const layout = useMemo(
-    () => withoutEmptyLanes(layoutEvents(events, scale, { mode: laneMode, roster }), laneMode),
-    [events, scale, roster, laneMode],
+    () =>
+      withoutEmptyLanes(
+        layoutEvents(events, scale, { mode: laneMode, roster, only: who }),
+        laneMode,
+      ),
+    [events, scale, roster, laneMode, who],
   );
   const blocksByLane = useMemo(() => {
     const m = new Map<string, Layout['blocks']>();
@@ -462,10 +474,10 @@ export function Timeline({ gutter }: { gutter?: ReactNode } = {}) {
                         </div>
                       )}
                       <div className={styles.tickLayer} aria-hidden="true">
-                        <Ticks list={tickList} scale={scale} labels={false} />
+                        <Ticks list={tickList} scale={scale} />
                       </div>
                       <div className={styles.axis} aria-hidden="true">
-                        <Ticks list={tickList} scale={scale} labels />
+                        <TickLabels list={tickList} scale={scale} />
                       </div>
                       <div className={styles.lanes}>
                         {layout.lanes.map((l) => (

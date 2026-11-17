@@ -4,7 +4,12 @@ import type { TimeScale } from './scale';
 
 export const LANE_MODES = ['none', 'type', 'participant'] as const;
 export type LaneMode = (typeof LANE_MODES)[number];
-export type LaneSpec = { mode: LaneMode; roster: readonly RosterMember[] };
+export type LaneSpec = {
+  mode: LaneMode;
+  roster: readonly RosterMember[];
+  /** Participant mode: show only these participants' lanes (the `who` filter); empty/absent = all. */
+  only?: readonly string[];
+};
 export type Lane = { key: string; label: string };
 export type Block = {
   eventId: string;
@@ -31,9 +36,13 @@ function laneKeys(e: Event, spec: LaneSpec, rosterIds: Set<string>): string[] {
     case 'type':
       return [e.type];
     case 'participant': {
-      if (e.participants.length === 0) return spec.roster.map((m) => m.id);
-      const keys = e.participants.map((p) => (rosterIds.has(p) ? p : OTHER_LANE_KEY));
-      return [...new Set(keys)];
+      const all =
+        e.participants.length === 0
+          ? spec.roster.length === 0
+            ? [OTHER_LANE_KEY]
+            : spec.roster.map((m) => m.id)
+          : [...new Set(e.participants.map((p) => (rosterIds.has(p) ? p : OTHER_LANE_KEY)))];
+      return spec.only?.length ? all.filter((k) => spec.only?.includes(k)) : all;
     }
   }
 }
@@ -74,9 +83,18 @@ export function layoutEvents(events: Event[], scale: TimeScale, spec: LaneSpec):
   } else if (spec.mode === 'type') {
     lanes = EVENT_TYPES.filter((t) => present.has(t)).map((t) => ({ key: t, label: t }));
   } else {
-    lanes = spec.roster.map((m) => ({ key: m.id, label: m.name }));
-    if (present.has(OTHER_LANE_KEY) || lanes.length === 0) {
-      lanes.push({ key: OTHER_LANE_KEY, label: 'Former participants' });
+    const only = spec.only?.length ? new Set(spec.only) : null;
+    lanes = spec.roster
+      .filter((m) => !only || only.has(m.id))
+      .map((m) => ({ key: m.id, label: m.name }));
+    if (
+      (!only && (present.has(OTHER_LANE_KEY) || lanes.length === 0)) ||
+      (only?.has(OTHER_LANE_KEY) && present.has(OTHER_LANE_KEY))
+    ) {
+      lanes.push({
+        key: OTHER_LANE_KEY,
+        label: spec.roster.length === 0 ? 'Everyone' : 'Former participants',
+      });
     }
   }
 
