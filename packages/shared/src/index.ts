@@ -3,3 +3,4 @@ export * from './schema';
 export * from './records';
 export * from './time';
 export * from './crypto';
+export * from './fold';

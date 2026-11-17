@@ -1,0 +1,246 @@
+import type { Attachment, Event } from './schema';
+import type { OpenedRecord, RecordBody } from './records';
+
+/** One logical event: the records that belong to it, in replay order. */
+interface Group {
+  /** puts, plus patches/deletes that resolve to this group, in replay order */
+  ops: OpenedRecord[];
+  /** id of the earliest put (a compacted put counts as its `firstSeq`) */
+  canonicalId: string;
+  /** effective seq of the earliest put */
+  firstSeq: number;
+  /** every put id and recorded alias in the group */
+  ids: Set<string>;
+  tags: Set<string>;
+}
+
+function must<T>(x: T | undefined): T {
+  if (x === undefined) throw new Error('fold: internal invariant violated');
+  return x;
+}
+
+/** Position of a record in replay order: a compacted put sits right after its `throughSeq`. */
+function orderOf(r: OpenedRecord): number {
+  return r.body.kind === 'put' && r.body.compaction ? r.body.compaction.throughSeq + 0.5 : r.seq;
+}
+
+/** Seq a put counts as for canonical-id choice and the orphan rule. */
+function firstOf(r: OpenedRecord): number {
+  return r.body.kind === 'put' && r.body.compaction ? r.body.compaction.firstSeq : r.seq;
+}
+
+function putIds(r: OpenedRecord): string[] {
+  if (r.body.kind !== 'put') return [];
+  return [r.body.event.id, ...(r.body.compaction?.aliases ?? [])];
+}
+
+function sortedForReplay(records: OpenedRecord[]): OpenedRecord[] {
+  // Array.prototype.sort is stable, so full ties keep input order.
+  return [...records].sort((a, b) => orderOf(a) - orderOf(b) || a.seq - b.seq);
+}
+
+/**
+ * Splits the log into groups. Puts are joined by a shared non-null dedupe tag or a shared
+ * event id (union-find, so chains such as A~B by tag and B~C by id collapse to one group); a
+ * compacted put also owns its recorded aliases. A patch/delete joins the group that owns its
+ * target id (canonical or alias), but only if it comes after that group's earliest put;
+ * otherwise the target was unknown when it was written and it is ignored.
+ */
+function buildGroups(sorted: OpenedRecord[]): Group[] {
+  const parent: number[] = sorted.map((_, i) => i);
+  const find = (x: number): number => {
+    let r = x;
+    while (parent[r] !== r) r = must(parent[r]);
+    let c = x;
+    while (parent[c] !== r) {
+      const n = must(parent[c]);
+      parent[c] = r;
+      c = n;
+    }
+    return r;
+  };
+  const union = (a: number, b: number): void => {
+    const ra = find(a);
+    const rb = find(b);
+    if (ra !== rb) parent[rb] = ra;
+  };
+
+  const byKey = new Map<string, number>();
+  const join = (key: string, i: number): void => {
+    const seen = byKey.get(key);
+    if (seen === undefined) byKey.set(key, i);
+    else union(i, seen);
+  };
+  sorted.forEach((rec, i) => {
+    if (rec.body.kind !== 'put') return;
+    for (const id of putIds(rec)) join('i:' + id, i);
+    if (rec.dedupe !== null) join('d:' + rec.dedupe, i);
+  });
+
+  const groups = new Map<number, Group>();
+  const groupOfId = new Map<string, Group>();
+  // the earliest put of each group, by (firstOf, seq)
+  const earliest = new Map<Group, OpenedRecord>();
+  sorted.forEach((rec, i) => {
+    if (rec.body.kind !== 'put') return;
+    const root = find(i);
+    let g = groups.get(root);
+    if (!g) {
+      g = { ops: [], canonicalId: '', firstSeq: Infinity, ids: new Set(), tags: new Set() };
+      groups.set(root, g);
+    }
+    const e = earliest.get(g);
+    if (!e || firstOf(rec) < firstOf(e) || (firstOf(rec) === firstOf(e) && rec.seq < e.seq)) {
+      earliest.set(g, rec);
+      g.firstSeq = firstOf(rec);
+      g.canonicalId = rec.body.event.id;
+    }
+    for (const id of putIds(rec)) {
+      g.ids.add(id);
+      groupOfId.set(id, g);
+    }
+    if (rec.dedupe !== null) g.tags.add(rec.dedupe);
+  });
+
+  sorted.forEach((rec, i) => {
+    let g: Group | undefined;
+    if (rec.body.kind === 'put') g = groups.get(find(i));
+    else {
+      g = groupOfId.get(rec.body.target);
+      if (g && rec.seq <= g.firstSeq) g = undefined;
+    }
+    g?.ops.push(rec);
+  });
+  return [...groups.values()];
+}
+
+const PUT_SKIP = new Set(['id', 'pinned', 'attachments', 'createdAt']);
+
+function unionAttachments(a: Attachment[], b: Attachment[]): Attachment[] {
+  const seen = new Set(a.map((x) => x.id));
+  const out = [...a];
+  for (const x of b) {
+    if (!seen.has(x.id)) {
+      seen.add(x.id);
+      out.push(x);
+    }
+  }
+  return out;
+}
+
+function mergePinned(a: string[] | undefined, b: Iterable<string>): string[] | undefined {
+  const s = new Set(a ?? []);
+  for (const x of b) s.add(x);
+  return s.size === 0 ? undefined : [...s].sort();
+}
+
+function applyPut(state: Event | undefined, ev: Event): Event {
+  if (!state) {
+    const first: Event = { ...ev, attachments: unionAttachments([], ev.attachments) };
+    const pinned = mergePinned(undefined, ev.pinned ?? []);
+    if (pinned) first.pinned = pinned;
+    else delete first.pinned;
+    return first;
+  }
+  const next: Record<string, unknown> = { ...state };
+  const pinned = new Set(state.pinned ?? []);
+  const fromEmail = ev.source === 'email';
+  for (const [key, value] of Object.entries(ev)) {
+    if (value === undefined || PUT_SKIP.has(key)) continue;
+    if (fromEmail && pinned.has(key)) continue;
+    // cancelled sticks across email puts
+    if (fromEmail && key === 'status' && state.status === 'cancelled') continue;
+    next[key] = value;
+  }
+  const out = next as unknown as Event;
+  // Attachments always union, even when pinned: they are additive provenance (a later email
+  // adds its source-email attachment). A removal made by a patch can therefore be undone by a
+  // later email that re-lists the attachment.
+  out.attachments = unionAttachments(state.attachments, ev.attachments);
+  // createdAt stays the earliest put's
+  const p = mergePinned(state.pinned, ev.pinned ?? []);
+  if (p) out.pinned = p;
+  return out;
+}
+
+function applyPatch(state: Event, fields: Record<string, unknown>): Event {
+  const next: Record<string, unknown> = { ...state };
+  const names: string[] = [];
+  for (const [key, value] of Object.entries(fields)) {
+    if (value === undefined || key === 'id' || key === 'pinned') continue;
+    next[key] = value; // attachments in a patch replace the list
+    names.push(key);
+  }
+  const out = next as unknown as Event;
+  const extra = Array.isArray(fields.pinned) ? (fields.pinned as string[]) : [];
+  const p = mergePinned(state.pinned, [...names, ...extra]);
+  if (p) out.pinned = p;
+  return out;
+}
+
+function replay(g: Group): Event {
+  let state: Event | undefined;
+  for (const rec of g.ops) {
+    const b = rec.body;
+    // a compacted put is a snapshot: it replaces the state wholesale, whatever the pins say
+    if (b.kind === 'put') state = applyPut(b.compaction ? undefined : state, b.event);
+    else if (!state)
+      continue; // cannot happen: ops start with the group's earliest put
+    else if (b.kind === 'patch') state = applyPatch(state, b.fields as Record<string, unknown>);
+    else state = applyPatch(state, { deleted: true });
+  }
+  return { ...must(state), id: g.canonicalId };
+}
+
+/**
+ * Folds a decrypted log into the current events. Output is sorted by (createdAt, id) so it is
+ * stable across compaction; callers that care about display order sort by time themselves.
+ */
+export function fold(records: OpenedRecord[]): Event[] {
+  const out: Event[] = [];
+  for (const g of buildGroups(sortedForReplay(records))) {
+    const ev = replay(g);
+    if (ev.deleted !== true) out.push(ev);
+  }
+  return out.sort((a, b) =>
+    a.createdAt === b.createdAt ? (a.id < b.id ? -1 : 1) : a.createdAt < b.createdAt ? -1 : 1,
+  );
+}
+
+export interface CompactionPlan {
+  write: { body: RecordBody; dedupe: string | null };
+  deleteSeqs: number[];
+}
+
+/**
+ * For each group with at least `minRecords` records, one put holding the folded event (with
+ * `pinned` and `deleted`) plus a `compaction` marker, and the seqs it replaces. The marker
+ * carries the group's first seq and aliases and the last replaced seq, so the compacted put
+ * behaves as if it still sat where the records it replaces were: patches written after
+ * `throughSeq` (even ones that landed before the compacted put did) apply on top of it, and
+ * patches to an alias still resolve. Groups joined by more than one distinct dedupe tag are
+ * skipped: a single record can carry only one tag.
+ */
+export function planCompaction(records: OpenedRecord[], minRecords = 4): CompactionPlan[] {
+  const plans: CompactionPlan[] = [];
+  for (const g of buildGroups(sortedForReplay(records))) {
+    if (g.ops.length < minRecords || g.tags.size > 1) continue;
+    const deleteSeqs = g.ops.map((r) => r.seq);
+    plans.push({
+      write: {
+        body: {
+          kind: 'put',
+          event: replay(g),
+          compaction: {
+            firstSeq: g.firstSeq,
+            throughSeq: Math.max(...deleteSeqs),
+            aliases: [...g.ids].filter((id) => id !== g.canonicalId).sort(),
+          },
+        },
+        dedupe: g.tags.size === 1 ? must([...g.tags][0]) : null,
+      },
+      deleteSeqs,
+    });
+  }
+  return plans;
+}
