@@ -49,8 +49,8 @@ test('parses a response, restricts to the segment and drops null hours', async (
   });
   expect(f).toHaveBeenCalledTimes(1);
   const url = new URL((f.mock.calls[0] as unknown as [string])[0]);
-  expect(url.searchParams.get('start_date')).toBe('2026-06-11');
-  expect(url.searchParams.get('end_date')).toBe('2026-06-11');
+  expect(url.searchParams.get('start_date')).toBe('2026-06-10');
+  expect(url.searchParams.get('end_date')).toBe('2026-06-25');
   expect(out.timeMs).toEqual([
     Date.parse('2026-06-11T00:00:00Z'),
     Date.parse('2026-06-11T01:00:00Z'),
@@ -98,6 +98,18 @@ test('HTTP errors reject', async () => {
       fetchFn: f as unknown as typeof fetch,
     }),
   ).rejects.toThrow();
+});
+
+test('different segments of one place share one request', async () => {
+  const f = mockFetch();
+  const opts = { nowMs: NOW, fetchFn: f as unknown as typeof fetch };
+  await fetchHourly(seg('2026-06-11T00:00', '2026-06-11T02:00'), opts);
+  const out = await fetchHourly(seg('2026-06-11T02:00', '2026-06-20T00:00'), opts);
+  expect(f).toHaveBeenCalledTimes(1);
+  expect(out.coverage).toEqual({
+    fromMs: Date.parse('2026-06-11T02:00:00Z'),
+    toMs: Date.parse('2026-06-20T00:00:00Z'),
+  });
 });
 
 test('units helpers', () => {
