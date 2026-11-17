@@ -1,7 +1,14 @@
 import { env, exports } from 'cloudflare:workers';
 import { beforeAll, describe, expect, test } from 'vitest';
 import { app } from '../src/api/app';
-import { getTripByAddress, getTripById, slugify } from '../src/db/trips';
+import {
+  createTrip,
+  getTripByAddress,
+  getTripById,
+  isAddressCollision,
+  slugify,
+  updateTrip,
+} from '../src/db/trips';
 import { applyMigrations } from './helpers';
 import vectors from '../../shared/test/vectors.json';
 
@@ -210,5 +217,147 @@ describe('db/trips', () => {
   test('slugify', () => {
     expect(slugify('Café Ünïcode trip, very long name here')).toBe('cafe-unicode-trip-ve');
     expect(slugify('!!!')).toBe('trip');
+  });
+});
+
+describe('createTrip retry', () => {
+  const input = {
+    name: 'Retry',
+    publicKey,
+    accessTokenHash: vectors.accessTokenHash,
+    roster: [],
+    allowedSenders: [],
+  };
+  /** Env whose DB.prepare(...).run() fails with the given errors in order, then succeeds. */
+  const flaky = (errors: Error[]) => {
+    let calls = 0;
+    const fake = {
+      ...env,
+      DB: {
+        prepare: () => ({
+          bind: () => ({
+            run: async () => {
+              const e = errors[calls++];
+              if (e) throw e;
+              return {};
+            },
+          }),
+        }),
+      },
+    } as unknown as typeof env;
+    return { fake, calls: () => calls };
+  };
+
+  test('real D1 UNIQUE violation on address is recognised', async () => {
+    const t = await create();
+    const row = await getTripById(env, t.id);
+    const dup = env.DB.prepare(
+      `INSERT INTO trips (id, address, name, public_key, access_token_hash, dedupe_key, allowed_senders, roster, next_seq, created_at)
+       VALUES ('dup-id', ?, 'x', 'pk', 'h', 'd', '[]', '[]', 0, 'now')`,
+    ).bind(row?.address);
+    const err = await dup.run().then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(err).toBeInstanceOf(Error);
+    expect(isAddressCollision(err)).toBe(true);
+    // a collision on id is not an address collision
+    const idDup = await env.DB.prepare(
+      `INSERT INTO trips (id, address, name, public_key, access_token_hash, dedupe_key, allowed_senders, roster, next_seq, created_at)
+       VALUES (?, 'other@x.com', 'x', 'pk', 'h', 'd', '[]', '[]', 0, 'now')`,
+    )
+      .bind(t.id)
+      .run()
+      .then(
+        () => null,
+        (e: unknown) => e,
+      );
+    expect(isAddressCollision(idDup)).toBe(false);
+  });
+
+  test('retries on address collision', async () => {
+    const { fake, calls } = flaky([
+      new Error('D1_ERROR: UNIQUE constraint failed: trips.address: SQLITE_CONSTRAINT'),
+    ]);
+    await createTrip(fake, input);
+    expect(calls()).toBe(2);
+  });
+
+  test('other DB errors propagate immediately', async () => {
+    const { fake, calls } = flaky([new Error('D1_ERROR: database is locked')]);
+    await expect(createTrip(fake, input)).rejects.toThrow('database is locked');
+    expect(calls()).toBe(1);
+  });
+});
+
+describe('request body size cap', () => {
+  const big = 'x'.repeat(70 * 1024);
+
+  test('POST: 413 when Content-Length is over 64 KB', async () => {
+    const res = await call('/api/trips', {
+      method: 'POST',
+      headers: ADMIN,
+      json: body({ name: big }),
+    });
+    expect(res.status).toBe(413);
+  });
+
+  test('PATCH: 413 when Content-Length is over 64 KB', async () => {
+    const t = await create();
+    const res = await call(`/api/trips/${t.id}`, {
+      method: 'PATCH',
+      headers: auth,
+      json: { name: big },
+    });
+    expect(res.status).toBe(413);
+  });
+
+  test('413 without Content-Length (streamed body)', async () => {
+    const t = await create();
+    const enc = new TextEncoder().encode(JSON.stringify({ name: big }));
+    const stream = new ReadableStream<Uint8Array>({
+      start(c) {
+        for (let i = 0; i < enc.length; i += 8192) c.enqueue(enc.slice(i, i + 8192));
+        c.close();
+      },
+    });
+    const req = new Request(`${BASE}/api/trips/${t.id}`, {
+      method: 'PATCH',
+      headers: { ...auth, 'content-type': 'application/json' },
+      body: stream,
+      // @ts-expect-error duplex is required for streamed bodies
+      duplex: 'half',
+    });
+    const res = await app.fetch(req, env);
+    expect(res.status).toBe(413);
+  });
+
+  test('a normal body still passes', async () => {
+    const t = await create();
+    const res = await call(`/api/trips/${t.id}`, {
+      method: 'PATCH',
+      headers: auth,
+      json: { name: 'ok' },
+    });
+    expect(res.status).toBe(200);
+  });
+});
+
+describe('updateTrip', () => {
+  test('writes only the provided columns', async () => {
+    const t = await create();
+    const roster = [{ id: 'z', name: 'Zed', aliases: [] }];
+    // Simulate a concurrent writer changing the name between a stale read and our write.
+    await env.DB.prepare('UPDATE trips SET name = ? WHERE id = ?').bind('Concurrent', t.id).run();
+    const row = await updateTrip(env, t.id, { roster });
+    expect(row?.name).toBe('Concurrent');
+    expect(row?.roster).toEqual(roster);
+    expect(row?.allowedSenders).toEqual(['ann@example.com']);
+  });
+
+  test('null for unknown trip; empty patch returns the row', async () => {
+    expect(await updateTrip(env, 'nope', { name: 'x' })).toBeNull();
+    const t = await create();
+    expect((await updateTrip(env, t.id, {}))?.id).toBe(t.id);
   });
 });

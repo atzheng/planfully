@@ -38,10 +38,41 @@ const PatchBody = z.strictObject({
   allowedSenders: allowedSenders.optional(),
 });
 
+const MAX_BODY_BYTES = 64 * 1024;
+
+/** Reads the body as text, rejecting with 413 once it exceeds MAX_BODY_BYTES. */
+async function readLimitedText(req: Request): Promise<string> {
+  const tooLarge = () => new HTTPException(413, { message: 'body too large' });
+  const declared = req.headers.get('Content-Length');
+  if (declared !== null && Number(declared) > MAX_BODY_BYTES) throw tooLarge();
+  if (!req.body) return '';
+  const reader = req.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > MAX_BODY_BYTES) {
+      await reader.cancel();
+      throw tooLarge();
+    }
+    chunks.push(value);
+  }
+  const all = new Uint8Array(total);
+  let off = 0;
+  for (const ch of chunks) {
+    all.set(ch, off);
+    off += ch.byteLength;
+  }
+  return new TextDecoder().decode(all);
+}
+
 async function parseBody<T>(req: Request, schema: z.ZodType<T>): Promise<T> {
+  const text = await readLimitedText(req);
   let json: unknown;
   try {
-    json = await req.json();
+    json = JSON.parse(text);
   } catch {
     throw new HTTPException(400, { message: 'invalid JSON' });
   }
