@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
+import { decodeSecret, deriveTripKeys, hashAccessToken, toBase64Url } from '@planfully/shared';
 import { CreateTrip, parseSenders, tripEmails } from './CreateTrip';
 
 const ADMIN = 'admin-secret-XYZ-123';
@@ -71,10 +72,14 @@ test('creates a trip; no request leaks the trip secret or puts the admin secret 
   expect((init.headers as Record<string, string>).Authorization).toBe(`Bearer ${ADMIN}`);
   const body = JSON.parse(String(init.body)) as {
     accessTokenHash: string;
+    publicKey: string;
     roster: { id: string; name: string; aliases: string[] }[];
     allowedSenders: string[];
   };
   expect(body.accessTokenHash).toMatch(/^[0-9a-f]{64}$/);
+  const keys = await deriveTripKeys(decodeSecret(secret));
+  expect(body.accessTokenHash).toBe(await hashAccessToken(keys.accessToken));
+  expect(body.publicKey).toBe(toBase64Url(keys.publicKey));
   expect(body.roster[0]).toMatchObject({ name: 'Ann', aliases: ['A', 'Annie'] });
   expect(body.roster[0]?.id).toMatch(/^[A-Za-z0-9_-]+$/);
   expect(body.allowedSenders).toEqual(['a@x.com', 'b@x.com']);
@@ -94,4 +99,31 @@ test('network failure shows a readable error', async () => {
   fetchMock.mockRejectedValueOnce(new TypeError('Failed to fetch'));
   fill();
   await waitFor(() => expect(screen.getByRole('alert').textContent).toMatch(/Could not reach/));
+});
+
+test('aliases without a name is a validation error and sends nothing', async () => {
+  render(
+    <MemoryRouter>
+      <CreateTrip />
+    </MemoryRouter>,
+  );
+  fireEvent.change(screen.getByLabelText('Trip name'), { target: { value: 'T' } });
+  fireEvent.change(screen.getByLabelText('Traveller 1 aliases'), { target: { value: 'Al' } });
+  fireEvent.change(screen.getByLabelText(/Admin secret/), { target: { value: ADMIN } });
+  fireEvent.click(screen.getByRole('button', { name: 'Create trip' }));
+  await waitFor(() => expect(screen.getByRole('alert').textContent).toMatch(/name required/));
+  expect(fetchMock).not.toHaveBeenCalled();
+});
+
+test('over-long trip name is rejected client-side', async () => {
+  render(
+    <MemoryRouter>
+      <CreateTrip />
+    </MemoryRouter>,
+  );
+  fireEvent.change(screen.getByLabelText('Trip name'), { target: { value: 'x'.repeat(201) } });
+  fireEvent.change(screen.getByLabelText(/Admin secret/), { target: { value: ADMIN } });
+  fireEvent.click(screen.getByRole('button', { name: 'Create trip' }));
+  await waitFor(() => expect(screen.getByRole('alert').textContent).toMatch(/at most 200/));
+  expect(fetchMock).not.toHaveBeenCalled();
 });

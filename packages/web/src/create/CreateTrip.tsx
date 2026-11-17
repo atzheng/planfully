@@ -12,6 +12,8 @@ import styles from './CreateTrip.module.css';
 
 const MAX_ROSTER = 50;
 const MAX_SENDERS = 100;
+const MAX_NAME = 200;
+const MAX_SENDER_LEN = 320;
 
 export type MemberDraft = { key: number; name: string; aliases: string };
 
@@ -71,10 +73,16 @@ export function CreateTrip() {
     const roster = buildRoster(members);
     const allowedSenders = parseSenders(senders);
     if (!name.trim()) return setError('Give the trip a name.');
+    if (name.trim().length > MAX_NAME)
+      return setError(`The trip name must be at most ${MAX_NAME} characters.`);
+    if (members.some((m) => m.name.trim() === '' && m.aliases.trim() !== ''))
+      return setError('Traveller name required: a row has aliases but no name.');
     if (!adminSecret) return setError('Enter the admin secret.');
     if (roster.length > MAX_ROSTER) return setError(`At most ${MAX_ROSTER} travellers.`);
     if (allowedSenders.length > MAX_SENDERS)
       return setError(`At most ${MAX_SENDERS} allowed senders.`);
+    if (allowedSenders.some((a) => a.length > MAX_SENDER_LEN))
+      return setError(`Each allowed sender must be at most ${MAX_SENDER_LEN} characters.`);
     setBusy(true);
     try {
       const secret = generateSecret();
@@ -143,7 +151,11 @@ export function CreateTrip() {
             For receipts only, use <code>{created.receipts}</code>.
           </span>
         </section>
-        {error && <p className={styles.error}>{error}</p>}
+        {error && (
+          <p className={styles.error} role="alert">
+            {error}
+          </p>
+        )}
         <a className={styles.link} href={created.url}>
           Open trip
         </a>
