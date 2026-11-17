@@ -1,5 +1,5 @@
 import { beforeEach, expect, test, vi } from 'vitest';
-import { buildUrl, clampWindow, clearWeatherCache, fetchHourly } from './openMeteo';
+import { buildUrl, CACHE_MAX, clampWindow, clearWeatherCache, fetchHourly } from './openMeteo';
 import type { WeatherSegment } from './resolve';
 import { convertTemp, defaultUnits, formatPrecip, formatTemp, formatWind } from './units';
 
@@ -109,4 +109,54 @@ test('units helpers', () => {
   expect(formatWind(16.09344, 'mph')).toBe('10 mph');
   expect(formatWind(10, 'kmh')).toBe('10 km/h');
   expect(formatPrecip(25.4, 'F')).toBe('1.00 in');
+});
+
+test('shared in-flight fetch is not tied to a caller signal (abort regression)', async () => {
+  const f = vi.fn(async (_u: unknown, init?: RequestInit) => {
+    await Promise.resolve();
+    if (init?.signal?.aborted) throw new DOMException('aborted', 'AbortError');
+    return new Response(JSON.stringify(body), { status: 200 });
+  });
+  const s = seg('2026-06-11T00:00', '2026-06-11T03:00');
+  const o = { nowMs: NOW, fetchFn: f as unknown as typeof fetch };
+  const first = fetchHourly(s, o).catch(() => null); // caller 1 goes away
+  const second = await fetchHourly(s, o);
+  await first;
+  expect(f).toHaveBeenCalledTimes(1);
+  expect(f.mock.calls[0]?.[1]?.signal).toBeUndefined();
+  expect(second.timeMs).toHaveLength(2);
+});
+
+test('failures are cached for a minute, then retried', async () => {
+  const f = vi.fn(async () => new Response('no', { status: 500 }));
+  const s = seg('2026-06-11T00:00', '2026-06-11T03:00');
+  const o = (nowMs: number) => ({ nowMs, fetchFn: f as unknown as typeof fetch });
+  await expect(fetchHourly(s, o(NOW))).rejects.toThrow();
+  await expect(fetchHourly(s, o(NOW + 30_000))).rejects.toThrow();
+  expect(f).toHaveBeenCalledTimes(1);
+  await expect(fetchHourly(s, o(NOW + 61_000))).rejects.toThrow();
+  expect(f).toHaveBeenCalledTimes(2);
+});
+
+test('cache is capped, evicting the oldest entries', async () => {
+  const f = mockFetch();
+  const o = { nowMs: NOW, fetchFn: f as unknown as typeof fetch };
+  const s = seg('2026-06-11T00:00', '2026-06-11T03:00');
+  for (let i = 0; i <= CACHE_MAX; i++) await fetchHourly({ ...s, lat: i / 10 }, o);
+  expect(f).toHaveBeenCalledTimes(CACHE_MAX + 1);
+  await fetchHourly({ ...s, lat: 0 }, o); // evicted, refetched
+  expect(f).toHaveBeenCalledTimes(CACHE_MAX + 2);
+  await fetchHourly({ ...s, lat: CACHE_MAX / 10 }, o); // newest, still cached
+  expect(f).toHaveBeenCalledTimes(CACHE_MAX + 2);
+});
+
+test('series carries its covered range', async () => {
+  const f = mockFetch();
+  const o = { nowMs: NOW, fetchFn: f as unknown as typeof fetch };
+  const out = await fetchHourly(seg('2026-06-25T20:00', '2026-06-26T06:00'), o);
+  expect(out.coverage).toEqual({
+    fromMs: Date.parse('2026-06-25T20:00:00Z'),
+    toMs: Date.parse('2026-06-26T00:00:00Z'),
+  });
+  expect((await fetchHourly(seg('2026-06-01T00:00', '2026-06-02T00:00'), o)).coverage).toBeNull();
 });

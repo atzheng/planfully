@@ -1,49 +1,69 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTrip } from '../trip/store';
 import { EMPTY_SERIES, fetchHourly, type HourlySeries } from './openMeteo';
-import { hourlyLocations, type WeatherSegment } from './resolve';
+import { HOUR_MS, hourlyLocations, type WeatherSegment } from './resolve';
 
+/** 'empty' = loaded but no forecast for this segment (past, beyond the horizon, or no data). */
+export type SegmentStatus = 'loading' | 'ready' | 'error' | 'empty';
 export type WeatherStatus = 'idle' | 'loading' | 'ready' | 'error';
-export type SegmentWeather = { segment: WeatherSegment; series: HourlySeries };
+export type SegmentWeather = {
+  segment: WeatherSegment;
+  series: HourlySeries;
+  status: SegmentStatus;
+};
+
+const keyOf = (s: WeatherSegment) => `${s.fromMs}|${s.toMs}|${s.lat}|${s.lng}`;
 
 /**
- * Weather for the hours in [fromMs, toMs): one entry per location segment, in time order.
- * Segments outside the forecast window have an empty series (a gap). `status` is 'error' when any
- * request failed (those segments get an empty series; the others are still returned).
+ * Weather for the hours in [fromMs, toMs) (rounded out to whole hours): one entry per location
+ * segment, in time order, always for the current range (never a previous one). Each entry has its
+ * own status and `series.coverage` (the part of the segment the forecast can cover).
+ * Overall `status`: 'idle' when there are no located events (no segments), else 'loading' while any
+ * segment loads, 'error' if any failed, otherwise 'ready'.
  */
 export function useWeather(
   fromMs: number,
   toMs: number,
 ): { series: SegmentWeather[]; status: WeatherStatus } {
   const events = useTrip((s) => s.events);
-  const segments = useMemo(() => hourlyLocations(events, fromMs, toMs), [events, fromMs, toMs]);
-  const [state, setState] = useState<{
-    for: WeatherSegment[];
-    series: SegmentWeather[];
-    status: WeatherStatus;
-  }>({ for: [], series: [], status: 'idle' });
+  const from = Math.floor(fromMs / HOUR_MS) * HOUR_MS;
+  const to = Math.ceil(toMs / HOUR_MS) * HOUR_MS;
+  const segments = useMemo(() => hourlyLocations(events, from, to), [events, from, to]);
+  const [results, setResults] = useState<Record<string, { series: HourlySeries; failed: boolean }>>(
+    {},
+  );
 
   useEffect(() => {
-    if (segments.length === 0) return;
-    const ctl = new AbortController();
-    let failed = false;
-    void Promise.all(
-      segments.map(async (segment): Promise<SegmentWeather> => {
-        try {
-          return { segment, series: await fetchHourly(segment, { signal: ctl.signal }) };
-        } catch {
-          failed = true;
-          return { segment, series: EMPTY_SERIES };
-        }
-      }),
-    ).then((series) => {
-      if (ctl.signal.aborted) return;
-      setState({ for: segments, series, status: failed ? 'error' : 'ready' });
-    });
-    return () => ctl.abort();
+    let stale = false;
+    for (const segment of segments) {
+      const key = keyOf(segment);
+      fetchHourly(segment).then(
+        (series) => {
+          if (!stale) setResults((r) => ({ ...r, [key]: { series, failed: false } }));
+        },
+        () => {
+          if (!stale) setResults((r) => ({ ...r, [key]: { series: EMPTY_SERIES, failed: true } }));
+        },
+      );
+    }
+    return () => {
+      stale = true;
+    };
   }, [segments]);
 
-  if (segments.length === 0) return { series: [], status: 'idle' };
-  if (state.for !== segments) return { series: state.series, status: 'loading' };
-  return { series: state.series, status: state.status };
+  return useMemo(() => {
+    if (segments.length === 0) return { series: [], status: 'idle' as const };
+    const series = segments.map((segment): SegmentWeather => {
+      const r = results[keyOf(segment)];
+      if (!r) return { segment, series: EMPTY_SERIES, status: 'loading' };
+      if (r.failed) return { segment, series: r.series, status: 'error' };
+      return { segment, series: r.series, status: r.series.timeMs.length ? 'ready' : 'empty' };
+    });
+    const status = series.some((s) => s.status === 'loading')
+      ? 'loading'
+      : series.some((s) => s.status === 'error')
+        ? 'error'
+        : 'ready';
+    return { series, status };
+  }, [segments, results]);
 }

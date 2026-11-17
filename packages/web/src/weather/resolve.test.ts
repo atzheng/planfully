@@ -89,3 +89,19 @@ test('an in-progress event beats a more recent ended one', () => {
   const segs = hourlyLocations(events, t('2026-06-01T09:00'), t('2026-06-01T12:00'));
   expect(segs.map((s) => s.label)).toEqual(['Rome', 'Paris']);
 });
+
+test('transport without endLocation falls back to its location', () => {
+  const events = [ev('2026-06-01T09:00', '2026-06-01T11:00', { type: 'train', location: paris })];
+  const segs = hourlyLocations(events, t('2026-06-01T10:00'), t('2026-06-01T13:00'));
+  expect(segs).toHaveLength(1);
+  expect(segs[0]?.label).toBe('Paris');
+});
+
+test('first and last segments are clamped to the requested range', () => {
+  const events = [ev('2026-06-01T09:00', '2026-06-01T10:00', { location: paris })];
+  const from = t('2026-06-01T09:30');
+  const to = t('2026-06-01T12:15');
+  const segs = hourlyLocations(events, from, to);
+  expect(segs[0]?.fromMs).toBe(from);
+  expect(segs[segs.length - 1]?.toMs).toBe(to);
+});

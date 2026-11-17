@@ -37,6 +37,8 @@ function placed(events: readonly Event[]): Placed[] {
 /**
  * Location for each whole hour in [fromMs, toMs), merged into segments of consecutive hours at the
  * same place (lat/lng rounded to 2 decimals). Hours start at floor(fromMs / hour).
+ * Locations are sampled at each hour's start (an event starting mid-hour takes effect the next hour).
+ * The first and last segments are clamped to [fromMs, toMs).
  * Per hour (evaluated at the hour's start): the located event in progress (latest start wins); else
  * the most recent located event that has ended; else the first upcoming located event.
  * Cancelled, deleted and unscheduled events, and events without coordinates, are ignored.
@@ -72,5 +74,9 @@ export function hourlyLocations(
     if (last && last.toMs === h && last.lat === lat && last.lng === lng) last.toMs = h + HOUR_MS;
     else segs.push({ fromMs: h, toMs: h + HOUR_MS, lat, lng, label: pick.label });
   }
+  const head = segs[0];
+  if (head) head.fromMs = Math.max(head.fromMs, fromMs);
+  const tail = segs[segs.length - 1];
+  if (tail) tail.toMs = Math.min(tail.toMs, toMs);
   return segs;
 }
