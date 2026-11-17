@@ -31,10 +31,8 @@ recordsRouter.get('/', async (c) => {
   const records = more ? rows.slice(0, MAX_PAGE) : rows;
   // When the page is cut short, latestSeq is the last seq returned so polling with since=latestSeq
   // continues where this page ended; otherwise it is the trip counter (even if the tail was deleted).
-  const latestSeq = more
-    ? (records[records.length - 1]?.seq ?? since)
-    : Math.max(trip.nextSeq, since);
-  return c.json({ records, latestSeq });
+  const latestSeq = more ? (records[records.length - 1]?.seq ?? since) : trip.nextSeq;
+  return c.json({ records, latestSeq, more });
 });
 
 recordsRouter.post('/', async (c) => {

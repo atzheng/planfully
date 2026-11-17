@@ -75,6 +75,7 @@ describe('appendRecord', () => {
 type Page = {
   records: { seq: number; dedupe: string | null; ciphertext: string }[];
   latestSeq: number;
+  more: boolean;
 };
 
 describe('records API', () => {
@@ -123,9 +124,18 @@ describe('records API', () => {
     const j = (await (await call(`/api/trips/${t.id}/records`)).json()) as Page;
     expect(j.records).toHaveLength(500);
     expect(j.latestSeq).toBe(500);
+    expect(j.more).toBe(true);
     const j2 = (await (await call(`/api/trips/${t.id}/records?since=500`)).json()) as Page;
     expect(j2.records).toHaveLength(2);
     expect(j2.latestSeq).toBe(502);
+    expect(j2.more).toBe(false);
+  });
+
+  test('latestSeq is the trip counter, not an echoed since', async () => {
+    const t = await trip();
+    await post(t.id, 'AQID');
+    const j = (await (await call(`/api/trips/${t.id}/records?since=99`)).json()) as Page;
+    expect(j).toMatchObject({ records: [], latestSeq: 1, more: false });
   });
 
   test('400 on invalid base64 and bad bodies', async () => {
