@@ -1,10 +1,10 @@
 import { cleanup, fireEvent, render, renderHook, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
-import { MemoryRouter, useLocation } from 'react-router';
+import { MemoryRouter, useLocation, useNavigationType } from 'react-router';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import type { Event } from '@planfully/shared';
 import { FilterBar } from './FilterBar';
-import { filterEvents, useFilter, type Filter } from './filter';
+import { filterEvents, useFilter, useFilteredEvents, type Filter } from './filter';
 
 const mk = (id: string, over: Partial<Event> = {}): Event => ({
   id,
@@ -238,5 +238,41 @@ describe('FilterBar', () => {
     expect(screen.getByRole('dialog', { name: 'Filters' })).toBeTruthy();
     expect(screen.getByLabelText('Search events')).toBeTruthy();
     vi.unstubAllGlobals();
+  });
+});
+
+describe('identity and history', () => {
+  test('filter and filtered events are referentially stable across rerenders', () => {
+    const { result, rerender } = renderHook(() => ({ f: useFilter(), e: useFilteredEvents() }), {
+      wrapper: wrap('/t/x?type=dining,lodging&who=a'),
+    });
+    const first = result.current;
+    rerender();
+    expect(result.current.f).toBe(first.f);
+    expect(result.current.e).toBe(first.e);
+  });
+
+  test('from after to is swapped', () => {
+    const { result } = renderHook(() => useFilter(), {
+      wrapper: wrap('/t/x?from=2026-05-09&to=2026-05-02'),
+    });
+    expect(result.current.from).toBe('2026-05-02');
+    expect(result.current.to).toBe('2026-05-09');
+  });
+
+  test('typing replaces history entries', () => {
+    let nav: ReturnType<typeof useNavigationType> | undefined;
+    function Nav() {
+      nav = useNavigationType();
+      return null;
+    }
+    render(
+      <MemoryRouter initialEntries={['/t/x']}>
+        <FilterBar />
+        <Nav />
+      </MemoryRouter>,
+    );
+    fireEvent.change(screen.getByLabelText('Search events'), { target: { value: 'a' } });
+    expect(nav).toBe('REPLACE');
   });
 });

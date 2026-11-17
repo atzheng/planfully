@@ -84,20 +84,27 @@ export type FilterApi = {
 
 const NO_TYPES: EventType[] = [];
 const NO_WHO: string[] = [];
+// Filter edits replace the history entry instead of stacking one per keystroke.
+const R = { replace: true };
 
 /** Filter state bound to the URL query (q, type, from, to, who, cancelled), plus setters. */
 export function useFilterState(): FilterApi {
-  const [q, setQ] = useQueryState('q', stringCodec, '');
-  const [types, setTypes] = useQueryState('type', typesCodec, NO_TYPES);
-  const [from, setFrom] = useQueryState('from', dateCodec, '');
-  const [to, setTo] = useQueryState('to', dateCodec, '');
-  const [who, setWho] = useQueryState('who', stringListCodec, NO_WHO);
-  const [cancelled, setCancelled] = useQueryState('cancelled', booleanCodec, false);
+  const [q, setQ] = useQueryState('q', stringCodec, '', R);
+  const [types, setTypes] = useQueryState('type', typesCodec, NO_TYPES, R);
+  const [from, setFrom] = useQueryState('from', dateCodec, '', R);
+  const [to, setTo] = useQueryState('to', dateCodec, '', R);
+  const [who, setWho] = useQueryState('who', stringListCodec, NO_WHO, R);
+  const [cancelled, setCancelled] = useQueryState('cancelled', booleanCodec, false, R);
 
-  const filter = useMemo<Filter>(
-    () => ({ q, types, from: from || undefined, to: to || undefined, who, cancelled }),
-    [q, types, from, to, who, cancelled],
-  );
+  // The codecs return fresh arrays each render, so key the memo on their contents.
+  const typesKey = types.join(',');
+  const whoKey = who.join(',');
+  const filter = useMemo<Filter>(() => {
+    let f = from || undefined;
+    let t = to || undefined;
+    if (f && t && f > t) [f, t] = [t, f];
+    return { q, types, from: f, to: t, who, cancelled };
+  }, [q, typesKey, from, to, whoKey, cancelled]);
   const setFilter = (patch: Partial<Filter>) => {
     if (patch.q !== undefined) setQ(patch.q);
     if (patch.types !== undefined) setTypes(patch.types);

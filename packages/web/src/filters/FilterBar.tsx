@@ -38,6 +38,9 @@ const toggle = <T,>(list: readonly T[], v: T): T[] =>
 function Controls({ api }: { api: FilterApi }) {
   const roster = useTrip((s) => s.meta?.roster);
   const { filter, setFilter } = api;
+  // Local copy keeps the caret stable while typing; the URL follows and drives external changes.
+  const [qText, setQText] = useState(filter.q);
+  useEffect(() => setQText(filter.q), [filter.q]);
   return (
     <div className={styles.controls}>
       <input
@@ -45,8 +48,11 @@ function Controls({ api }: { api: FilterApi }) {
         className={styles.search}
         aria-label="Search events"
         placeholder="Search name, place, confirmation"
-        value={filter.q}
-        onChange={(e) => setFilter({ q: e.target.value })}
+        value={qText}
+        onChange={(e) => {
+          setQText(e.target.value);
+          setFilter({ q: e.target.value });
+        }}
       />
       <div className={styles.group} role="group" aria-label="Types">
         {EVENT_TYPES.map((t: EventType) => (
