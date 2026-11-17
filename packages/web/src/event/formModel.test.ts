@@ -87,13 +87,20 @@ describe('diffFields', () => {
     if (r.ok) expect(diffFields(bare, r.fields)).toEqual({});
   });
 
+  test('an event with an end but no start can be edited', () => {
+    const odd: Event = { ...base, start: undefined };
+    const r = build({ name: 'Renamed' }, odd);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(diffFields(odd, r.fields)).toEqual({ name: 'Renamed' });
+  });
+
   test('clearing the start while keeping an end is an error', () => {
     const r = build({ startDate: '', startTime: '' });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.errors.startDate).toMatch(/start before an end/);
   });
 
-  test('clearing a field, empty-string variant removed', () => {
+  test('blanking confirmation and notes together gives two nulls', () => {
     const r = build({ confirmation: '', notes: '' });
     expect(r.ok).toBe(true);
     if (r.ok) expect(diffFields(base, r.fields)).toEqual({ confirmation: null, notes: null });

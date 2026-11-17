@@ -147,7 +147,8 @@ export function buildFields(v: FormValues, original: Partial<Event> = {}): Build
   if (start.value && end.value && !errors.startDate && !errors.endDate) {
     if (toInstant(end.value) < toInstant(start.value)) errors.endDate = 'End is before the start';
   }
-  if (end.value && !start.value && !errors.endDate && !errors.startDate) {
+  // An end with no start is allowed (schema), unless the user just blanked a start that was set.
+  if (end.value && !start.value && original.start && !errors.endDate && !errors.startDate) {
     errors.startDate = 'Enter a start before an end';
   }
 
