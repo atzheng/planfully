@@ -1,4 +1,4 @@
-import { useParams } from 'react-router';
+import { Link, useLocation, useParams } from 'react-router';
 import { EventSheet } from './event/EventSheet';
 import { FilterBar } from './filters/FilterBar';
 import { enumCodec, useQueryState } from './lib/queryState';
@@ -13,6 +13,7 @@ const viewCodec = enumCodec(VIEWS);
 
 export function TripShell() {
   const { tripId } = useParams();
+  const { hash } = useLocation();
   const name = useTrip((s) => s.meta?.name);
   const status = useTrip((s) => s.status);
   const error = useTrip((s) => s.error);
@@ -25,7 +26,14 @@ export function TripShell() {
         <h1 className={styles.title} data-slot="trip-name">
           {name ?? `Trip ${tripId}`}
         </h1>
-        <div className={styles.actions} data-slot="actions" />
+        <div className={styles.actions} data-slot="actions">
+          <Link
+            to={{ pathname: `/t/${encodeURIComponent(tripId ?? '')}/settings`, hash }}
+            className={styles.settingsLink}
+          >
+            Settings
+          </Link>
+        </div>
       </header>
       <div className={styles.filters} data-slot="filters">
         <FilterBar />
