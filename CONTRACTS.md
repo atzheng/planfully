@@ -127,7 +127,7 @@ dedupeTag(dedupeKey: Uint8Array, type: string, confirmation: string): Promise<st
 toBase64 / fromBase64 / toBase64Url / fromBase64Url
 ```
 
-- Private key = HKDF-SHA256(secret, info `planfully/x25519/v1`, 32 bytes). Access token = base64url of HKDF-SHA256(secret, info `planfully/access/v1`, 32 bytes).
+- Private key = HKDF-SHA256(secret, no salt, info `planfully/x25519/v1`, 32 bytes). Access token = base64url of HKDF-SHA256(secret, no salt, info `planfully/access/v1`, 32 bytes). `decodeSecret` rejects anything that is not 32 bytes. Test vectors: `packages/shared/test/vectors.json`.
 - Sealed format: `0x01 | ephemeralPublicKey(32) | nonce(12) | AES-256-GCM ciphertext+tag`. AES key = HKDF-SHA256(ikm = X25519(ephemeralPrivate, recipientPublic), salt = ephemeralPublic ‖ recipientPublic, info `planfully/seal/v1`).
 - X25519 and HKDF from `@noble`; AES-GCM and SHA-256 from `crypto.subtle` (native, so bulk work is cheap on Workers). No Node-only APIs.
 - `dedupeTag` = hex HMAC-SHA256(dedupeKey, `${type}\n${normalised}`), normalised = confirmation uppercased with everything but A-Z0-9 removed.
