@@ -215,7 +215,20 @@ Never log email content, event content or tokens.
 - **Routes:** `/new` (create), `/t/:tripId` (trip; secret in `location.hash`), `/t/:tripId/settings`. The secret is read from the fragment only and never placed in a query string, request URL or log.
 - **`lib/api.ts`:** typed functions for section 5, taking `{ tripId, accessToken }`.
 - **`lib/queryState.ts`:** `useQueryState<T>(key, codec, defaultValue): [T, (v: T) => void]`. All view state goes through it. Reserved keys: `view` (timeline|map), `q`, `type`, `from`, `to`, `who`, `cancelled`, `e` (open event id), `zoom`, `lanes` (none|type|participant), `wx` (0|1), `tz`.
-- **`trip/store.ts`:** `<TripProvider>` and `useTrip(): { meta, events, records, keys, status: 'loading'|'ready'|'error', error, sync(): Promise<void> }`. `events` is `fold()` output. `trip/actions.ts` adds `putEvent(e)`, `patchEvent(id, fields)`, `deleteEvent(id)`.
+- **`trip/store.ts`:** zustand store behind `<TripProvider tripId>` (reads `location.hash` once; starts/stops polling; the raw secret is not retained after key derivation) and `useTrip()` / `useTrip(selector)`, returning:
+  ```ts
+  { tripId: string; meta: TripMeta | null; events: Event[]; records: OpenedRecord[] /* by seq */;
+    keys: { privateKey, publicKey, accessToken } | null; status: 'loading' | 'ready' | 'error';
+    error: { kind: 'bad-link' | 'unauthorized' | 'network' | 'unknown'; message: string } | null;
+    skipped: number; cursor: number;
+    sync(): Promise<void>; append(records: OpenedRecord[]): void; setMeta(meta: TripMeta): void }
+  ```
+  - `events` is `fold(records)`, recomputed once per change to `records`. `skipped` counts records that failed to open or validate (cumulative); they are never thrown. `cursor` is the server's `latestSeq`, used as `since` on the next fetch.
+  - Errors: missing or invalid fragment gives `bad-link` ("This link is missing its key"); 401/403/404 gives `unauthorized` ("Trip not found or wrong key"); network or 5xx gives `network`. A failed initial load sets `status: 'error'` and retries with backoff (2s, 5s, 15s, then 30s). A network failure during sync keeps `status: 'ready'` and the last data and sets `error` to the `network` error; the next success clears it. A 401 during sync is fatal (`status: 'error'`).
+  - `append(opened)`: for the write path; merges already-opened records by `seq` (duplicates ignored) and re-folds. It does not advance `cursor`, so the next sync still fetches records written by others in between. `setMeta` replaces `meta` after a PATCH.
+  - Sync: `since=cursor`, paging while `more`; triggered on window focus, on visibilitychange to visible, and every 60 s while the page is visible. Concurrent calls share one request.
+  - `createTripStore({ tripId, fragment, api?, intervalMs?, backoffMs? })` builds a store without React (for tests and caching); `openRecords(privateKey, stored)` is also exported.
+  - `trip/actions.ts` adds `putEvent(e)`, `patchEvent(id, fields)`, `deleteEvent(id)`.
 - **`trip/attachments.ts`:** `fetchAttachment(a: Attachment): Promise<Blob>` (fetch, open, wrap with `a.mime`); `uploadAttachment(file: File): Promise<Attachment>`.
 - **`filters/filter.ts`:** `type Filter`, `filterEvents(events, filter)`, `useFilter()`, `useFilteredEvents()`.
 - **`event/EventSheet.tsx`:** mounted once in the shell; open an event by setting query key `e`. Views never render their own detail UI.
