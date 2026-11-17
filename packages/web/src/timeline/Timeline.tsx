@@ -2,7 +2,13 @@ import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useStat
 import type { ReactNode } from 'react';
 import type { Event, EventType, RosterMember } from '@planfully/shared';
 import { useFilteredEvents } from '../filters/filter';
-import { enumCodec, stringCodec, stringListCodec, useQueryState } from '../lib/queryState';
+import {
+  booleanCodec,
+  enumCodec,
+  stringCodec,
+  stringListCodec,
+  useQueryState,
+} from '../lib/queryState';
 import { useTrip } from '../trip/store';
 import { initialScrollMs, LANE_MODES, layoutEvents, withoutEmptyLanes } from './layout';
 import type { Layout, LaneMode } from './layout';
@@ -35,6 +41,7 @@ import {
   useZoom,
   wheelPx,
 } from './zoom';
+import { WEATHER_GUTTER_PX, WeatherLegend, WeatherStrip } from './WeatherStrip';
 import styles from './Timeline.module.css';
 
 /** Height of the sticky day heading; the canvas starts below it. */
@@ -145,7 +152,7 @@ const TickLabels = memo(function TickLabels({ list, scale }: { list: Tick[]; sca
   );
 });
 
-export function Timeline({ gutter }: { gutter?: ReactNode } = {}) {
+export function Timeline({ gutter: gutterProp }: { gutter?: ReactNode } = {}) {
   const events = useFilteredEvents();
   const totalEvents = useTrip((s) => s.events.length);
   const roster = useTrip((s) => s.meta?.roster) ?? NO_ROSTER;
@@ -153,7 +160,10 @@ export function Timeline({ gutter }: { gutter?: ReactNode } = {}) {
   const [, setOpenId] = useQueryState('e', stringCodec, '');
   const [who] = useQueryState('who', stringListCodec, NO_WHO);
   const [laneMode, setLaneMode] = useQueryState('lanes', laneModeCodec, 'none');
+  const [wxOn, setWxOn] = useQueryState('wx', booleanCodec, false);
   const { pxPerHour, setPx } = useZoom();
+  const gutter = wxOn ? <WeatherStrip /> : gutterProp;
+  const gutterPx = wxOn ? WEATHER_GUTTER_PX : 64;
 
   const zone = useMemo(() => validZone(tzRaw, browserZone()), [tzRaw]);
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -399,12 +409,22 @@ export function Timeline({ gutter }: { gutter?: ReactNode } = {}) {
         </div>
         <button
           type="button"
+          className={`${styles.zoomBtn} ${wxOn ? styles.modeOn : ''}`}
+          aria-pressed={wxOn}
+          data-testid="wx-toggle"
+          onClick={() => setWxOn(!wxOn)}
+        >
+          Weather
+        </button>
+        <button
+          type="button"
           className={styles.today}
           onClick={() => scrollToMs(todayTarget)}
           disabled={!range}
         >
           Today
         </button>
+        {wxOn && <WeatherLegend />}
       </div>
       {
         <TimeScaleProvider value={scale}>
@@ -437,6 +457,7 @@ export function Timeline({ gutter }: { gutter?: ReactNode } = {}) {
                         marginTop: HEADING_PX,
                         ['--lanes' as string]: Math.max(1, layout.lanes.length),
                         ['--top-px' as string]: `${topPx}px`,
+                        ['--gutter-w' as string]: `${gutterPx}px`,
                       } as React.CSSProperties
                     }
                     data-lane-mode={laneMode}

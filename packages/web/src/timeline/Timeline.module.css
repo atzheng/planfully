@@ -78,8 +78,8 @@
   min-width: calc(var(--left) + var(--lanes) * var(--lane-min));
 }
 .canvas.withGutter {
-  --axis-x: 64px;
-  --left: 116px;
+  --axis-x: var(--gutter-w, 64px);
+  --left: calc(var(--gutter-w, 64px) + 52px);
 }
 .body,
 .laneHeads {
@@ -88,7 +88,7 @@
 }
 .withGutter .body,
 .withGutter .laneHeads {
-  grid-template-columns: 64px 52px minmax(0, 1fr);
+  grid-template-columns: var(--gutter-w, 64px) 52px minmax(0, 1fr);
 }
 .body {
   position: relative;
@@ -106,7 +106,7 @@
   z-index: 1;
 }
 .withGutter .headSpacer:nth-child(2) {
-  left: 64px;
+  left: var(--gutter-w, 64px);
 }
 .laneHeadRow,
 .lanes {
