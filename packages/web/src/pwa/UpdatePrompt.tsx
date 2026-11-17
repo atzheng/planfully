@@ -11,7 +11,11 @@ export function UpdatePrompt() {
   return (
     <div className={styles.prompt} role="status">
       <span>New version available</span>
-      <button type="button" className={styles.reload} onClick={() => void updateServiceWorker(true)}>
+      <button
+        type="button"
+        className={styles.reload}
+        onClick={() => void updateServiceWorker(true)}
+      >
         Reload
       </button>
       <button type="button" className={styles.dismiss} onClick={() => setNeedRefresh(false)}>

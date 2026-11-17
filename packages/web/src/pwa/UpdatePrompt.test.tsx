@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const state = { needRefresh: false, update: vi.fn(), set: vi.fn() };
@@ -13,6 +13,7 @@ vi.mock('virtual:pwa-register/react', () => ({
 import { UpdatePrompt } from './UpdatePrompt';
 
 afterEach(() => {
+  cleanup();
   state.needRefresh = false;
   state.update.mockClear();
   state.set.mockClear();
