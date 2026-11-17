@@ -27,6 +27,8 @@ import {
   type TripMeta,
 } from '@planfully/shared';
 import * as realApi from '../lib/api';
+import { compactTrip } from './compact';
+import { isTempSeq, TEMP_SEQ_BASE } from './tempSeq';
 
 export type TripKeys = { privateKey: Uint8Array; publicKey: Uint8Array; accessToken: string };
 
@@ -60,6 +62,8 @@ export type TripState = {
   sync(): Promise<void>;
   /** Write path hook: merge records the client has just written (already opened). */
   append(records: OpenedRecord[]): void;
+  /** Compaction hook: drop records the server no longer holds. */
+  removeRecords(seqs: number[]): void;
   /** Replace the stored meta (after a PATCH). */
   setMeta(meta: TripMeta): void;
   /** Writes in flight (trip/actions.ts). */
@@ -74,7 +78,8 @@ export type TripState = {
   setWriteState(patch: { pendingDelta?: number; lastError?: TripError | null }): void;
 };
 
-export type TripApi = Pick<typeof realApi, 'getTrip' | 'getRecords'>;
+export type TripApi = Pick<typeof realApi, 'getTrip' | 'getRecords'> &
+  Partial<Pick<typeof realApi, 'postRecord' | 'deleteRecord'>>;
 
 export type TripStoreOptions = {
   tripId: string;
@@ -128,11 +133,7 @@ function mergeRecords(have: OpenedRecord[], add: OpenedRecord[]): OpenedRecord[]
 
 class StalledError extends Error {}
 
-/** Temp (optimistic) records have seqs above this; skip them for compaction or offline caches. */
-const TEMP_SEQ_BASE = Number.MAX_SAFE_INTEGER - 1_000_000;
-export function isTempSeq(seq: number): boolean {
-  return seq > TEMP_SEQ_BASE;
-}
+export { isTempSeq };
 
 export function toError(e: unknown): TripError {
   if (e instanceof StalledError) return { kind: 'unknown', message: MESSAGES.stalled };
@@ -157,6 +158,16 @@ export function createTripStore(opts: TripStoreOptions): TripStore {
   let attempts = 0;
   let tempCounter = 0;
   let started = false;
+  // Compaction runs at most once per store (session) once it has actually been able to start.
+  let compactStarted = false;
+  function maybeCompact() {
+    const { postRecord, deleteRecord } = api;
+    if (compactStarted || !started || !postRecord || !deleteRecord) return;
+    compactStarted = true;
+    void compactTrip(store, { postRecord, deleteRecord }).then((ran) => {
+      if (!ran) compactStarted = false;
+    });
+  }
   // The raw fragment is only held until keys are derived.
   let fragment: string | null = opts.fragment;
 
@@ -209,6 +220,7 @@ export function createTripStore(opts: TripStoreOptions): TripStore {
           status: 'ready',
           error: null,
         });
+        maybeCompact();
       } catch (e) {
         const err = toError(e);
         set({ status: 'error', error: err });
@@ -238,6 +250,7 @@ export function createTripStore(opts: TripStoreOptions): TripStore {
           patch.events = fold(records);
         }
         if (Object.keys(patch).length > 0) set(patch);
+        maybeCompact();
       } catch (e) {
         const err = toError(e);
         // Keep showing the last data; a revoked link is fatal.
@@ -283,6 +296,12 @@ export function createTripStore(opts: TripStoreOptions): TripStore {
         if (records === s.records) return;
         // The cursor is not advanced: the server may hold records between ours and the new
         // seq, and the next sync must fetch them (merge dedupes by seq).
+        set({ records, events: fold(records) });
+      },
+      removeRecords: (seqs) => {
+        const gone = new Set(seqs);
+        const records = get().records.filter((r) => !gone.has(r.seq));
+        if (records.length === get().records.length) return;
         set({ records, events: fold(records) });
       },
       setMeta: (meta) => set({ meta }),
