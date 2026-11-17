@@ -80,7 +80,9 @@ describe('buildItinerary', () => {
           notes: ' bring passport ',
           confirmation: 'ABC',
           participants: ['a'],
-          attachments: [{ id: '1', filename: 'visa.pdf', mime: 'application/pdf', size: 1, kind: 'file' }],
+          attachments: [
+            { id: '1', filename: 'visa.pdf', mime: 'application/pdf', size: 1, kind: 'file' },
+          ],
         }),
         ev({ id: 'y', start: at('2026-07-14T09:00') }),
       ],
@@ -125,8 +127,17 @@ describe('buildItinerary', () => {
   });
 
   it('handles an empty list', () => {
-    const it = buildItinerary([], roster, NO_FILTER, { tripName: 'T', now: new Date(2026, 10, 17) });
-    expect(it).toMatchObject({ days: [], unscheduled: [], count: 0, filters: [], generated: 'Generated 17 Nov 2026' });
+    const it = buildItinerary([], roster, NO_FILTER, {
+      tripName: 'T',
+      now: new Date(2026, 10, 17),
+    });
+    expect(it).toMatchObject({
+      days: [],
+      unscheduled: [],
+      count: 0,
+      filters: [],
+      generated: 'Generated 17 Nov 2026',
+    });
   });
 });
 
@@ -137,7 +148,14 @@ describe('describeFilter', () => {
   it('describes every criterion in words', () => {
     expect(
       describeFilter(
-        { q: ' paris ', types: ['flight', 'lodging'], from: '2026-07-01', to: '2026-07-10', who: ['b', 'zz'], cancelled: true },
+        {
+          q: ' paris ',
+          types: ['flight', 'lodging'],
+          from: '2026-07-01',
+          to: '2026-07-10',
+          who: ['b', 'zz'],
+          cancelled: true,
+        },
         roster,
       ),
     ).toEqual([
@@ -147,8 +165,12 @@ describe('describeFilter', () => {
       'Participants: Bob, Former participant',
       'Including cancelled events',
     ]);
-    expect(describeFilter({ ...NO_FILTER, from: '2026-07-01' }, roster)).toEqual(['From: 2026-07-01']);
-    expect(describeFilter({ ...NO_FILTER, to: '2026-07-01' }, roster)).toEqual(['Until: 2026-07-01']);
+    expect(describeFilter({ ...NO_FILTER, from: '2026-07-01' }, roster)).toEqual([
+      'From: 2026-07-01',
+    ]);
+    expect(describeFilter({ ...NO_FILTER, to: '2026-07-01' }, roster)).toEqual([
+      'Until: 2026-07-01',
+    ]);
   });
 });
 
