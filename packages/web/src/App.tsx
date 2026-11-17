@@ -1,5 +1,6 @@
 import { Link, Outlet, Route, Routes, useParams } from 'react-router';
 import { CreateTrip } from './create/CreateTrip';
+import { RecentTrips } from './offline/RecentTrips';
 import { Settings } from './settings/Settings';
 import { TripShell } from './TripShell';
 import { TripProvider } from './trip/store';
@@ -10,6 +11,7 @@ function Landing() {
       <h1>Planfully</h1>
       <p>Trips from your inbox, kept private. Open a trip link to get started.</p>
       <Link to="/new">Create a trip</Link>
+      <RecentTrips />
     </main>
   );
 }
