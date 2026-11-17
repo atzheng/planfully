@@ -25,6 +25,13 @@
   display: flex;
   gap: var(--space-2);
 }
+.settingsLink {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap);
+  padding: 0 var(--space-3);
+  color: var(--accent);
+}
 .main {
   flex: 1;
   min-width: 0;
