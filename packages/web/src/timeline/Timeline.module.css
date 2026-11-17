@@ -1,0 +1,263 @@
+.timeline {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.zone {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.today {
+  min-height: var(--tap);
+  padding: 0 var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--accent);
+  cursor: pointer;
+}
+.today:disabled {
+  opacity: 0.5;
+}
+.empty {
+  position: absolute;
+  top: 40px;
+  left: 0;
+  right: 0;
+  margin: 0;
+  padding: var(--space-5) var(--space-3);
+  color: var(--text-muted);
+  text-align: center;
+}
+.scroller {
+  position: relative;
+  height: calc(100dvh - 250px);
+  min-height: 320px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+.headingWrap {
+  position: sticky;
+  top: 0;
+  height: 0;
+  z-index: 5;
+}
+.heading {
+  display: flex;
+  align-items: center;
+  padding: 0 var(--space-3);
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+.canvas {
+  --axis-x: 0px;
+  position: relative;
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+}
+.canvas.withGutter {
+  --axis-x: 64px;
+  grid-template-columns: 64px 52px minmax(0, 1fr);
+}
+.gutter,
+.axis,
+.lanes {
+  position: relative;
+  min-width: 0;
+}
+.gutter {
+  border-right: 1px solid var(--border);
+}
+.axis {
+  border-right: 1px solid var(--border);
+}
+.lanes {
+  z-index: 1;
+}
+/* One layer under the whole canvas so grid lines cross the lanes and labels sit in the axis column. */
+.tickLayer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.tick {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0;
+  border-top: 1px solid var(--border);
+  opacity: 0.9;
+}
+.day,
+.week {
+  border-top-color: var(--text-muted);
+}
+.tickLabel {
+  position: absolute;
+  left: calc(var(--axis-x) + 4px);
+  top: 2px;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.day .tickLabel,
+.week .tickLabel {
+  white-space: normal;
+  max-width: 48px;
+  line-height: 1.1;
+  color: var(--text);
+  font-weight: 600;
+}
+.block {
+  --bg-block: hsl(var(--h) 70% 90%);
+  --fg-block: hsl(var(--h) 60% 20%);
+  position: absolute;
+  display: flex;
+  gap: var(--space-1);
+  align-items: flex-start;
+  padding: 2px 6px;
+  margin: 0;
+  overflow: clip;
+  border: 1px solid hsl(var(--h) 50% 60%);
+  border-left: 4px solid hsl(var(--h) 60% 45%);
+  border-radius: var(--radius-sm);
+  background: var(--bg-block);
+  color: var(--fg-block);
+  font: inherit;
+  font-size: var(--text-sm);
+  line-height: 1.2;
+  text-align: left;
+  cursor: pointer;
+}
+.block:focus-visible,
+.today:focus-visible,
+.unscheduledItem:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.blockIcon {
+  flex: none;
+}
+/* Sticky so a tall block (lodging) keeps its label in view while scrolled. */
+.blockLabel {
+  position: sticky;
+  top: 32px;
+  display: flex;
+  gap: var(--space-1);
+  align-items: flex-start;
+  flex: 1;
+  min-width: 0;
+}
+.blockText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.blockName {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.blockTime {
+  font-size: var(--text-xs);
+  opacity: 0.85;
+}
+.cancelled {
+  opacity: 0.7;
+}
+.cancelled .blockName,
+.cancelled.unscheduledItem {
+  text-decoration: line-through;
+}
+.review {
+  flex: none;
+  margin-left: auto;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--danger);
+  color: var(--surface);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}
+.now {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 4;
+  border-top: 2px solid var(--danger);
+  pointer-events: none;
+}
+.now::before {
+  content: '';
+  position: absolute;
+  left: -1px;
+  top: -6px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--danger);
+}
+.unscheduled {
+  padding: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+.unscheduled h2 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-md);
+}
+.unscheduled ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.unscheduledItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: var(--tap);
+  padding: 0 var(--space-2);
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+@media (prefers-color-scheme: dark) {
+  .block {
+    --bg-block: hsl(var(--h) 30% 24%);
+    --fg-block: hsl(var(--h) 60% 90%);
+    border-color: hsl(var(--h) 30% 40%);
+    border-left-color: hsl(var(--h) 60% 60%);
+  }
+}
