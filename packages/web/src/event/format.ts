@@ -30,7 +30,16 @@ export function participantNames(
   roster: readonly RosterMember[],
 ): string {
   if (e.participants.length === 0) return 'Everyone';
-  return e.participants.map((id) => roster.find((r) => r.id === id)?.name ?? 'Unknown').join(', ');
+  const names: string[] = [];
+  let former = 0;
+  for (const id of new Set(e.participants)) {
+    const name = roster.find((r) => r.id === id)?.name;
+    if (name) names.push(name);
+    else former++;
+  }
+  if (former === 1) names.push('Former participant');
+  else if (former > 1) names.push(`${former} former participants`);
+  return names.join(', ');
 }
 
 export function mapsUrl(loc: Location): string | null {

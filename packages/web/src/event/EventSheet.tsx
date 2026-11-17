@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import type { Attachment, Event, Location } from '@planfully/shared';
 import { stringCodec, useQueryState } from '../lib/queryState';
 import { fetchAttachment } from '../trip/attachments';
@@ -44,26 +44,18 @@ function AttachmentRow({ a }: { a: Attachment }) {
   const tripId = useTrip((s) => s.tripId);
   const keys = useTrip((s) => s.keys);
   const [state, setState] = useState<'idle' | 'loading' | 'error'>('idle');
-  const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
-  const urls = useRef<string[]>([]);
-  useEffect(() => {
-    const t = timers.current;
-    const u = urls.current;
-    return () => {
-      t.forEach(clearTimeout);
-      u.forEach((x) => URL.revokeObjectURL(x));
-    };
-  }, []);
 
   const onClick = async () => {
     if (!keys) return;
     // Open synchronously so popup blockers allow it; navigate once the blob is ready.
+    // The new window keeps `opener` (no `noopener`, which would make window.open return null).
+    // That is safe here: we only do this for allowlisted inert types (pdf and raster images),
+    // never for anything that can run script.
     const win = opensInline(a.mime) ? window.open('', '_blank') : null;
     setState('loading');
     try {
       const blob = await fetchAttachment(a, { tripId, ...keys });
       const url = URL.createObjectURL(blob);
-      urls.current.push(url);
       if (win) {
         win.location.href = url;
       } else {
@@ -74,8 +66,9 @@ function AttachmentRow({ a }: { a: Attachment }) {
         link.click();
         link.remove();
       }
-      // Revoke once the tab or download has had time to start.
-      timers.current.push(setTimeout(() => URL.revokeObjectURL(url), 60_000));
+      // Revoke once the tab or download has had time to start. Deliberately not tied to the
+      // sheet's lifetime: closing the sheet must not break a tab that is still loading.
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
       setState('idle');
     } catch {
       win?.close();
@@ -108,10 +101,10 @@ function AttachmentRow({ a }: { a: Attachment }) {
 
 function Details({ event }: { event: Event }) {
   const roster = useTrip((s) => s.meta?.roster ?? []);
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<'idle' | 'ok' | 'failed'>('idle');
   useEffect(() => {
-    if (!copied) return;
-    const t = setTimeout(() => setCopied(false), 2000);
+    if (copied === 'idle') return;
+    const t = setTimeout(() => setCopied('idle'), 2000);
     return () => clearTimeout(t);
   }, [copied]);
   const files = event.attachments.filter((a) => a.kind === 'file');
@@ -119,10 +112,15 @@ function Details({ event }: { event: Event }) {
   const duration = event.start && event.end ? formatDuration(event.start, event.end) : null;
 
   const copy = () => {
-    void navigator.clipboard
-      ?.writeText(event.confirmation ?? '')
-      .then(() => setCopied(true))
-      .catch(() => undefined);
+    const write = navigator.clipboard?.writeText(event.confirmation ?? '');
+    if (!write) {
+      setCopied('failed');
+      return;
+    }
+    write.then(
+      () => setCopied('ok'),
+      () => setCopied('failed'),
+    );
   };
 
   return (
@@ -144,7 +142,9 @@ function Details({ event }: { event: Event }) {
           <Field label="Confirmation">
             <span className={styles.row}>
               <code>{event.confirmation}</code>
-              <Button onClick={copy}>{copied ? 'Copied' : 'Copy'}</Button>
+              <Button onClick={copy}>
+                {copied === 'ok' ? 'Copied' : copied === 'failed' ? 'Copy failed' : 'Copy'}
+              </Button>
             </span>
           </Field>
         )}

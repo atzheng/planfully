@@ -140,8 +140,8 @@ describe('EventSheet', () => {
     expect(firstCall[0]).toBe('/api/trips/t1/blobs/b1');
     expect(blob?.type).toBe('application/pdf');
     expect(new Uint8Array(await (blob as unknown as Blob).arrayBuffer())).toEqual(PDF);
-    cleanup(); // unmount revokes
-    expect(revoke).toHaveBeenCalledWith('blob:x');
+    cleanup(); // unmounting must not revoke: a tab may still be loading
+    expect(revoke).not.toHaveBeenCalled();
     await act(async () => {});
   });
 });

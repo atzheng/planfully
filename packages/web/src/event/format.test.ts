@@ -19,7 +19,8 @@ describe('format', () => {
   it('participants', () => {
     const r = [{ id: 'a', name: 'Ann', aliases: [] }];
     expect(participantNames({ participants: [] }, r)).toBe('Everyone');
-    expect(participantNames({ participants: ['a', 'zz'] }, r)).toBe('Ann, Unknown');
+    expect(participantNames({ participants: ['a', 'zz'] }, r)).toBe('Ann, Former participant');
+    expect(participantNames({ participants: ['y', 'zz'] }, r)).toBe('2 former participants');
   });
   it('maps url prefers lat/lng', () => {
     expect(mapsUrl({ name: 'X', lat: 1, lng: 2 })).toContain('query=1%2C2');
