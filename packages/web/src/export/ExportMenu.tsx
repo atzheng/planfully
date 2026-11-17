@@ -57,24 +57,13 @@ export function ExportMenu() {
 
   return (
     <div className={styles.root} ref={root}>
-      <Button
-        aria-haspopup="menu"
-        aria-expanded={open}
-        disabled={busy}
-        onClick={() => setOpen((o) => !o)}
-      >
+      <Button aria-expanded={open} disabled={busy} onClick={() => setOpen((o) => !o)}>
         {busy ? 'Exporting...' : 'Export'}
       </Button>
       {open && (
-        <div role="menu" className={styles.menu}>
+        <div className={styles.menu}>
           {items.map((i) => (
-            <button
-              key={i.id}
-              type="button"
-              role="menuitem"
-              className={styles.item}
-              onClick={() => choose(i)}
-            >
+            <button key={i.id} type="button" className={styles.item} onClick={() => choose(i)}>
               {i.label}
             </button>
           ))}

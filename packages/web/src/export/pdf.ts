@@ -125,21 +125,26 @@ export function buildItinerary(
     if (ms === null) unscheduledEvents.push(e);
     else scheduled.push({ e, ms });
   }
-  scheduled.sort((a, b) => a.ms - b.ms || a.e.name.localeCompare(b.e.name));
-
+  // Group by the event's own local date; days by date string, rows within a day by instant.
+  const byDay = new Map<string, { e: Event; ms: number }[]>();
+  for (const item of scheduled) {
+    const key = item.e.start ? dayKey(item.e.start) : '';
+    const list = byDay.get(key);
+    if (list) list.push(item);
+    else byDay.set(key, [item]);
+  }
   const days: ItineraryDay[] = [];
   let prevTz: string | null = null;
-  for (const { e } of scheduled) {
-    const start = e.start;
-    if (!start) continue;
-    const key = dayKey(start);
-    let day = days[days.length - 1];
-    if (!day || day.key !== key) {
-      day = { key, label: dateLabel(key), rows: [] };
-      days.push(day);
+  for (const key of [...byDay.keys()].sort()) {
+    const items = (byDay.get(key) ?? []).sort(
+      (a, b) => a.ms - b.ms || a.e.name.localeCompare(b.e.name),
+    );
+    const rows: ItineraryRow[] = [];
+    for (const { e } of items) {
+      rows.push(row(e, roster, timeText(e, prevTz)));
+      prevTz = e.start?.tz ?? prevTz;
     }
-    day.rows.push(row(e, roster, timeText(e, prevTz)));
-    prevTz = start.tz;
+    days.push({ key, label: dateLabel(key), rows });
   }
   const unscheduled = unscheduledEvents
     .slice()
@@ -164,7 +169,7 @@ export function pdfFileName(tripName: string): string {
     .trim()
     .replace(/\s+/g, '-')
     .toLowerCase();
-  return `${slug || 'trip'}-itinerary.pdf`;
+  return `${slug.slice(0, 80).replace(/-+$/, '') || 'trip'}-itinerary.pdf`;
 }
 
 /**

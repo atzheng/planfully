@@ -141,6 +141,22 @@ describe('buildItinerary', () => {
   });
 });
 
+describe('buildItinerary across zones', () => {
+  it('orders days by local date and rows by instant, with no repeated day', () => {
+    const it = buildItinerary(
+      [
+        ev({ id: 'tokyo-early', start: at('2026-03-02T01:00', 'Asia/Tokyo') }),
+        ev({ id: 'ny', start: at('2026-03-01T20:00', 'America/New_York') }),
+        ev({ id: 'tokyo-late', start: at('2026-03-02T09:00', 'Asia/Tokyo') }),
+      ],
+      roster,
+      NO_FILTER,
+    );
+    expect(it.days.map((d) => d.key)).toEqual(['2026-03-01', '2026-03-02']);
+    expect(it.days[1]?.rows.map((r) => r.name)).toEqual(['tokyo-early', 'tokyo-late']);
+  });
+});
+
 describe('describeFilter', () => {
   it('is empty when nothing is active', () => {
     expect(describeFilter(NO_FILTER, roster)).toEqual([]);
@@ -178,6 +194,10 @@ describe('helpers', () => {
   it('builds a safe file name', () => {
     expect(pdfFileName('Paris & Rome 2026!')).toBe('paris-rome-2026-itinerary.pdf');
     expect(pdfFileName('東京')).toBe('trip-itinerary.pdf');
+  });
+  it('caps the file name length', () => {
+    const n = pdfFileName('a'.repeat(300));
+    expect(n).toBe(`${'a'.repeat(80)}-itinerary.pdf`);
   });
   it('replaces non-Latin characters', () => {
     expect(latinSafe('Café – 東京')).toBe('Café – ??');
