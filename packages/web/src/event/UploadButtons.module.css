@@ -1,0 +1,10 @@
+.status {
+  flex-basis: 100%;
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+}
+.error {
+  flex-basis: 100%;
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}
