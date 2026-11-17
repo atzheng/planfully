@@ -25,7 +25,7 @@ A trip tracker: forward booking emails to a per-trip address, an LLM turns them 
 ### Trip (D1, plaintext — the Worker needs it to route and parse)
 
 - `id` — random, appears in the URL path
-- `address` — local part of the trip email, `<slug>-<6 random chars>`
+- `address` — the full lowercase trip email address, `<slug>-<6 random chars>@<TRIP_DOMAIN>` (not just the local part)
 - `public_key` — X25519
 - `access_token_hash` — SHA-256 of the access token derived from the URL secret
 - `dedupe_key` — per-trip random HMAC key, server-side only
