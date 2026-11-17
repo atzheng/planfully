@@ -62,6 +62,16 @@ export type TripState = {
   append(records: OpenedRecord[]): void;
   /** Replace the stored meta (after a PATCH). */
   setMeta(meta: TripMeta): void;
+  /** Writes in flight (trip/actions.ts). */
+  pending: number;
+  /** The last failed write, cleared by the next successful one. */
+  lastError: TripError | null;
+  /** Write path: show a temporary record immediately; returns its (very large) temp seq. */
+  addOptimistic(body: OpenedRecord['body']): number;
+  /** Write path: drop the temp record, adding the real one if given (rollback if omitted). */
+  settleOptimistic(tempSeq: number, real?: OpenedRecord): void;
+  /** Write path: adjust `pending` and set/clear `lastError`. */
+  setWriteState(patch: { pendingDelta?: number; lastError?: TripError | null }): void;
 };
 
 export type TripApi = Pick<typeof realApi, 'getTrip' | 'getRecords'>;
@@ -118,7 +128,7 @@ function mergeRecords(have: OpenedRecord[], add: OpenedRecord[]): OpenedRecord[]
 
 class StalledError extends Error {}
 
-function toError(e: unknown): TripError {
+export function toError(e: unknown): TripError {
   if (e instanceof StalledError) return { kind: 'unknown', message: MESSAGES.stalled };
   if (e instanceof realApi.ApiError) {
     if (e.status === 401 || e.status === 403 || e.status === 404) {
@@ -139,6 +149,7 @@ export function createTripStore(opts: TripStoreOptions): TripStore {
   let timer: ReturnType<typeof setInterval> | undefined;
   let retryTimer: ReturnType<typeof setTimeout> | undefined;
   let attempts = 0;
+  let tempCounter = 0;
   let started = false;
   // The raw fragment is only held until keys are derived.
   let fragment: string | null = opts.fragment;
@@ -181,10 +192,12 @@ export function createTripStore(opts: TripStoreOptions): TripStore {
           });
           return;
         }
+        // Records appended (e.g. by the write path) while loading must survive the replacement.
+        const records = mergeRecords(opened, get().records);
         set({
           meta,
-          records: opened,
-          events: fold(opened),
+          records,
+          events: fold(records),
           skipped,
           cursor,
           status: 'ready',
@@ -267,6 +280,31 @@ export function createTripStore(opts: TripStoreOptions): TripStore {
         set({ records, events: fold(records) });
       },
       setMeta: (meta) => set({ meta }),
+      pending: 0,
+      lastError: null,
+      addOptimistic: (body) => {
+        const s = get();
+        // Temp seqs sit above any real seq so they fold last, in submission order.
+        tempCounter++;
+        const seq = Number.MAX_SAFE_INTEGER - 1_000_000 + tempCounter;
+        const records = [
+          ...s.records,
+          { seq, dedupe: null, createdAt: new Date().toISOString(), body },
+        ];
+        set({ records, events: fold(records) });
+        return seq;
+      },
+      settleOptimistic: (tempSeq, real) => {
+        let records = get().records.filter((r) => r.seq !== tempSeq);
+        if (real) records = mergeRecords(records, [real]);
+        set({ records, events: fold(records) });
+      },
+      setWriteState: ({ pendingDelta, lastError }) => {
+        const patch: Partial<TripState> = {};
+        if (pendingDelta) patch.pending = Math.max(0, get().pending + pendingDelta);
+        if (lastError !== undefined) patch.lastError = lastError;
+        set(patch);
+      },
     };
   });
 
@@ -372,6 +410,12 @@ export function TripProvider({
     return () => current.stop();
   }, [current]);
   return createElement(TripContext.Provider, { value: current }, children);
+}
+
+export function useTripStore(): TripStore {
+  const store = useContext(TripContext);
+  if (!store) throw new Error('useTripStore must be used inside <TripProvider>');
+  return store;
 }
 
 export function useTrip(): TripState;

@@ -264,6 +264,29 @@ describe('append', () => {
     expect(store.getState().events).toHaveLength(2);
     expect(store.getState().cursor).toBe(1);
   });
+
+  test('a record appended while the initial load is in flight survives the load', async () => {
+    const r1 = await stored(1, put('e1', 'Dinner'));
+    let release!: (v: { records: StoredRecord[]; latestSeq: number; more: boolean }) => void;
+    const getRecords = vi
+      .fn<TripApi['getRecords']>()
+      .mockReturnValue(new Promise((r) => (release = r)));
+    const getTrip = vi.fn<TripApi['getTrip']>().mockResolvedValue(META);
+    const store = createTripStore({ tripId: 't1', fragment, api: { getTrip, getRecords } });
+    store.start();
+    await vi.waitFor(() => expect(getRecords).toHaveBeenCalled());
+    store.getState().append([{ seq: 2, dedupe: null, createdAt: 'x', body: put('e2', 'Museum') }]);
+    release({ records: [r1], latestSeq: 1, more: false });
+    await vi.waitFor(() => expect(store.getState().status).toBe('ready'));
+    store.stop();
+    expect(store.getState().records.map((r) => r.seq)).toEqual([1, 2]);
+    expect(
+      store
+        .getState()
+        .events.map((e) => e.name)
+        .sort(),
+    ).toEqual(['Dinner', 'Museum']);
+  });
 });
 
 describe('review fixes', () => {
