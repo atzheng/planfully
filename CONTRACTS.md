@@ -191,10 +191,13 @@ type ParsedEmail = { from: string; to: string; suffix: string; subject: string; 
 type EmailRoute = (ctx: { env: Env; trip: TripRow; email: ParsedEmail }) => Promise<void>
 // email/handler.ts exports handleEmail(message, env, ctx) and a mutable `routes` map; it picks routes[suffix] ?? routes[''];  '' -> routes/default.ts, 'receipts' -> routes/receipts.ts
 
-// email/auth.ts: sender check. Reads the FIRST Authentication-Results header (Cloudflare prepends it;
-// authserv-id must be mx.cloudflare.net, later headers are sender-supplied and ignored). The sender passes if
-// dmarc=pass, or spf=pass with smtp.mailfrom, or dkim=pass with header.d, aligned with the From domain.
-// A bare spf=pass without a domain is not accepted. Allowlist match is on the From header address.
+// email/auth.ts: sender check. From must hold exactly one mailbox (postal-mime addressParser; zero, several,
+// group syntax or several From headers fail closed); address lowercased, trailing dot dropped.
+// Reads the FIRST Authentication-Results header (Cloudflare prepends it; authserv-id must be mx.cloudflare.net,
+// later headers are sender-supplied and ignored). Passes only if a clause is dmarc=pass with header.from, or
+// spf=pass with smtp.mailfrom, or dkim=pass with header.d, STRICTLY equal to the From domain (no subdomain
+// matching); a pass with no domain does not count. planfully-x46.6 verifies real Cloudflare headers.
+// A message whose rawSize + 61 (seal overhead) exceeds the 25 MB blob cap is rejected ('message too large').
 
 // llm/parse.ts
 type ParsedEvent = Omit<Event, 'id'|'attachments'|'source'|'createdAt'|'pinned'|'deleted'>

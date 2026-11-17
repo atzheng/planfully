@@ -1,15 +1,34 @@
+import { addressParser } from 'postal-mime';
+
 /**
  * Sender authentication from the Authentication-Results header that Cloudflare
  * Email Routing prepends before invoking the Worker.
  * https://developers.cloudflare.com/email-service/api/route-emails/email-handler/#authentication-results
  */
 
-/** Extracts the bare address from a From header value, lowercased. Null if none. */
+/**
+ * The single From mailbox, lowercased with any trailing dot dropped from the domain.
+ * Fails closed (null) for zero or several mailboxes, group syntax, several From headers
+ * (Headers.get joins them with ", ", which parses as several mailboxes) or junk.
+ */
 export function senderAddress(from: string | null): string | null {
   if (!from) return null;
-  const angled = /<([^<>\s]+@[^<>\s]+)>/.exec(from);
-  const bare = angled ? angled[1] : /([^\s<>",;]+@[^\s<>",;]+)/.exec(from)?.[1];
-  return bare ? bare.toLowerCase() : null;
+  let list: ReturnType<typeof addressParser>;
+  try {
+    list = addressParser(from);
+  } catch {
+    return null;
+  }
+  const [one, ...rest] = list;
+  if (!one || rest.length > 0 || one.group !== undefined || !one.address) return null;
+  const at = one.address.lastIndexOf('@');
+  if (at < 1) return null;
+  const domain = one.address
+    .slice(at + 1)
+    .toLowerCase()
+    .replace(/\.$/, '');
+  if (!domain) return null;
+  return `${one.address.slice(0, at).toLowerCase()}@${domain}`;
 }
 
 const TRUSTED_AUTHSERV = 'mx.cloudflare.net';
@@ -30,25 +49,36 @@ function trustedResults(value: string | null): string | null {
   return next ? v.slice(0, head + next.index) : v;
 }
 
-function aligned(domain: string | undefined, fromDomain: string): boolean {
-  if (!domain) return false;
-  const d = domain.toLowerCase();
-  return d === fromDomain || d.endsWith(`.${fromDomain}`) || fromDomain.endsWith(`.${d}`);
+function domainOf(v: string | undefined): string | undefined {
+  if (!v) return undefined;
+  const d = v
+    .slice(v.lastIndexOf('@') + 1)
+    .toLowerCase()
+    .replace(/\.$/, '');
+  return d || undefined;
 }
 
 /**
- * True when Cloudflare reports the message passed authentication for the From domain:
- * dmarc=pass (SPF or DKIM aligned with From), or spf=pass / dkim=pass whose reported
- * domain (smtp.mailfrom / header.d) matches the From domain. A bare spf=pass with no
- * domain is not enough, since it only vouches for the envelope sender.
+ * True when Cloudflare reports a pass bound to the From domain, strictly equal:
+ * dmarc=pass with header.from, spf=pass with smtp.mailfrom, or dkim=pass with header.d.
+ * A pass clause that names no domain (or another one) does not count.
  */
 export function passesAuth(authResults: string | null, fromAddress: string): boolean {
   const r = trustedResults(authResults);
   if (!r) return false;
-  const fromDomain = fromAddress.slice(fromAddress.lastIndexOf('@') + 1);
-  if (/\bdmarc=pass\b/.test(r)) return true;
-  const spf = /\bspf=pass\b[^;]*?smtp\.mailfrom=(?:[^@\s;]*@)?([^\s;()]+)/.exec(r);
-  if (spf && aligned(spf[1], fromDomain)) return true;
-  const dkim = /\bdkim=pass\b[^;]*?header\.(?:d|i)=(?:[^@\s;]*@)?([^\s;()]+)/.exec(r);
-  return !!dkim && aligned(dkim[1], fromDomain);
+  const fromDomain = domainOf(fromAddress);
+  if (!fromDomain) return false;
+  const props: Record<string, string> = {
+    dmarc: 'header\\.from',
+    spf: 'smtp\\.mailfrom',
+    dkim: 'header\\.d',
+  };
+  for (const clause of r.split(';').slice(1)) {
+    for (const [method, prop] of Object.entries(props)) {
+      if (!new RegExp(`^\\s*${method}=pass\\b`).test(clause)) continue;
+      const m = new RegExp(`\\b${prop}=([^\\s;()]+)`).exec(clause);
+      if (domainOf(m?.[1]) === fromDomain) return true;
+    }
+  }
+  return false;
 }

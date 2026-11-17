@@ -175,6 +175,41 @@ describe('email handler', () => {
   });
 });
 
+describe('spoofing and size', () => {
+  const spoofs = [
+    '"<alice@example.com>" <evil@evil.com>',
+    'evil@evil.com (<alice@example.com>)',
+    'evil@evil.com, alice@example.com',
+  ];
+  test.each(spoofs)('spoofed From %s is dropped', async (from) => {
+    const t = await setup();
+    const calls = spyRoutes();
+    const auth = 'mx.cloudflare.net; dmarc=pass header.from=evil.com';
+    await run(fakeMessage(plain.replace(/^From: .*$/m, `From: ${from}`), t.address, auth).message);
+    expect(await blobCount(t.trip.id)).toBe(0);
+    expect(calls.def.length).toBe(0);
+  });
+
+  test('two From headers are dropped', async () => {
+    const t = await setup();
+    const m = fakeMessage(plain, t.address);
+    m.message.headers.append('from', 'evil@evil.com');
+    await run(m.message);
+    expect(await blobCount(t.trip.id)).toBe(0);
+  });
+
+  test('oversized message is rejected and nothing is written', async () => {
+    const t = await setup();
+    const calls = spyRoutes();
+    const m = fakeMessage(plain, t.address);
+    Object.defineProperty(m.message, 'rawSize', { value: 25 * 1024 * 1024 - 60 });
+    await run(m.message);
+    expect(m.setReject).toHaveBeenCalledWith('message too large');
+    expect(await blobCount(t.trip.id)).toBe(0);
+    expect(calls.def.length).toBe(0);
+  });
+});
+
 describe('helpers', () => {
   test('splitRecipient', () => {
     expect(splitRecipient('Foo-ABC123+Receipts+x@Trips.Example.com')).toEqual({
@@ -192,27 +227,39 @@ describe('helpers', () => {
     expect(senderAddress(null)).toBeNull();
   });
 
-  test('passesAuth', () => {
-    expect(passesAuth(PASS, 'a@example.com')).toBe(true);
-    expect(passesAuth('mx.cloudflare.net; dmarc=pass', 'a@example.com')).toBe(true);
-    expect(
-      passesAuth('mx.cloudflare.net; spf=pass smtp.mailfrom=bounces.example.com', 'a@example.com'),
-    ).toBe(true);
-    expect(passesAuth('mx.cloudflare.net; spf=pass smtp.mailfrom=evil.com', 'a@example.com')).toBe(
+  test('senderAddress fails closed on spoofing tricks', () => {
+    expect(senderAddress('"<alice@allowed.com>" <evil@evil.com>')).toBe('evil@evil.com');
+    expect(senderAddress('evil@evil.com (<alice@allowed.com>)')).toBe('evil@evil.com');
+    expect(senderAddress('a@example.com, b@example.com')).toBeNull();
+    expect(senderAddress('team: a@example.com, b@example.com;')).toBeNull();
+    expect(senderAddress('Bob@Example.COM.')).toBe('bob@example.com');
+  });
+
+  test('passesAuth binds the pass to the From domain, strictly', () => {
+    const f = 'a@example.com';
+    expect(passesAuth(PASS, f)).toBe(true);
+    expect(passesAuth('mx.cloudflare.net; dmarc=pass header.from=Example.com', f)).toBe(true);
+    expect(passesAuth('mx.cloudflare.net; dmarc=pass', f)).toBe(false);
+    expect(passesAuth('mx.cloudflare.net; dmarc=pass header.from=evil.com', f)).toBe(false);
+    expect(passesAuth('mx.cloudflare.net; spf=pass smtp.mailfrom=bounces.example.com', f)).toBe(
       false,
     );
-    expect(passesAuth('mx.cloudflare.net; dkim=pass header.d=evil.com', 'a@example.com')).toBe(
-      false,
-    );
-    expect(passesAuth('mx.cloudflare.net; spf=pass', 'a@example.com')).toBe(false);
-    expect(passesAuth('mx.cloudflare.net; spf=fail; dmarc=fail', 'a@example.com')).toBe(false);
-    expect(passesAuth(null, 'a@example.com')).toBe(false);
+    expect(passesAuth('mx.cloudflare.net; spf=pass smtp.mailfrom=bob@example.com', f)).toBe(true);
+    expect(passesAuth('mx.cloudflare.net; dkim=pass header.d=evil.com', f)).toBe(false);
+    expect(passesAuth('mx.cloudflare.net; dkim=pass header.d=example.com', f)).toBe(true);
+    expect(passesAuth('mx.cloudflare.net; spf=pass', f)).toBe(false);
+    expect(passesAuth('mx.cloudflare.net; spf=fail smtp.mailfrom=example.com', f)).toBe(false);
+    expect(passesAuth(null, f)).toBe(false);
   });
 
   test('sender-supplied Authentication-Results cannot vouch', () => {
-    expect(passesAuth('evil.example; dmarc=pass', 'a@example.com')).toBe(false);
+    const f = 'a@example.com';
+    expect(passesAuth('evil.example; dmarc=pass header.from=example.com', f)).toBe(false);
     expect(
-      passesAuth('mx.cloudflare.net; dmarc=fail, evil.example; dmarc=pass', 'a@example.com'),
+      passesAuth(
+        'mx.cloudflare.net; dmarc=fail, evil.example; dmarc=pass header.from=example.com',
+        f,
+      ),
     ).toBe(false);
   });
 });

@@ -4,7 +4,7 @@ import type { Attachment } from '@planfully/shared';
 import { getTripByAddress } from '../db/trips';
 import type { TripRow } from '../db/trips';
 import type { Env } from '../env';
-import { putBlob } from '../storage/blobs';
+import { MAX_BLOB_BYTES, putBlob } from '../storage/blobs';
 import { passesAuth, senderAddress } from './auth';
 import { defaultRoute } from './routes/default';
 import { receiptsRoute } from './routes/receipts';
@@ -15,6 +15,8 @@ export const routes: Record<string, EmailRoute | undefined> & { '': EmailRoute }
   '': defaultRoute,
   receipts: receiptsRoute,
 };
+
+const SEAL_OVERHEAD = 1 + 32 + 12 + 16;
 
 /** Never log content: only error names. */
 function logFailure(stage: string, err: unknown): void {
@@ -109,6 +111,12 @@ export async function handleEmail(
   const from = senderAddress(message.headers.get('from'));
   if (!from || !trip.allowedSenders.includes(from)) return;
   if (!passesAuth(message.headers.get('authentication-results'), from)) return;
+
+  // Sealing adds 61 bytes (version, ephemeral key, nonce, GCM tag).
+  if (message.rawSize + SEAL_OVERHEAD > MAX_BLOB_BYTES) {
+    message.setReject('message too large');
+    return;
+  }
 
   let sourceAttachment: Attachment;
   let raw: Uint8Array;
