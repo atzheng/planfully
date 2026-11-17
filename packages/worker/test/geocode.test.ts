@@ -1,6 +1,6 @@
 import { env, exports } from 'cloudflare:workers';
 import { afterEach, beforeAll, describe, expect, test, vi } from 'vitest';
-import { geocode, isWeakMatch, namesOverlap } from '../src/geo/geocode';
+import { computeBias, geocode, isWeakMatch, namesOverlap } from '../src/geo/geocode';
 import type { Env } from '../src/env';
 import { applyMigrations, makeTrip } from './helpers';
 import vectors from '../../shared/test/vectors.json';
@@ -251,5 +251,64 @@ describe('GET /api/trips/:id/geocode', () => {
 
     mockFetch({}, 500);
     expect(await (await get(t.id, 'lisbon hotel')).json()).toEqual({ results: [] });
+  });
+});
+
+describe('computeBias()', () => {
+  test('empty or invalid input gives undefined', () => {
+    expect(computeBias([])).toBeUndefined();
+    expect(computeBias([[Number.NaN, 1]])).toBeUndefined();
+  });
+  test('single point: centre is the point, min radius', () => {
+    const b = computeBias([[38.72, -9.14]]);
+    expect(b?.latitude).toBeCloseTo(38.72, 4);
+    expect(b?.longitude).toBeCloseTo(-9.14, 4);
+    expect(b?.radius).toBe(25_000);
+  });
+  test('spread widens radius, capped at 50 km', () => {
+    const near = computeBias([
+      [0, 0],
+      [0, 0.6],
+    ]); // ~67 km apart
+    expect(near?.radius).toBeGreaterThan(25_000);
+    expect(near?.radius).toBeLessThanOrEqual(50_000);
+    expect(
+      computeBias([
+        [0, 0],
+        [10, 10],
+      ])?.radius,
+    ).toBe(50_000);
+  });
+  test('antimeridian-safe', () => {
+    const b = computeBias([
+      [0, 179.9],
+      [0, -179.9],
+    ]);
+    expect(Math.abs(b?.longitude ?? 0)).toBeGreaterThan(179.5);
+  });
+});
+
+describe('location bias', () => {
+  test('sent for name-only lookups when session has a bias', async () => {
+    const spy = mockFetch({ places: [place({ displayName: { text: 'Hilton Lisbon' } })] });
+    const bias = { latitude: 38.7, longitude: -9.1, radius: 25_000 };
+    await geocode(withKey, { name: 'Hilton' }, { bias });
+    expect(JSON.parse(firstCall(spy)[1].body as string).locationBias).toEqual({
+      circle: { center: { latitude: 38.7, longitude: -9.1 }, radius: 25_000 },
+    });
+  });
+  test('not sent without a bias or when an address is present', async () => {
+    const spy = mockFetch({ places: [place()] });
+    await geocode(withKey, { name: 'Hotel Avenida' }, {});
+    expect(JSON.parse(firstCall(spy)[1].body as string)).not.toHaveProperty('locationBias');
+    spy.mockClear();
+    await geocode(
+      withKey,
+      { name: 'Hotel Avenida', address: 'Rua X' },
+      {
+        bias: { latitude: 1, longitude: 2, radius: 1000 },
+      },
+    );
+    expect(JSON.parse(firstCall(spy)[1].body as string)).not.toHaveProperty('locationBias');
   });
 });

@@ -170,14 +170,19 @@ export function buildItinerary(
   };
 }
 
-export function pdfFileName(tripName: string): string {
+/** '<slug of trip name><suffix>' (slug capped at 80 chars; 'trip' when empty). */
+export function exportFileName(tripName: string, suffix: string): string {
   const slug = tripName
     .normalize('NFKD')
     .replace(/[^\w\s-]/g, '')
     .trim()
     .replace(/\s+/g, '-')
     .toLowerCase();
-  return `${slug.slice(0, 80).replace(/-+$/, '') || 'trip'}-itinerary.pdf`;
+  return `${slug.slice(0, 80).replace(/-+$/, '') || 'trip'}${suffix}`;
+}
+
+export function pdfFileName(tripName: string): string {
+  return exportFileName(tripName, '-itinerary.pdf');
 }
 
 /**
