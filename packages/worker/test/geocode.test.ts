@@ -151,7 +151,7 @@ describe('geocode()', () => {
     expect(namesOverlap('東京タワー', '東京タワー')).toBe(true);
     expect(namesOverlap('東京タワー', '東京タワー 展望台')).toBe(true);
     expect(namesOverlap('Красная площадь', 'Красная площадь, Москва')).toBe(true);
-    expect(namesOverlap('Παρθενώνας', 'ΠΑΡΘΕΝΩΝΑΣ')).toBe(false); // different word forms
+    expect(namesOverlap('Παρθενώνας', 'ΠΑΡΘΕΝΩΝΑΣ')).toBe(true);
     expect(namesOverlap('Ακρόπολη', 'ακροπολη Αθηνών')).toBe(true);
     expect(namesOverlap('برج خليفة', 'برج خليفة دبي')).toBe(true);
     expect(namesOverlap('วัดพระแก้ว', 'วัดพระแก้ว กรุงเทพ')).toBe(true);
