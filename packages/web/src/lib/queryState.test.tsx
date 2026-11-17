@@ -124,7 +124,7 @@ describe('app shell', () => {
         <LocationProbe />
       </MemoryRouter>,
     );
-    expect(screen.getByText('0 events')).toBeTruthy();
+    expect(screen.getByText('No events yet.')).toBeTruthy();
     act(() => screen.getByRole('button', { name: 'Map' }).click());
     expect(screen.getByTestId('loc').textContent).toBe('/t/x?view=map#abc');
     expect(screen.getByText('MapView')).toBeTruthy();
