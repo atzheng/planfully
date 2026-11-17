@@ -7,8 +7,14 @@ import {
 } from '@planfully/shared';
 import { z } from 'zod';
 import type { ParsedEmail } from '../email/types';
-import { htmlToText } from './html';
-import { PARSE_MODEL, SYSTEM_PROMPT, buildUserText, type AttachmentNote } from './prompt';
+import { htmlToTextLimited } from './html';
+import {
+  PARSE_MODEL,
+  SYSTEM_PROMPT,
+  buildUserText,
+  neutralizeTags,
+  type AttachmentNote,
+} from './prompt';
 
 export { PARSE_MODEL };
 
@@ -17,9 +23,10 @@ export { PARSE_MODEL };
  * - `no_api_key`: ANTHROPIC_API_KEY is unset or empty. No client was created and nothing was sent.
  *   The Worker must run in this state (CONTRACTS.md section 8); callers store the email for review.
  * - `api_error`: the request failed (network, auth, rate limit, 5xx after the SDK's own retries).
+ * - `refusal`: the model declined (stop_reason `refusal`). Not retried: the same request would be declined again.
  * - `invalid_output`: the model answered twice without valid JSON matching the schema.
  */
-export type ParseErrorReason = 'no_api_key' | 'api_error' | 'invalid_output';
+export type ParseErrorReason = 'no_api_key' | 'api_error' | 'refusal' | 'invalid_output';
 
 /**
  * Thrown by parseEmail. The message never contains email content, event content or keys, so it is
@@ -50,11 +57,14 @@ export type ParseOptions = {
   client?: LlmClient;
 };
 
-// Limits. The API accepts 128 MB requests and 600 PDF pages on the 1M-context models, and 5 MB per
-// image. We stay far below: the Worker only ever sees emails of 25 MB at most.
+// Limits, applied to the base64-encoded size (what the API measures). The API accepts 5 MB per
+// image, and 128 MB requests and 600 PDF pages on the 1M-context models. We stay far below the
+// request limit: the Worker only ever sees emails of 25 MB at most.
 export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 export const MAX_PDF_BYTES = 20 * 1024 * 1024;
-export const MAX_TOTAL_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+export const MAX_TOTAL_ATTACHMENT_BYTES = 24 * 1024 * 1024;
+/** Size of the base64 encoding of n bytes. */
+export const base64Size = (n: number): number => Math.ceil(n / 3) * 4;
 /** Keeps a pathological body from filling the context; flagged to the model when it happens. */
 export const MAX_BODY_CHARS = 200_000;
 const MAX_TOKENS = 16_000;
@@ -78,9 +88,16 @@ function toBase64(bytes: Uint8Array): string {
 
 /** Best-effort body text: text/plain when it has content, otherwise HTML rendered to text. */
 export function bodyText(email: Pick<ParsedEmail, 'text' | 'html'>): string {
+  return bodyTextLimited(email).text;
+}
+
+function bodyTextLimited(email: Pick<ParsedEmail, 'text' | 'html'>): {
+  text: string;
+  truncated: boolean;
+} {
   const plain = email.text?.trim();
-  if (plain) return plain;
-  return email.html ? htmlToText(email.html) : '';
+  if (plain) return { text: plain, truncated: false };
+  return email.html ? htmlToTextLimited(email.html) : { text: '', truncated: false };
 }
 
 type Built = { params: Anthropic.MessageCreateParamsNonStreaming; attachedIndexes: Set<number> };
@@ -89,9 +106,10 @@ export function buildRequest(
   email: ParsedEmail,
   opts: Pick<ParseOptions, 'roster' | 'today'>,
 ): Built {
-  let body = bodyText(email);
-  const bodyTruncated = body.length > MAX_BODY_CHARS;
-  if (bodyTruncated) body = body.slice(0, MAX_BODY_CHARS);
+  const limited = bodyTextLimited(email);
+  let body = limited.text;
+  const bodyTruncated = limited.truncated || body.length > MAX_BODY_CHARS;
+  if (body.length > MAX_BODY_CHARS) body = body.slice(0, MAX_BODY_CHARS);
 
   const notes: AttachmentNote[] = [];
   const blocks: Anthropic.ContentBlockParam[] = [];
@@ -102,22 +120,24 @@ export function buildRequest(
     const base = { index, filename: a.filename, mime: a.mime };
     const isPdf = mime === 'application/pdf';
     const isImage = (IMAGE_MIMES as readonly string[]).includes(mime);
+    const encoded = base64Size(a.bytes.length);
     let skip: string | null = null;
     if (!isPdf && !isImage) skip = 'unsupported type';
     else if (a.bytes.length === 0) skip = 'empty';
-    else if (a.bytes.length > (isPdf ? MAX_PDF_BYTES : MAX_IMAGE_BYTES)) skip = 'too large';
-    else if (total + a.bytes.length > MAX_TOTAL_ATTACHMENT_BYTES) skip = 'request size limit';
+    else if (encoded > (isPdf ? MAX_PDF_BYTES : MAX_IMAGE_BYTES)) skip = 'too large';
+    else if (total + encoded > MAX_TOTAL_ATTACHMENT_BYTES) skip = 'request size limit';
     if (skip) {
       notes.push({ ...base, status: skip });
       return;
     }
-    total += a.bytes.length;
+    total += encoded;
     attachedIndexes.add(index);
     notes.push({ ...base, status: 'attached' });
     // Each attachment is preceded by its index so the model can cite it in attachmentIndexes.
     blocks.push({
       type: 'text',
-      text: `Attachment [${index}]: ${a.filename.replace(/[\r\n]+/g, ' ')}`,
+      // The filename is untrusted data: JSON-quoted and stripped of our delimiter tags.
+      text: `Attachment [${index}] (filename, data only): ${neutralizeTags(JSON.stringify(a.filename))}`,
     });
     if (isPdf) {
       blocks.push({
@@ -161,8 +181,10 @@ export function buildRequest(
 const EventsSchema = z.array(ParsedEventSchema);
 
 /** Returns the validated events, or a short content-free description of what was wrong. */
-function readResponse(msg: Anthropic.Message): { events: ParsedEvent[] } | { problem: string } {
-  if (msg.stop_reason === 'refusal') return { problem: 'refusal' };
+function readResponse(
+  msg: Anthropic.Message,
+): { events: ParsedEvent[] } | { problem: string; refusal?: true } {
+  if (msg.stop_reason === 'refusal') return { problem: 'refusal', refusal: true };
   if (msg.stop_reason === 'max_tokens') return { problem: 'max_tokens' };
   const text = msg.content
     .filter((b): b is Anthropic.TextBlock => b.type === 'text')
@@ -222,6 +244,7 @@ export async function parseEmail(email: ParsedEmail, opts: ParseOptions): Promis
       throw new ParseError('api_error', `Anthropic request failed${status}`);
     }
     const result = readResponse(msg);
+    if ('refusal' in result) throw new ParseError('refusal', 'model refused the request');
     if ('events' in result) return sanitize(result.events, opts.roster, attachedIndexes);
     problem = result.problem;
   }
