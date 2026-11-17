@@ -112,6 +112,17 @@ type OpenedRecord = { seq: number; dedupe: string | null; createdAt: string; bod
 
 `planCompaction(records: OpenedRecord[], minRecords = 4): { write: { body: RecordBody; dedupe: string | null }; deleteSeqs: number[] }[]` — for each group with at least `minRecords` records, one `put` holding the folded event (including `pinned` and `deleted`), carrying the group's dedupe tag, and the seqs it replaces. Folding the log before and after applying a plan must give the same events, including when both old and new records are present.
 
+Decisions made while implementing `fold.ts` (ambiguities in the rules above):
+
+- **Grouping is global, replay is per group.** Puts are joined transitively (union-find) by shared non-null dedupe tag or shared `event.id`; each group is then replayed in `seq` order. A patch/delete joins the group that owns its target id (canonical or alias) only if its `seq` is greater than that group's earliest put; otherwise it is "unknown" and ignored.
+- **Absent fields.** A put only overwrites fields it defines; an absent optional field keeps the earlier value. A patch cannot clear an optional field (JSON has no `undefined`).
+- **Pinning.** `pinned` is the sorted union of all puts' `pinned` and every field name set by a patch (a patch's own `pinned` key is unioned, not set). Only `source: 'email'` puts respect pins; a `manual` put overwrites pinned fields. `delete` is `patch { deleted: true }`, so `'deleted'` is pinned and a later email cannot undelete.
+- **cancelled sticks** only against `source: 'email'` puts; a manual put or a patch may set it back.
+- **Attachments** from puts always union by id (existing first), even if `attachments` is pinned. A patch replaces the list; a later email that re-lists a removed attachment brings it back.
+- **createdAt** is the earliest put's. **id** is always the canonical id.
+- **Output order** is `(createdAt, id)` ascending, so it is stable across compaction.
+- **planCompaction** counts all records in a group (puts plus applicable patches/deletes) toward `minRecords`, writes the folded event (including `pinned` and `deleted`) with the group's tag, and skips groups joined by more than one distinct dedupe tag (one record carries one tag). After compaction aliases are gone: a later patch targeting an alias (not the canonical id) is ignored, so writers should target the canonical id from the folded output.
+
 ## 4. Crypto (`crypto.ts`)
 
 ```ts
