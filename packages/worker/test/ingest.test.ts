@@ -227,6 +227,49 @@ describe('default route', () => {
     expect(ev.attachments.map((a) => a.filename)).toEqual(['a.pdf', 'b.png', 'mail.eml']);
   });
 
+  test('name-only locations are geocoded after address ones, biased to them', async () => {
+    const { trip } = await setup();
+    const bodies: Array<Record<string, unknown>> = [];
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (_u, init) => {
+      const b = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      bodies.push(b);
+      return new Response(
+        JSON.stringify({
+          places: [
+            {
+              id: 'p1',
+              displayName: { text: 'Hilton Lisbon' },
+              formattedAddress: 'Lisboa',
+              location: { latitude: 38.72, longitude: -9.14 },
+              types: ['lodging'],
+            },
+          ],
+        }),
+      );
+    });
+    const mk = (name: string, location: Record<string, unknown>) => ({
+      name,
+      type: 'lodging',
+      participants: [],
+      status: 'confirmed',
+      location,
+      attachmentIndexes: [],
+    });
+    await ingest(
+      trip,
+      [mk('Stay', { name: 'Hilton' }), mk('Other', { name: 'Hilton Lisbon', address: 'Rua X' })],
+      makeEmail(),
+      { ...withKey, GOOGLE_MAPS_SERVER_KEY: 'g-key' } as Env,
+    );
+    expect(bodies).toHaveLength(2);
+    expect(bodies[0]?.textQuery).toBe('Hilton Lisbon, Rua X');
+    expect(bodies[0]).not.toHaveProperty('locationBias');
+    expect(bodies[1]?.textQuery).toBe('Hilton');
+    expect(bodies[1]?.locationBias).toMatchObject({
+      circle: { center: { latitude: expect.closeTo(38.72, 3) } },
+    });
+  });
+
   test('appendEvent rejects an event that fails EventSchema and writes nothing', async () => {
     const { trip } = await setup();
     const bad = { id: 'x', name: '', type: 'flight' } as unknown as Event;

@@ -2,7 +2,7 @@ import { dayKey, dedupeTag, fromBase64 } from '@planfully/shared';
 import type { Attachment, Event, Location, ParsedEvent } from '@planfully/shared';
 import type { TripRow } from '../../db/trips';
 import type { Env } from '../../env';
-import { geocode, type GeocodeSession } from '../../geo/geocode';
+import { computeBias, geocode, type GeocodeSession } from '../../geo/geocode';
 import { parseEmail } from '../../llm/parse';
 import type { LlmClient } from '../../llm/parse';
 import { BlobTooLargeError } from '../../storage/blobs';
@@ -112,6 +112,40 @@ function storeFile(
   return p;
 }
 
+/**
+ * Geocodes every location of the run. Address-bearing (or already located) ones go first;
+ * their coordinates give a bias centre for the name-only ones, so a bare "Hilton" resolves
+ * near the rest of the trip. The Worker cannot read stored (encrypted) events, so only
+ * this email's events can supply the bias.
+ */
+async function geocodeAll(
+  env: Env,
+  parsed: ParsedEvent[],
+  geo: GeocodeSession,
+): Promise<Array<{ location?: Location; endLocation?: Location }>> {
+  const out: Array<{ location?: Location; endLocation?: Location }> = parsed.map(() => ({}));
+  const slots: Array<[number, 'location' | 'endLocation', Location]> = [];
+  parsed.forEach((p, i) => {
+    if (p.location) slots.push([i, 'location', p.location]);
+    if (p.endLocation) slots.push([i, 'endLocation', p.endLocation]);
+  });
+  const nameOnly = (l: Location) =>
+    !l.address?.trim() && (l.lat === undefined || l.lng === undefined);
+  const points: Array<[number, number]> = [];
+  const run = async (group: typeof slots) => {
+    for (const [i, key, loc] of group) {
+      const r = await geocode(env, loc, geo);
+      const o = out[i];
+      if (o) o[key] = r;
+      if (r.lat !== undefined && r.lng !== undefined) points.push([r.lat, r.lng]);
+    }
+  };
+  await run(slots.filter(([, , l]) => !nameOnly(l)));
+  geo.bias = computeBias(points);
+  await run(slots.filter(([, , l]) => nameOnly(l)));
+  return out;
+}
+
 /** Returns the number of events appended. One event failing does not stop the others. */
 async function ingestEvents(
   env: Env,
@@ -122,8 +156,9 @@ async function ingestEvents(
   const cache = new Map<number, Promise<Attachment | null>>();
   const failures = { count: 0 };
   const geo: GeocodeSession = {};
+  const places = await geocodeAll(env, parsed, geo);
   let appended = 0;
-  for (const p of parsed) {
+  for (const [idx, p] of parsed.entries()) {
     try {
       const { attachmentIndexes, ...fields } = p;
       const files: Attachment[] = [];
@@ -131,10 +166,7 @@ async function ingestEvents(
         const a = await storeFile(env, trip, email, i, cache, failures);
         if (a) files.push(a);
       }
-      const location = fields.location ? await geocode(env, fields.location, geo) : undefined;
-      const endLocation = fields.endLocation
-        ? await geocode(env, fields.endLocation, geo)
-        : undefined;
+      const { location, endLocation } = places[idx] ?? {};
       const event: Event = {
         ...fields,
         ...(location && { location }),

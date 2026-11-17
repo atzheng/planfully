@@ -210,7 +210,10 @@ type ParsedEvent = Omit<Event, 'id'|'attachments'|'source'|'createdAt'|'pinned'|
 parseEmail(email: ParsedEmail, opts: { roster: RosterMember[]; today: string; apiKey: string }): Promise<ParsedEvent[]>
 
 // geo/geocode.ts — returns the input unchanged when no key is set or the match is weak
-geocode(env: Env, loc: Location, session?: { blocked?: boolean }): Promise<Location>
+geocode(env: Env, loc: Location, session?: { blocked?: boolean; bias?: GeoBias }): Promise<Location>
+// GeoBias = { latitude, longitude, radius (m, <= 50000) }; computeBias(points) is pure (unit-vector centroid).
+// Name-only lookups send Places `locationBias.circle` from session.bias; ingest geocodes address-bearing
+// events first and derives the bias from them (only this email's events: stored trip data is encrypted).
 // name-only queries need a token overlap with the match's name; a lone lat or lng is dropped/replaced;
 // 403/429 log the status only and set session.blocked so the rest of the ingest run skips lookups
 ```
