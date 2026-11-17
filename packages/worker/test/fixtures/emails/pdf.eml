@@ -1,0 +1,18 @@
+From: Alice <alice@example.com>
+To: t@trips.example.com
+Subject: Ticket
+Date: Mon, 02 Mar 2026 10:00:00 +0000
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="b1"
+
+--b1
+Content-Type: text/plain; charset=utf-8
+
+Ticket attached.
+--b1
+Content-Type: application/pdf; name="ticket.pdf"
+Content-Disposition: attachment; filename="ticket.pdf"
+Content-Transfer-Encoding: base64
+
+JVBERi0xLjQKJSVFT0YK
+--b1--
