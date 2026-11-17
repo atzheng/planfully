@@ -1,3 +1,4 @@
+import { createContext, useContext } from 'react';
 import { DateTime } from 'luxon';
 
 const HOUR_MS = 3_600_000;
@@ -75,4 +76,29 @@ export function ticks(scale: TimeScale, fromMs: number, toMs: number, tz: string
     }
   }
   return out;
+}
+
+/** Default zoom. Read through `usePxPerHour()` (zoom.ts) so the zoom bead can drive it from one place. */
+export const DEFAULT_PX_PER_HOUR = 48;
+
+export type VisibleRange = { fromMs: number; toMs: number };
+
+const ScaleContext = createContext<TimeScale | null>(null);
+const VisibleContext = createContext<VisibleRange | null>(null);
+
+/** Provided by `Timeline`. Side tracks (weather) position themselves with `useTimeScale().toY` only. */
+export const TimeScaleProvider = ScaleContext.Provider;
+export const VisibleRangeProvider = VisibleContext.Provider;
+
+export function useTimeScale(): TimeScale {
+  const s = useContext(ScaleContext);
+  if (!s) throw new Error('useTimeScale must be used inside <Timeline>');
+  return s;
+}
+
+/** Time range currently scrolled into view, rounded outward to whole hours (changes rarely while scrolling). */
+export function useVisibleRange(): VisibleRange {
+  const r = useContext(VisibleContext);
+  if (!r) throw new Error('useVisibleRange must be used inside <Timeline>');
+  return r;
 }
