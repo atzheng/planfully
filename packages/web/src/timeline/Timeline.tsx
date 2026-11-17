@@ -10,6 +10,8 @@ import {
   useQueryState,
 } from '../lib/queryState';
 import { useTrip } from '../trip/store';
+import { bucketLabel, compactBuckets, isCompact } from './compact';
+import type { Bucket } from './compact';
 import { initialScrollMs, LANE_MODES, layoutEvents, withoutEmptyLanes } from './layout';
 import type { Layout, LaneMode } from './layout';
 import {
@@ -122,6 +124,100 @@ const Blocks = memo(function Blocks({
   );
 });
 
+const NO_BUCKETS: Bucket[] = [];
+const MAX_CHIP_ICONS = 3;
+
+/** Low-zoom summary chips for one lane; a chip opens a small list of its events (planfully-ieq). */
+const Chips = memo(function Chips({
+  buckets,
+  byId,
+  zone,
+  onOpen,
+}: {
+  buckets: Bucket[];
+  byId: Map<string, Event>;
+  zone: string;
+  onOpen: (id: string) => void;
+}) {
+  const [openKey, setOpenKey] = useState<string | null>(null);
+  const root = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!openKey) return;
+    const onDown = (ev: PointerEvent) => {
+      if (!root.current?.contains(ev.target as Node)) setOpenKey(null);
+    };
+    const onKey = (ev: KeyboardEvent) => ev.key === 'Escape' && setOpenKey(null);
+    document.addEventListener('pointerdown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [openKey]);
+  return (
+    <div ref={root}>
+      {buckets.map((b) => {
+        const open = openKey === b.key;
+        const label = bucketLabel(b.eventIds.length, b.unit, b.startMs, zone);
+        return (
+          <div key={b.key}>
+            <button
+              type="button"
+              className={`${styles.chip} ${open ? styles.chipOpen : ''}`}
+              data-testid="chip"
+              style={{ top: b.top, height: b.height }}
+              aria-label={label}
+              aria-expanded={open}
+              onClick={() => setOpenKey(open ? null : b.key)}
+            >
+              <span className={styles.chipCount}>{b.eventIds.length}</span>
+              <span className={styles.chipIcons} aria-hidden="true">
+                {b.types.slice(0, MAX_CHIP_ICONS).map((t) => TYPE_ICON[t])}
+                {b.types.length > MAX_CHIP_ICONS ? '…' : ''}
+              </span>
+            </button>
+            {open && (
+              <ul
+                className={styles.chipList}
+                data-testid="chip-list"
+                style={{ top: b.top + b.height + 2 }}
+                aria-label={label}
+              >
+                {b.eventIds.map((id) => {
+                  const e = byId.get(id);
+                  if (!e) return null;
+                  const time = localStartLabel(e);
+                  return (
+                    <li key={id}>
+                      <button
+                        type="button"
+                        className={`${styles.chipItem} ${e.status === 'cancelled' ? styles.cancelled : ''}`}
+                        data-testid="chip-item"
+                        data-event-id={id}
+                        onClick={() => {
+                          setOpenKey(null);
+                          onOpen(id);
+                        }}
+                      >
+                        <span aria-hidden="true">{TYPE_ICON[e.type]}</span>
+                        <span className={styles.chipItemName}>{e.name}</span>
+                        {time && <span className={styles.blockTime}>{time}</span>}
+                        {e.status === 'cancelled' && (
+                          <span className={styles.srOnly}> (cancelled)</span>
+                        )}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+});
+
 const Ticks = memo(function Ticks({ list, scale }: { list: Tick[]; scale: TimeScale }) {
   return (
     <>
@@ -201,6 +297,18 @@ export function Timeline({ gutter: gutterProp }: { gutter?: ReactNode } = {}) {
     }
     return m;
   }, [layout]);
+  const compact = isCompact(pxPerHour);
+  const bucketsByLane = useMemo(() => {
+    const m = new Map<string, Bucket[]>();
+    if (!compact || !range) return m;
+    const byEvent = new Map(events.map((e) => [e.id, e]));
+    for (const b of compactBuckets(layout, byEvent, scale, zone, scale.toY(range.toMs))) {
+      const list = m.get(b.laneKey);
+      if (list) list.push(b);
+      else m.set(b.laneKey, [b]);
+    }
+    return m;
+  }, [compact, layout, events, scale, zone, range]);
   const laneHead = laneMode === 'none' ? 0 : LANE_HEAD_PX;
   /** Scroller y at which the time axis starts (day heading plus lane header row). */
   const topPx = HEADING_PX + laneHead;
@@ -508,11 +616,20 @@ export function Timeline({ gutter: gutterProp }: { gutter?: ReactNode } = {}) {
                             data-testid="lane"
                             data-lane={l.key}
                           >
-                            <Blocks
-                              blocks={blocksByLane.get(l.key) ?? NO_BLOCKS}
-                              byId={byId}
-                              onOpen={setOpenId}
-                            />
+                            {compact ? (
+                              <Chips
+                                buckets={bucketsByLane.get(l.key) ?? NO_BUCKETS}
+                                byId={byId}
+                                zone={zone}
+                                onOpen={setOpenId}
+                              />
+                            ) : (
+                              <Blocks
+                                blocks={blocksByLane.get(l.key) ?? NO_BLOCKS}
+                                byId={byId}
+                                onOpen={setOpenId}
+                              />
+                            )}
                           </div>
                         ))}
                       </div>
