@@ -2,9 +2,10 @@
 
 import { useRef, useState } from 'react';
 import { fromInstant, type Attachment, type Event } from '@planfully/shared';
+import { ApiError } from '../lib/api';
 import { useTripActions } from '../trip/actions';
 import { FileTooLargeError, uploadAttachment, type UploadContext } from '../trip/attachments';
-import { useTrip } from '../trip/store';
+import { useTrip, useTripStore } from '../trip/store';
 import { Button } from '../ui/Button';
 import styles from './UploadButtons.module.css';
 
@@ -14,6 +15,35 @@ export function receiptName(filename: string): string {
   const base = (dot > 0 ? filename.slice(0, dot) : filename).trim();
   return base || 'Receipt';
 }
+
+/** Say what went wrong in terms a person can act on: too large, server refused, or offline. */
+export function describeUploadError(
+  e: unknown,
+  filename: string,
+  stage: 'upload' | 'save',
+): string {
+  if (e instanceof FileTooLargeError) return e.message;
+  const what = stage === 'upload' ? 'could not be uploaded' : 'was uploaded but could not be saved';
+  if (e instanceof ApiError) {
+    if (e.status === 413) return `${filename} is too large for the server.`;
+    if (e.status === 401 || e.status === 403)
+      return `${filename} ${what}: this link no longer has access.`;
+    return `${filename} ${what}: the server refused it (${e.status}).`;
+  }
+  return `${filename} ${what}: check your connection and try again.`;
+}
+
+/**
+ * Attachments for a patch: the event as it is now (not as it was when the uploads started),
+ * plus the new ones, skipping ids that are already there.
+ */
+export function mergeAttachments(current: Attachment[], added: Attachment[]): Attachment[] {
+  const have = new Set(current.map((a) => a.id));
+  return [...current, ...added.filter((a) => !have.has(a.id))];
+}
+
+/** A failure after a successful upload, already described for the person. */
+class SaveError extends Error {}
 
 type Progress = { done: number; total: number; current: string } | null;
 
@@ -38,15 +68,16 @@ function useUploader() {
       try {
         await each(file, ctx);
       } catch (e) {
+        // A save failure arrives already described; anything else came from the upload step.
         failures.push(
-          e instanceof FileTooLargeError ? e.message : `${file.name}: upload failed, try again.`,
+          e instanceof SaveError ? e.message : describeUploadError(e, file.name, 'upload'),
         );
       }
     }
     setProgress(null);
     if (failures.length > 0) setError(failures.join(' '));
   }
-  return { run, progress, error, busy: progress !== null };
+  return { run, progress, error, setError, busy: progress !== null };
 }
 
 function Status({ progress, error }: { progress: Progress; error: string | null }) {
@@ -70,8 +101,9 @@ function Status({ progress, error }: { progress: Progress; error: string | null 
 /** Attach one or more files to an existing event. */
 export function AttachButton({ event }: { event: Event }) {
   const actions = useTripActions();
+  const store = useTripStore();
   const input = useRef<HTMLInputElement>(null);
-  const { run, progress, error, busy } = useUploader();
+  const { run, progress, error, setError, busy } = useUploader();
 
   const onFiles = async (list: FileList | null) => {
     const files = list ? Array.from(list) : [];
@@ -82,9 +114,12 @@ export function AttachButton({ event }: { event: Event }) {
     });
     if (added.length === 0) return;
     // Patch once with everything that uploaded; a failed save shows in the sheet's status line.
+    const current = store.getState().events.find((e) => e.id === event.id) ?? event;
     await actions
-      .patchEvent(event.id, { attachments: [...event.attachments, ...added] })
-      .catch(() => undefined);
+      .patchEvent(event.id, { attachments: mergeAttachments(current.attachments, added) })
+      .catch((e: unknown) =>
+        setError(describeUploadError(e, added.map((a) => a.filename).join(', '), 'save')),
+      );
   };
 
   return (
@@ -117,12 +152,16 @@ export function AddReceiptButton() {
     await run(files, async (file, ctx) => {
       const attachment = await uploadAttachment(file, ctx);
       const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-      await actions.putEvent({
-        type: 'receipt',
-        name: receiptName(file.name),
-        start: fromInstant(Date.now(), tz),
-        attachments: [attachment],
-      });
+      await actions
+        .putEvent({
+          type: 'receipt',
+          name: receiptName(file.name),
+          start: fromInstant(Date.now(), tz),
+          attachments: [attachment],
+        })
+        .catch((e: unknown) => {
+          throw new SaveError(describeUploadError(e, file.name, 'save'));
+        });
     });
   };
 
@@ -132,7 +171,6 @@ export function AddReceiptButton() {
         ref={input}
         type="file"
         accept="image/*,application/pdf"
-        capture="environment"
         multiple
         hidden
         data-testid="receipt-input"
