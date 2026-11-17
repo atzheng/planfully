@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTrip } from '../trip/store';
-import { EMPTY_SERIES, fetchHourly, type HourlySeries } from './openMeteo';
+import {
+  clampWindow,
+  EMPTY_SERIES,
+  fetchLocation,
+  sliceSegment,
+  type HourlySeries,
+} from './openMeteo';
 import { HOUR_MS, hourlyLocations, type WeatherSegment } from './resolve';
 
 /** 'empty' = loaded but no forecast for this segment (past, beyond the horizon, or no data). */
@@ -12,7 +18,7 @@ export type SegmentWeather = {
   status: SegmentStatus;
 };
 
-const keyOf = (s: WeatherSegment) => `${s.fromMs}|${s.toMs}|${s.lat}|${s.lng}`;
+const locKey = (s: WeatherSegment) => `${s.lat},${s.lng}`;
 
 /**
  * Weather for the hours in [fromMs, toMs) (rounded out to whole hours): one entry per location
@@ -29,35 +35,50 @@ export function useWeather(
   const from = Math.floor(fromMs / HOUR_MS) * HOUR_MS;
   const to = Math.ceil(toMs / HOUR_MS) * HOUR_MS;
   const segments = useMemo(() => hourlyLocations(events, from, to), [events, from, to]);
+  /** Whole-window forecast per place; kept across range changes so scrolling never blanks the strip. */
   const [results, setResults] = useState<Record<string, { series: HourlySeries; failed: boolean }>>(
     {},
   );
+  const [retry, setRetry] = useState(0);
+  const nowMs = Date.now();
+  const places = useMemo(() => {
+    const m = new Map<string, WeatherSegment>();
+    for (const seg of segments) if (clampWindow(seg, nowMs)) m.set(locKey(seg), seg);
+    return m;
+  }, [segments]);
+  const placeKeys = [...places.keys()].join('|');
 
   useEffect(() => {
     let stale = false;
-    for (const segment of segments) {
-      const key = keyOf(segment);
-      fetchHourly(segment).then(
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    for (const [key, seg] of places) {
+      fetchLocation(seg.lat, seg.lng).then(
         (series) => {
           if (!stale) setResults((r) => ({ ...r, [key]: { series, failed: false } }));
         },
         () => {
-          if (!stale) setResults((r) => ({ ...r, [key]: { series: EMPTY_SERIES, failed: true } }));
+          if (stale) return;
+          setResults((r) => ({ ...r, [key]: { series: EMPTY_SERIES, failed: true } }));
+          // Try again in a minute (the failure cache in openMeteo expires then).
+          timer ??= setTimeout(() => setRetry((n) => n + 1), 61_000);
         },
       );
     }
     return () => {
       stale = true;
+      if (timer) clearTimeout(timer);
     };
-  }, [segments]);
+  }, [placeKeys, retry]);
 
   return useMemo(() => {
     if (segments.length === 0) return { series: [], status: 'idle' as const };
     const series = segments.map((segment): SegmentWeather => {
-      const r = results[keyOf(segment)];
+      if (!places.has(locKey(segment))) return { segment, series: EMPTY_SERIES, status: 'empty' };
+      const r = results[locKey(segment)];
       if (!r) return { segment, series: EMPTY_SERIES, status: 'loading' };
-      if (r.failed) return { segment, series: r.series, status: 'error' };
-      return { segment, series: r.series, status: r.series.timeMs.length ? 'ready' : 'empty' };
+      if (r.failed) return { segment, series: EMPTY_SERIES, status: 'error' };
+      const sliced = sliceSegment(r.series, segment);
+      return { segment, series: sliced, status: sliced.timeMs.length ? 'ready' : 'empty' };
     });
     const status = series.some((s) => s.status === 'loading')
       ? 'loading'
@@ -65,5 +86,5 @@ export function useWeather(
         ? 'error'
         : 'ready';
     return { series, status };
-  }, [segments, results]);
+  }, [segments, results, places]);
 }
