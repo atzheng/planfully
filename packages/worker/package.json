@@ -13,6 +13,7 @@
     "build": "tsc -b"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.9.0",
     "@planfully/shared": "workspace:*",
     "hono": "^4.13.19",
     "zod": "^4.6.7"
