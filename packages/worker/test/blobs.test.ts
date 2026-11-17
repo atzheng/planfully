@@ -116,7 +116,7 @@ describe('id case and R2 failures', () => {
   test('an R2 failure is not reported as 413', async () => {
     const t = await trip('tok-l');
     const spy = vi.spyOn(env.BLOBS, 'put').mockImplementation(async (_k, v) => {
-      await (v as ReadableStream).cancel().catch(() => undefined);
+      await new Response(v as ReadableStream).arrayBuffer();
       throw new Error('r2 down');
     });
     try {
