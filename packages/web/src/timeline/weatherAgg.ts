@@ -70,8 +70,9 @@ export function bucketize(
     let b = acc.get(start);
     if (!b) {
       b = {
-        fromMs: start,
-        toMs: bucketEnd(start, step, zone),
+        // Clipped to the segment so a mid-bucket place change does not make two overlapping buckets.
+        fromMs: Math.max(start, segment.fromMs),
+        toMs: Math.min(bucketEnd(start, step, zone), segment.toMs),
         tempAvg: 0,
         tempMin: Infinity,
         tempMax: -Infinity,
@@ -138,6 +139,23 @@ export type StripSegment = {
   days: Bucket[];
   bands: Band[];
 };
+export type DayLabel = { startMs: number; tempMin: number; tempMax: number };
+
+/** One label per local day (across segments): the day's start, and min/max over every segment's hours. */
+export function dayLabels(segments: readonly StripSegment[], zone: string): DayLabel[] {
+  const m = new Map<number, DayLabel>();
+  for (const s of segments)
+    for (const d of s.days) {
+      const startMs = bucketStart(d.fromMs, 'day', zone);
+      const l = m.get(startMs);
+      if (l) {
+        l.tempMin = Math.min(l.tempMin, d.tempMin);
+        l.tempMax = Math.max(l.tempMax, d.tempMax);
+      } else m.set(startMs, { startMs, tempMin: d.tempMin, tempMax: d.tempMax });
+    }
+  return [...m.values()].sort((a, b) => a.startMs - b.startMs);
+}
+
 export type Extents = { tempMin: number; tempMax: number; windMax: number; precipMax: number };
 export type SegmentInput = { segment: WeatherSegment; series: HourlySeries; status: Status };
 

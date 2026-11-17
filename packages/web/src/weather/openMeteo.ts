@@ -108,20 +108,28 @@ export function clearWeatherCache(): void {
 
 export type FetchOpts = { nowMs?: number; fetchFn?: typeof fetch };
 
+const roundCoord = (n: number) => Math.round(n * 100) / 100;
+
+/** The fixed forecast window for `nowMs`: today through today + 15 days (UTC). */
+export function forecastWindow(nowMs: number): { startDate: string; endDate: string } {
+  const today = startOfUtcDay(nowMs);
+  return { startDate: isoDay(today), endDate: isoDay(today + (FORECAST_DAYS - 1) * DAY_MS) };
+}
+
 /**
- * Hourly forecast for a segment, restricted to the segment's hours. Outside the forecast window
- * the result is an empty series, not an error. Network and HTTP errors reject (and are remembered for a minute).
- * Cached in memory by rounded lat/lng + date range for 30 minutes.
+ * The whole forecast window for one location (rounded lat/lng), fetched once and cached for 30
+ * minutes; callers slice it per segment, so scrolling never refetches. `coverage` is the window.
+ * Rejects on network/HTTP errors (remembered for a minute).
  */
-export async function fetchHourly(
-  seg: WeatherSegment,
+export async function fetchLocation(
+  lat0: number,
+  lng0: number,
   opts: FetchOpts = {},
 ): Promise<HourlySeries> {
   const now = opts.nowMs ?? Date.now();
-  const win = clampWindow(seg, now);
-  if (!win) return EMPTY_SERIES;
-  const lat = Math.round(seg.lat * 100) / 100;
-  const lng = Math.round(seg.lng * 100) / 100;
+  const win = forecastWindow(now);
+  const lat = roundCoord(lat0);
+  const lng = roundCoord(lng0);
   const key = `${lat},${lng},${win.startDate},${win.endDate}`;
   const hit = cache.get(key);
   let full: HourlySeries;
@@ -150,11 +158,25 @@ export async function fetchHourly(
     }
     full = await p;
   }
-  const out: HourlySeries = {
+  return {
+    ...full,
     coverage: {
-      fromMs: Math.max(seg.fromMs, Date.parse(`${win.startDate}T00:00:00Z`)),
-      toMs: Math.min(seg.toMs, Date.parse(`${win.endDate}T00:00:00Z`) + DAY_MS),
+      fromMs: Date.parse(`${win.startDate}T00:00:00Z`),
+      toMs: Date.parse(`${win.endDate}T00:00:00Z`) + DAY_MS,
     },
+  };
+}
+
+/** Restrict a location's window series to a segment's hours; `coverage` is clipped to the segment (null when none). */
+export function sliceSegment(
+  full: HourlySeries,
+  seg: Pick<WeatherSegment, 'fromMs' | 'toMs'>,
+): HourlySeries {
+  const c = full.coverage;
+  const fromMs = c ? Math.max(seg.fromMs, c.fromMs) : 0;
+  const toMs = c ? Math.min(seg.toMs, c.toMs) : 0;
+  const out: HourlySeries = {
+    coverage: c && toMs > fromMs ? { fromMs, toMs } : null,
     timeMs: [],
     tempC: [],
     windKph: [],
@@ -168,4 +190,18 @@ export async function fetchHourly(
     out.precipMm.push(full.precipMm[i] as number);
   });
   return out;
+}
+
+/**
+ * Hourly forecast for a segment, restricted to the segment's hours. Outside the forecast window
+ * the result is an empty series, not an error. Network and HTTP errors reject.
+ * Fetches the location's whole window (see fetchLocation), cached by rounded lat/lng.
+ */
+export async function fetchHourly(
+  seg: WeatherSegment,
+  opts: FetchOpts = {},
+): Promise<HourlySeries> {
+  const now = opts.nowMs ?? Date.now();
+  if (!clampWindow(seg, now)) return EMPTY_SERIES;
+  return sliceSegment(await fetchLocation(seg.lat, seg.lng, opts), seg);
 }

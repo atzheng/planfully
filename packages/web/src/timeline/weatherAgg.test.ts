@@ -3,6 +3,7 @@ import type { HourlySeries } from '../weather/openMeteo';
 import {
   bucketize,
   buildStrip,
+  dayLabels,
   describeHit,
   fetchRange,
   hitAt,
@@ -60,7 +61,7 @@ describe('bucketize', () => {
   it('days follow the display zone', () => {
     // 00:00Z is 17:00 the previous day in Los Angeles (UTC-7 in July).
     const b = bucketize(mk(48), seg, 'day', 'America/Los_Angeles');
-    expect(b[0]?.fromMs).toBe(T0 - 17 * H);
+    expect(b[0]?.fromMs).toBe(T0);
     expect(b[0]?.n).toBe(7);
   });
   it('ignores hours outside the segment', () => {
@@ -116,6 +117,28 @@ describe('buildStrip and hitAt', () => {
     expect(describeHit(gap, 'hour', 'UTC', { temp: 'C', wind: 'kmh' })).toBe(
       'Tue Jul 14, 10 AM · Porto: No forecast',
     );
+  });
+});
+
+describe('mid-day place change', () => {
+  const a = { fromMs: T0, toMs: T0 + 14 * H, lat: 1, lng: 1, label: 'Lisbon' };
+  const b = { fromMs: T0 + 14 * H, toMs: T0 + 48 * H, lat: 2, lng: 2, label: 'Porto' };
+  const input = [
+    { segment: a, series: mk(48), status: 'ready' as const },
+    { segment: b, series: mk(48), status: 'ready' as const },
+  ];
+  it('clips daily and 3-hourly buckets to their segment', () => {
+    const day = buildStrip(input, 'day', 'UTC').segments;
+    expect(day[0]?.buckets[0]).toMatchObject({ fromMs: T0, toMs: T0 + 14 * H, n: 14 });
+    expect(day[1]?.buckets[0]).toMatchObject({ fromMs: T0 + 14 * H, toMs: T0 + 24 * H, n: 10 });
+    const three = buildStrip(input, '3h', 'UTC').segments;
+    expect(three[0]?.buckets.at(-1)).toMatchObject({ fromMs: T0 + 12 * H, toMs: T0 + 14 * H });
+    expect(three[1]?.buckets[0]).toMatchObject({ fromMs: T0 + 14 * H, toMs: T0 + 15 * H });
+  });
+  it('gives one label per day, covering both segments', () => {
+    const labels = dayLabels(buildStrip(input, 'day', 'UTC').segments, 'UTC');
+    expect(labels.map((l) => l.startMs)).toEqual([T0, T0 + 24 * H]);
+    expect(labels[0]).toMatchObject({ tempMin: 10, tempMax: 33 });
   });
 });
 

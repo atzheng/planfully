@@ -1,12 +1,14 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { stringCodec, useQueryState } from '../lib/queryState';
+import { HOUR_MS } from '../weather/resolve';
 import { useWeather } from '../weather/useWeather';
-import { defaultUnits } from '../weather/units';
+import { convertTemp, defaultUnits } from '../weather/units';
 import { validZone } from './model';
 import { useTimeScale, useVisibleRange } from './scale';
 import {
   buildStrip,
+  dayLabels,
   describeHit,
   fetchRange,
   hitAt,
@@ -56,6 +58,18 @@ export function WeatherStrip() {
   const step = stepFor(scale.pxPerHour);
   const strip = useMemo(() => buildStrip(weather.series, step, zone), [weather.series, step, zone]);
   const [tip, setTip] = useState<Tip | null>(null);
+  const root = useRef<HTMLDivElement>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
+  // A tap outside the strip closes the readout (touch has no pointerleave).
+  const open = tip !== null;
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (ev: PointerEvent) => {
+      if (!root.current?.contains(ev.target as Node)) setTip(null);
+    };
+    document.addEventListener('pointerdown', onDown);
+    return () => document.removeEventListener('pointerdown', onDown);
+  }, [open]);
 
   if (weather.status === 'idle') {
     return (
@@ -75,13 +89,31 @@ export function WeatherStrip() {
   const wx = (kph: number) => WIND.x + PAD + (kph / max.wind) * (WIND.w - 2 * PAD);
   const rainW = (mm: number) => (mm <= 0 ? 0 : Math.max(2, (mm / max.rain) * (RAIN.w - PAD)));
 
-  const show = (clientX: number, clientY: number, target: SVGSVGElement) => {
-    const r = target.getBoundingClientRect();
-    const ms = scale.toMs(clientY - r.top + top);
+  const showAt = (ms: number, clientX: number, clientY: number) => {
     const hit: Hit | null = hitAt(strip.segments, ms);
     setTip(hit ? { text: describeHit(hit, step, zone, units), x: clientX, y: clientY, ms } : null);
   };
+  const show = (clientX: number, clientY: number, target: SVGSVGElement) => {
+    const r = target.getBoundingClientRect();
+    showAt(scale.toMs(clientY - r.top + top), clientX, clientY);
+  };
+  /** Keyboard: arrow keys move the readout by one bucket (an hour, three hours or a day). */
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') return setTip(null);
+    const dir = e.key === 'ArrowDown' ? 1 : e.key === 'ArrowUp' ? -1 : 0;
+    const r = svgRef.current?.getBoundingClientRect();
+    if (!dir || !r) return;
+    e.preventDefault();
+    const stepMs = step === 'hour' ? HOUR_MS : step === '3h' ? 3 * HOUR_MS : 24 * HOUR_MS;
+    const from = tip?.ms ?? (visible.fromMs + visible.toMs) / 2;
+    const ms = tip ? from + dir * stepMs : from;
+    const py = Math.min(Math.max(scale.toY(ms) - top + r.top, 0), window.innerHeight - 8);
+    showAt(ms, r.left + WEATHER_GUTTER_PX, py);
+  };
 
+  const showDay = scale.pxPerHour * 24 >= MIN_DAY_LABEL_PX;
+  const labels = showDay ? dayLabels(strip.segments, zone) : [];
+  const dayYs = labels.map((d) => y(d.startMs) + 11);
   let lastLabelY = -Infinity;
   const renderSegment = (s: StripSegment, i: number) => {
     // A place label where the place changes; skipped when the segment is too short or it would collide.
@@ -93,11 +125,12 @@ export function WeatherStrip() {
       y(s.segment.toMs) - segY >= 12 &&
       segY + 11 - lastLabelY >= 12
     ) {
-      placeLabelY = segY + 11;
+      const base = segY + 11;
+      // Keep clear of the day label at midnight: move below it.
+      placeLabelY = showDay && dayYs.some((d) => Math.abs(d - base) < 12) ? base + 12 : base;
       lastLabelY = placeLabelY;
     }
     const key = `${s.segment.fromMs}|${s.segment.lat}|${s.segment.lng}`;
-    const showDay = scale.pxPerHour * 24 >= MIN_DAY_LABEL_PX;
     return (
       <g key={key}>
         {s.bands.map((b) => {
@@ -135,7 +168,7 @@ export function WeatherStrip() {
             const by = y(b.fromMs);
             const bh = y(b.toMs) - by;
             const thick = Math.min(6, Math.max(2, bh - 2));
-            const cy = showDay ? by + 18 : by + bh / 2 - thick / 2;
+            const cy = showDay ? Math.min(by + 18, by + bh - thick - 1) : by + bh / 2 - thick / 2;
             return (
               <rect
                 key={b.fromMs}
@@ -171,18 +204,6 @@ export function WeatherStrip() {
             />
           );
         })}
-        {showDay &&
-          s.days.map((d) => (
-            <text
-              key={`d${d.fromMs}`}
-              x={TEMP.x + PAD}
-              y={y(d.fromMs) + 11}
-              className={styles.dayLabel}
-              data-testid="wx-day"
-            >
-              {`${Math.round(units.temp === 'F' ? (d.tempMin * 9) / 5 + 32 : d.tempMin)}/${Math.round(units.temp === 'F' ? (d.tempMax * 9) / 5 + 32 : d.tempMax)}°`}
-            </text>
-          ))}
         {placeLabelY !== null && (
           <text x={3} y={placeLabelY} className={styles.place} data-testid="wx-place">
             {s.segment.label.length > 14 ? `${s.segment.label.slice(0, 13)}…` : s.segment.label}
@@ -194,18 +215,24 @@ export function WeatherStrip() {
 
   return (
     <div
+      ref={root}
       className={styles.strip}
+      tabIndex={0}
+      role="group"
+      aria-label="Weather strip. Use the up and down arrow keys to read the forecast hour by hour."
+      onKeyDown={onKeyDown}
+      onBlur={(e) => !e.currentTarget.contains(e.relatedTarget) && setTip(null)}
       data-testid="weather-strip"
       data-step={step}
       data-status={weather.status}
     >
       <svg
+        ref={svgRef}
         className={styles.svg}
         style={{ top, height }}
         width={WEATHER_GUTTER_PX}
         height={height}
-        role="img"
-        aria-label="Weather: temperature, wind and rain. Tap a time for values."
+        aria-hidden="true"
         onPointerMove={(e) =>
           e.pointerType === 'mouse' && show(e.clientX, e.clientY, e.currentTarget)
         }
@@ -224,6 +251,17 @@ export function WeatherStrip() {
           </pattern>
         </defs>
         {strip.segments.map(renderSegment)}
+        {labels.map((d, k) => (
+          <text
+            key={d.startMs}
+            x={TEMP.x + PAD}
+            y={dayYs[k]}
+            className={styles.dayLabel}
+            data-testid="wx-day"
+          >
+            {`${Math.round(convertTemp(d.tempMin, units.temp))}/${Math.round(convertTemp(d.tempMax, units.temp))}°`}
+          </text>
+        ))}
         {tip && (
           <line
             x1={0}
@@ -234,11 +272,14 @@ export function WeatherStrip() {
           />
         )}
       </svg>
+      <div className={styles.sr} aria-live="polite">
+        {tip?.text}
+      </div>
       {tip &&
         createPortal(
           <div
             className={styles.tip}
-            role="status"
+            aria-hidden="true"
             data-testid="wx-tip"
             style={{ left: Math.min(tip.x + 12, window.innerWidth - 8), top: tip.y }}
           >
