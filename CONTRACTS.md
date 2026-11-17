@@ -187,7 +187,12 @@ type ParsedEmail = { from: string; to: string; suffix: string; subject: string; 
                      attachments: { filename: string; mime: string; bytes: Uint8Array }[];
                      sourceAttachment: Attachment }   // the sealed raw .eml, already stored
 type EmailRoute = (ctx: { env: Env; trip: TripRow; email: ParsedEmail }) => Promise<void>
-// email/handler.ts picks routes[suffix] ?? routes[''];  '' -> routes/default.ts, 'receipts' -> routes/receipts.ts
+// email/handler.ts exports handleEmail(message, env, ctx) and a mutable `routes` map; it picks routes[suffix] ?? routes[''];  '' -> routes/default.ts, 'receipts' -> routes/receipts.ts
+
+// email/auth.ts: sender check. Reads the FIRST Authentication-Results header (Cloudflare prepends it;
+// authserv-id must be mx.cloudflare.net, later headers are sender-supplied and ignored). The sender passes if
+// dmarc=pass, or spf=pass with smtp.mailfrom, or dkim=pass with header.d, aligned with the From domain.
+// A bare spf=pass without a domain is not accepted. Allowlist match is on the From header address.
 
 // llm/parse.ts
 type ParsedEvent = Omit<Event, 'id'|'attachments'|'source'|'createdAt'|'pinned'|'deleted'>
