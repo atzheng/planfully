@@ -228,9 +228,10 @@ export function createTripStore(opts: TripStoreOptions): TripStore {
       await c.putRecords(opts.tripId, sealed);
     });
   }
-  // A revoked link must not stay listed with its secret.
-  function dropCacheIfRevoked(err: TripError) {
-    if (err.kind === 'unauthorized' && hydrated) queueCache((c) => c.forgetTrip(opts.tripId));
+  // 401/403/404 may be transient (bad deploy, WAF, proxy), so never delete: only flag the trip
+  // (shown on the landing page); the next successful snapshot clears the flag.
+  function markCacheRevoked(err: TripError) {
+    if (err.kind === 'unauthorized' && hydrated) queueCache((c) => c.markRevoked(opts.tripId));
   }
   const prefetched = new Set<string>();
   function prefetch() {
@@ -313,7 +314,7 @@ export function createTripStore(opts: TripStoreOptions): TripStore {
       } catch (e) {
         const err = toError(e);
         set({ status: 'error', error: err });
-        dropCacheIfRevoked(err);
+        markCacheRevoked(err);
         if (err.kind === 'network' && started) {
           const delay = backoff[Math.min(attempts, backoff.length - 1)] ?? 30_000;
           attempts++;
@@ -372,7 +373,7 @@ export function createTripStore(opts: TripStoreOptions): TripStore {
         const cur = get().error;
         if (err.kind === 'unauthorized') {
           set({ status: 'error', error: err });
-          dropCacheIfRevoked(err);
+          markCacheRevoked(err);
         } else {
           if (err.kind === 'network' && !get().offline) set({ offline: true });
           if (cur?.kind !== err.kind || cur.message !== err.message) set({ error: err });

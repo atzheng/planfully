@@ -21,6 +21,8 @@ export type CachedTrip = {
   openedAt: string;
   /** ISO instant of the last full load (since=0); older than FULL_RESYNC_MS triggers another. */
   fullLoadAt?: string;
+  /** Set when the server refused the link (401/403/404); data is kept. Cleared by the next successful snapshot. */
+  revokedAt?: string;
 };
 
 /** Cached records are replaced by a full load at least this often (drops stale pre-compaction records). */
@@ -57,6 +59,8 @@ export type OfflineDb = {
   saveSnapshot(s: Snapshot): Promise<void>;
   removeRecords(tripId: string, seqs: number[]): Promise<void>;
   touch(tripId: string, openedAt?: string): Promise<void>;
+  /** Non-destructive: flag the cached trip as refused by the server. */
+  markRevoked(tripId: string): Promise<void>;
   getBlob(blobId: string): Promise<Uint8Array | undefined>;
   hasBlob(blobId: string): Promise<boolean>;
   putBlob(tripId: string, blobId: string, bytes: Uint8Array): Promise<void>;
@@ -141,6 +145,12 @@ export function createOfflineDb(name = DB_NAME): OfflineDb {
       const tx = (await db()).transaction('trips', 'readwrite');
       const t = await tx.store.get(tripId);
       if (t) await tx.store.put({ ...t, openedAt: openedAt ?? new Date().toISOString() });
+      await tx.done;
+    },
+    async markRevoked(tripId) {
+      const tx = (await db()).transaction('trips', 'readwrite');
+      const t = await tx.store.get(tripId);
+      if (t && !t.revokedAt) await tx.store.put({ ...t, revokedAt: new Date().toISOString() });
       await tx.done;
     },
     async getBlob(blobId) {

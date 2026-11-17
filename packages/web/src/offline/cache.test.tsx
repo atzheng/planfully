@@ -373,7 +373,7 @@ describe('review fixes', () => {
     expect(a.getRecords.mock.calls[0]?.[1]).toBe(1);
   });
 
-  test('a 401 during sync drops that trip from the cache', async () => {
+  test('a 404 during sync keeps the cached data and flags the trip; a later success clears the flag', async () => {
     const r1 = await stored(1, put('e1', 'A'));
     await db.saveSnapshot({
       tripId: 't1',
@@ -383,20 +383,18 @@ describe('review fixes', () => {
       records: [r1],
       replace: true,
     });
-    await db.saveSnapshot({
-      tripId: 'other',
-      secret: 'x',
-      meta: { ...META, id: 'other' },
-      lastSeq: 0,
-      records: [],
-    });
-    const s = await run(api([new ApiError(401, 'no')]).api);
+    const s = await run(api([new ApiError(404, 'no')]).api);
     await vi.waitFor(() => expect(s.getState().status).toBe('error'));
     await flush();
     s.stop();
-    expect(await db.getTrip('t1')).toBeUndefined();
-    expect(await db.loadRecords('t1')).toEqual([]);
-    expect(await db.getTrip('other')).toBeDefined();
+    expect((await db.getTrip('t1'))?.revokedAt).toBeTruthy();
+    expect((await db.loadRecords('t1')).map((r) => r.seq)).toEqual([1]);
+
+    const s2 = await run(api([{ records: [], latestSeq: 1, more: false }]).api);
+    await vi.waitFor(() => expect(s2.getState().status).toBe('ready'));
+    await vi.waitFor(async () => expect((await db.getTrip('t1'))?.revokedAt).toBeUndefined());
+    s2.stop();
+    expect((await db.loadRecords('t1')).map((r) => r.seq)).toEqual([1]);
   });
 
   test('putBlob for a forgotten trip is skipped (no orphan blobs)', async () => {
@@ -426,6 +424,24 @@ describe('review fixes', () => {
 });
 
 describe('RecentTrips', () => {
+  test('a refused link is labelled and can be forgotten', async () => {
+    await db.saveSnapshot({
+      tripId: 'a',
+      secret: 'S',
+      meta: { ...META, id: 'a', name: 'Alpha' },
+      lastSeq: 1,
+      records: [],
+    });
+    await db.markRevoked('a');
+    const { unmount } = render(
+      <MemoryRouter>
+        <RecentTrips />
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText('Link no longer works')).toBeTruthy();
+    unmount();
+  });
+
   const view = () =>
     render(
       <MemoryRouter>

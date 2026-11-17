@@ -47,7 +47,9 @@ export function RecentTrips() {
           <li key={t.tripId} className={styles.item}>
             <Link to={`/t/${encodeURIComponent(t.tripId)}#${t.secret}`} className={styles.link}>
               <span className={styles.name}>{t.meta.name}</span>
-              <span className={styles.when}>Opened {formatOpened(t.openedAt)}</span>
+              <span className={styles.when}>
+                {t.revokedAt ? 'Link no longer works' : `Opened ${formatOpened(t.openedAt)}`}
+              </span>
             </Link>
             <Button
               onClick={() => void forget(t.tripId)}
