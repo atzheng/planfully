@@ -1,0 +1,11 @@
+Subset builds (Unicode ranges only, hinting removed) of:
+
+- NotoSans-*.ttf: Noto Sans, Copyright 2022 The Noto Project Authors
+  (https://github.com/notofonts/latin-greek-cyrillic)
+- NotoSansThai-*.ttf: Noto Sans Thai, Copyright 2022 The Noto Project Authors
+  (https://github.com/notofonts/thai)
+- NotoSansJP-Regular.ttf: Noto Sans JP, Copyright 2014-2021 Adobe (http://www.adobe.com/),
+  with Reserved Font Name 'Source' (https://github.com/google/fonts/tree/main/ofl/notosansjp)
+
+All are licensed under the SIL Open Font License, Version 1.1: see OFL.txt (the full licence text).
+Subsetting script: packages/web/scripts/build-pdf-fonts.py. Used only by the PDF export.
