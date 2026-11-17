@@ -11,6 +11,18 @@ import {
 import { ApiError } from '../lib/api';
 import { createTripStore, MESSAGES, type TripApi } from './store';
 
+const derive = vi.hoisted(() => ({ count: 0 }));
+vi.mock('@planfully/shared', async (orig) => {
+  const m = await orig<typeof import('@planfully/shared')>();
+  return {
+    ...m,
+    deriveTripKeys: (s: Uint8Array) => {
+      derive.count++;
+      return m.deriveTripKeys(s);
+    },
+  };
+});
+
 const META = {
   id: 't1',
   name: 'Lisbon',
@@ -351,4 +363,19 @@ describe('review fixes', () => {
       store.stop();
     });
   });
+});
+
+test('start, stop, start (StrictMode) derives once and ends ready', async () => {
+  const r1 = await stored(1, put('e1', 'Dinner'));
+  const { api, getTrip } = fakeApi([{ records: [r1], latestSeq: 1, more: false }]);
+  const store = createTripStore({ tripId: 't1', fragment, api });
+  derive.count = 0;
+  store.start();
+  store.stop();
+  store.start();
+  await vi.waitFor(() => expect(store.getState().status).toBe('ready'));
+  store.stop();
+  expect(derive.count).toBe(1);
+  expect(getTrip).toHaveBeenCalledTimes(1);
+  expect(store.getState().events).toHaveLength(1);
 });

@@ -270,18 +270,25 @@ export function createTripStore(opts: TripStoreOptions): TripStore {
     };
   });
 
-  async function init() {
-    if (store.getState().keys) return; // restarted (e.g. effect re-run): keys already derived
-    const frag = (fragment ?? '').replace(/^#/, '');
-    fragment = null;
-    try {
-      const secret = decodeSecret(frag);
-      const keys = await deriveTripKeys(secret);
-      auth = { tripId: opts.tripId, accessToken: keys.accessToken };
-      store.setState({ keys });
-    } catch {
-      store.setState({ status: 'error', error: { kind: 'bad-link', message: MESSAGES.badLink } });
-    }
+  // Memoised: start() may run more than once (StrictMode) and both runs share one derivation.
+  let initPromise: Promise<void> | null = null;
+  function init(): Promise<void> {
+    initPromise ??= (async () => {
+      const frag = (fragment ?? '').replace(/^#/, '');
+      try {
+        const keys = await deriveTripKeys(decodeSecret(frag));
+        auth = { tripId: opts.tripId, accessToken: keys.accessToken };
+        store.setState({ keys });
+      } catch {
+        store.setState({
+          status: 'error',
+          error: { kind: 'bad-link', message: MESSAGES.badLink },
+        });
+      } finally {
+        fragment = null; // the raw secret is not kept once keys are derived
+      }
+    })();
+    return initPromise;
   }
 
   const onFocus = () => {
