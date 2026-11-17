@@ -25,7 +25,10 @@ export function formatDuration(start: LocalTime, end: LocalTime): string | null 
   return [d && `${d}d`, h && `${h}h`, m && `${m}m`].filter(Boolean).join(' ');
 }
 
-export function participantNames(e: Pick<Event, 'participants'>, roster: readonly RosterMember[]): string {
+export function participantNames(
+  e: Pick<Event, 'participants'>,
+  roster: readonly RosterMember[],
+): string {
   if (e.participants.length === 0) return 'Everyone';
   return e.participants.map((id) => roster.find((r) => r.id === id)?.name ?? 'Unknown').join(', ');
 }

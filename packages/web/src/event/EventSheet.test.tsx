@@ -65,9 +65,7 @@ async function setup(search: string) {
     api: api as never,
   });
   const sealedPdf = await seal(keys.publicKey, PDF);
-  const fetchMock = vi.fn(
-    async () => new Response(sealedPdf as BlobPart, { status: 200 }),
-  );
+  const fetchMock = vi.fn(async () => new Response(sealedPdf as BlobPart, { status: 200 }));
   vi.stubGlobal('fetch', fetchMock);
   const location = { current: '' };
   function Probe() {
@@ -131,14 +129,17 @@ describe('EventSheet', () => {
     const revoke = vi.fn();
     vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: create, revokeObjectURL: revoke }));
     const win = { location: { href: '' }, close: vi.fn() };
-    vi.stubGlobal('open', vi.fn(() => win));
+    vi.stubGlobal(
+      'open',
+      vi.fn(() => win),
+    );
     fireEvent.click(await screen.findByRole('button', { name: 'res.pdf' }));
     await waitFor(() => expect(win.location.href).toBe('blob:x'));
     expect(fetchMock).toHaveBeenCalled();
     const firstCall = fetchMock.mock.calls[0] as unknown as [string];
     expect(firstCall[0]).toBe('/api/trips/t1/blobs/b1');
     expect(blob?.type).toBe('application/pdf');
-    expect(new Uint8Array(await blob!.arrayBuffer())).toEqual(PDF);
+    expect(new Uint8Array(await (blob as unknown as Blob).arrayBuffer())).toEqual(PDF);
     cleanup(); // unmount revokes
     expect(revoke).toHaveBeenCalledWith('blob:x');
     await act(async () => {});
