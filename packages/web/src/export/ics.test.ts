@@ -114,10 +114,23 @@ describe('buildIcs', () => {
     );
     expect(s).toContain('SUMMARY:Hotel\\, Paris');
     expect(s).toContain('LOCATION:Hôtel X\\, 1 Rue A\\; Paris');
-    expect(s).toContain('GEO:48.5;2.25');
+    expect(s).toContain('GEO:48.500000;2.250000');
     expect(s).toContain(
       'DESCRIPTION:Confirmation: ABC123\\nParticipants: Ann\\, Former participant\\nLate\\ncheck-in',
     );
+  });
+});
+
+describe('GEO', () => {
+  it('never uses exponent notation', () => {
+    const s = buildIcs(
+      [ev({ id: 'g', start: utcStart, location: { lat: 1e-7, lng: -0.0000005 } })],
+      'T',
+      [],
+      NOW,
+    );
+    expect(s).toContain('GEO:0.000000;-0.000001');
+    expect(s).not.toMatch(/GEO:.*e/i);
   });
 });
 

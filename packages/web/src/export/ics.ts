@@ -76,7 +76,7 @@ export function buildIcs(
     const where = locationText(e.location);
     if (where) add(`LOCATION:${escapeText(where)}`);
     if (e.location?.lat !== undefined && e.location.lng !== undefined) {
-      add(`GEO:${e.location.lat};${e.location.lng}`);
+      add(`GEO:${e.location.lat.toFixed(6)};${e.location.lng.toFixed(6)}`);
     }
     const desc: string[] = [];
     if (e.confirmation) desc.push(`Confirmation: ${e.confirmation}`);
