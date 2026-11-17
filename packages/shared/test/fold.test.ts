@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-non-null-assertion -- test assertions on known fixtures */
 import { describe, expect, it } from 'vitest';
+import { fold as legacyFold } from './legacyFold';
 import { fold, planCompaction, TOMBSTONE_PREFIX, type CompactionPlan } from '../src/fold';
 import { RecordBodySchema, type OpenedRecord, type RecordBody } from '../src/records';
 import type { Attachment, Event } from '../src/schema';
@@ -381,6 +382,27 @@ describe('planCompaction', () => {
       }
     });
 
+    it('sibling events sharing an attachment stay separate, also for old clients', () => {
+      const mk = (id: string, tag: string, s: number) => [
+        put(s, ev(id, { name: id, attachments: [att('src')] }), tag),
+        patch(s + 1, id, { attachments: [] }),
+        patch(s + 2, id, { notes: `n${id}` }),
+        patch(s + 3, id, { name: `${id}!` }),
+      ];
+      const l = [...mk('a', 'ta', 1), ...mk('b', 'tb', 10)];
+      const plans = planCompaction(l);
+      expect(plans).toHaveLength(2);
+      const after = applyPlans(l, plans, true);
+      expect(fold(after)).toEqual(fold(l));
+      expect(fold(after)).toHaveLength(2);
+      expect(
+        legacyFold(after)
+          .map((e) => e.name)
+          .sort(),
+      ).toEqual(['a!', 'b!']);
+      expect(legacyFold(after)).toHaveLength(2);
+    });
+
     it('a second pass yields no plans', () => {
       const { after, both } = compact(base());
       expect(planCompaction(after)).toEqual([]);
@@ -392,7 +414,7 @@ describe('planCompaction', () => {
       const { plans } = compact(base());
       for (const p of plans) expect(RecordBodySchema.safeParse(p.write.body).success).toBe(true);
       const body = plans[0]!.write.body;
-      expect(body.kind === 'put' && body.compaction?.aliases).toEqual([TOMBSTONE_PREFIX + 'x']);
+      expect(body.kind === 'put' && body.compaction?.aliases).toEqual([`${TOMBSTONE_PREFIX}a:x`]);
     });
 
     it('groups without tombstones keep their old snapshot shape', () => {

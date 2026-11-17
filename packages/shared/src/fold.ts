@@ -30,9 +30,11 @@ function firstOf(r: OpenedRecord): number {
 }
 
 /**
- * A snapshot carries removed attachment ids as extra `aliases` entries with this prefix. The
- * compaction schema is strict, so a new field would make old clients drop the whole snapshot;
- * extra aliases are valid for them (and harmless: no event id starts with the prefix).
+ * A snapshot carries removed attachment ids as extra `aliases` entries
+ * `TOMBSTONE_PREFIX + <snapshot event id> + ':' + <attachment id>`. The compaction schema is
+ * strict, so a new field would make old clients drop the whole snapshot; extra aliases are valid
+ * for them. Old clients treat them as real aliases, so each must be unique to its group: sibling
+ * events from one email share an attachment id, and a shared alias would merge them.
  */
 export const TOMBSTONE_PREFIX = 'attachment-removed:';
 
@@ -45,8 +47,10 @@ function putIds(r: OpenedRecord): string[] {
 function snapshotTombstones(r: OpenedRecord): Set<string> {
   const out = new Set<string>();
   if (r.body.kind === 'put')
-    for (const a of r.body.compaction?.aliases ?? [])
-      if (a.startsWith(TOMBSTONE_PREFIX)) out.add(a.slice(TOMBSTONE_PREFIX.length));
+    for (const a of r.body.compaction?.aliases ?? []) {
+      const own = TOMBSTONE_PREFIX + r.body.event.id + ':';
+      if (a.startsWith(own)) out.add(a.slice(own.length));
+    }
   return out;
 }
 
@@ -285,7 +289,7 @@ export function planCompaction(records: OpenedRecord[], minRecords = 4): Compact
       throughSeq: Math.max(...deleteSeqs),
       aliases: [
         ...[...g.ids].filter((id) => id !== g.canonicalId).sort(),
-        ...[...tombstones].sort().map((id) => TOMBSTONE_PREFIX + id),
+        ...[...tombstones].sort().map((id) => `${TOMBSTONE_PREFIX}${g.canonicalId}:${id}`),
       ],
     };
     // One record carries one dedupe tag, so a group with several tags gets one identical
