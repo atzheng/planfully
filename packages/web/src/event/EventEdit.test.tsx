@@ -62,7 +62,7 @@ async function setup(opts: { failPost?: boolean; event?: Record<string, unknown>
   vi.stubGlobal(
     'fetch',
     vi.fn(async (_url: string, init: { body: string }) => {
-      if (opts.failPost) return new Response('nope', { status: 500 });
+      if (opts.failPost) return new Response('nope', { status: 400 });
       const { ciphertext: c } = JSON.parse(init.body) as { ciphertext: string };
       posted.push(await openJson(keys.privateKey, fromBase64(c)));
       return new Response(JSON.stringify({ seq: ++seq }), { status: 200 });
@@ -114,7 +114,7 @@ describe('edit and delete', () => {
     expect(posted).toHaveLength(0);
   });
 
-  test('a failed save keeps the form open and shows a dismissible error', async () => {
+  test('a refused save keeps the form open and shows a dismissible error', async () => {
     const { store } = await setup({ failPost: true });
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
     fireEvent.change(input('Name'), { target: { value: 'Supper' } });

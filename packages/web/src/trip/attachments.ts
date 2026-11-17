@@ -5,6 +5,7 @@
 import { open, seal, type Attachment } from '@planfully/shared';
 import { getBlob, putBlob } from '../lib/api';
 import { getOfflineDb, safely, type OfflineDb } from '../offline/db';
+import type { TripQueue } from '../offline/queue';
 
 export type AttachmentContext = { tripId: string; accessToken: string; privateKey: Uint8Array };
 
@@ -51,7 +52,11 @@ export async function prefetchAttachments(
 /** The Worker rejects sealed blobs over 25 MB; sealing adds 61 bytes (version, key, nonce, tag). */
 export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024 - 61;
 
-export type UploadContext = AttachmentContext & { publicKey: Uint8Array };
+export type UploadContext = AttachmentContext & {
+  publicKey: Uint8Array;
+  /** Offline queue (from `getTripQueue(store)`): the sealed blob is queued and sent in order. Without it the PUT is direct. */
+  queue?: TripQueue;
+};
 
 export class FileTooLargeError extends Error {
   constructor(filename: string) {
@@ -65,10 +70,12 @@ export async function uploadAttachment(file: File, ctx: UploadContext): Promise<
   const plain = new Uint8Array(await file.arrayBuffer());
   const sealed = await seal(ctx.publicKey, plain);
   const id = crypto.randomUUID();
-  await putBlob({ tripId: ctx.tripId, accessToken: ctx.accessToken }, id, sealed);
-  // Best-effort: an uploaded file is then available offline at once.
+  // Best-effort: the file is then available offline at once (also before it is sent).
   const cache = getOfflineDb();
   if (cache) await safely(() => cache.putBlob(ctx.tripId, id, sealed));
+  // Queued first, so it is sent before the record that will reference it; offline it stays queued.
+  if (ctx.queue) await ctx.queue.enqueueBlob(id, sealed);
+  else await putBlob({ tripId: ctx.tripId, accessToken: ctx.accessToken }, id, sealed);
   return {
     kind: 'file',
     id,

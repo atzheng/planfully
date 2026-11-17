@@ -20,6 +20,7 @@ export function TripShell() {
   const status = useTrip((s) => s.status);
   const error = useTrip((s) => s.error);
   const skipped = useTrip((s) => s.skipped);
+  const waiting = useTrip((s) => (s.queueStalled ? s.pending : 0));
   const [view, setView] = useQueryState('view', viewCodec, 'timeline');
 
   return (
@@ -50,6 +51,11 @@ export function TripShell() {
           <p role="status">Loading trip...</p>
         ) : (
           <>
+            {waiting > 0 && (
+              <p role="status" className={styles.waiting} data-testid="sync-waiting">
+                {waiting} {waiting === 1 ? 'change' : 'changes'} waiting to sync
+              </p>
+            )}
             {error && <p role="status">{error.message}</p>}
             {skipped > 0 && (
               <p role="status">

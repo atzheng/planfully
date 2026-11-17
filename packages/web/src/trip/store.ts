@@ -30,6 +30,7 @@ import {
 } from '@planfully/shared';
 import * as realApi from '../lib/api';
 import { FULL_RESYNC_MS, getOfflineDb, safely, type OfflineDb } from '../offline/db';
+import { getTripQueue } from '../offline/queue';
 import { compactTrip } from './compact';
 import { prefetchAttachments } from './attachments';
 import { isTempSeq, TEMP_SEQ_BASE } from './tempSeq';
@@ -72,8 +73,10 @@ export type TripState = {
   removeRecords(seqs: number[]): void;
   /** Replace the stored meta (after a PATCH). */
   setMeta(meta: TripMeta): void;
-  /** Writes in flight (trip/actions.ts). */
+  /** Writes not yet acknowledged by the server: in flight or waiting in the offline queue. Compaction waits for 0. */
   pending: number;
+  /** True while queued writes could not be sent (network failure); drives the sync indicator. */
+  queueStalled: boolean;
   /** The last failed write. Only cleared by the UI via setWriteState({ lastError: null }). */
   lastError: TripError | null;
   /** Write path: show a temporary record immediately; returns its (very large) temp seq. */
@@ -81,7 +84,11 @@ export type TripState = {
   /** Write path: drop the temp record, adding the real one if given (rollback if omitted). */
   settleOptimistic(tempSeq: number, real?: OpenedRecord): void;
   /** Write path: adjust `pending` and set/clear `lastError`. */
-  setWriteState(patch: { pendingDelta?: number; lastError?: TripError | null }): void;
+  setWriteState(patch: {
+    pendingDelta?: number;
+    lastError?: TripError | null;
+    queueStalled?: boolean;
+  }): void;
 };
 
 export type TripApi = Pick<typeof realApi, 'getTrip' | 'getRecords'> &
@@ -436,6 +443,7 @@ export function createTripStore(opts: TripStoreOptions): TripStore {
       },
       setMeta: (meta) => set({ meta }),
       pending: 0,
+      queueStalled: false,
       lastError: null,
       addOptimistic: (body) => {
         const s = get();
@@ -457,10 +465,13 @@ export function createTripStore(opts: TripStoreOptions): TripStore {
         }
         set({ records, events: fold(records) });
       },
-      setWriteState: ({ pendingDelta, lastError }) => {
+      setWriteState: ({ pendingDelta, lastError, queueStalled }) => {
         const patch: Partial<TripState> = {};
         if (pendingDelta) patch.pending = Math.max(0, get().pending + pendingDelta);
         if (lastError !== undefined) patch.lastError = lastError;
+        if (queueStalled !== undefined && queueStalled !== get().queueStalled) {
+          patch.queueStalled = queueStalled;
+        }
         set(patch);
       },
     };
@@ -597,7 +608,12 @@ export function TripProvider({
   const current = ref.current.store;
   useEffect(() => {
     current.start();
-    return () => current.stop();
+    const queue = getTripQueue(current);
+    queue.start();
+    return () => {
+      queue.stop();
+      current.stop();
+    };
   }, [current]);
   return createElement(TripContext.Provider, { value: current }, children);
 }
