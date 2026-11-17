@@ -45,8 +45,7 @@
   position: relative;
   height: calc(100dvh - 250px);
   min-height: 320px;
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   /* Vertical pan stays native; pinch is handled in JS so it zooms the timeline, not the page. */
@@ -58,8 +57,9 @@
 .headingWrap {
   position: sticky;
   top: 0;
+  left: 0;
   height: 0;
-  z-index: 5;
+  z-index: 7;
 }
 .heading {
   display: flex;
@@ -72,13 +72,72 @@
 }
 .canvas {
   --axis-x: 0px;
+  --left: 52px;
+  --lane-min: 140px;
   position: relative;
-  display: grid;
-  grid-template-columns: 52px minmax(0, 1fr);
+  min-width: calc(var(--left) + var(--lanes) * var(--lane-min));
 }
 .canvas.withGutter {
   --axis-x: 64px;
+  --left: 116px;
+}
+.body,
+.laneHeads {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+}
+.withGutter .body,
+.withGutter .laneHeads {
   grid-template-columns: 64px 52px minmax(0, 1fr);
+}
+.body {
+  position: relative;
+}
+.laneHeads {
+  position: sticky;
+  z-index: 6;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+}
+.headSpacer {
+  position: sticky;
+  left: 0;
+  background: var(--surface-2);
+  z-index: 1;
+}
+.withGutter .headSpacer:nth-child(2) {
+  left: 64px;
+}
+.laneHeadRow,
+.lanes {
+  display: flex;
+  min-width: 0;
+}
+.laneHead {
+  flex: 1 1 0;
+  min-width: var(--lane-min);
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0 var(--space-2);
+  border-left: 1px solid var(--border);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  text-transform: capitalize;
+}
+.laneName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lane {
+  position: relative;
+  flex: 1 1 0;
+  min-width: var(--lane-min);
+}
+.lane + .lane {
+  border-left: 1px solid var(--border);
 }
 .gutter,
 .axis,
@@ -86,16 +145,25 @@
   position: relative;
   min-width: 0;
 }
+/* Pinned left while the lanes scroll sideways. */
+.gutter,
+.axis {
+  position: sticky;
+  z-index: 3;
+  background: var(--surface);
+}
 .gutter {
+  left: 0;
   border-right: 1px solid var(--border);
 }
 .axis {
+  left: var(--axis-x);
   border-right: 1px solid var(--border);
 }
 .lanes {
   z-index: 1;
 }
-/* One layer under the whole canvas so grid lines cross the lanes and labels sit in the axis column. */
+/* One layer under the whole body so grid lines cross the lanes; labels live in the sticky axis. */
 .tickLayer {
   position: absolute;
   inset: 0;
@@ -115,7 +183,7 @@
 }
 .tickLabel {
   position: absolute;
-  left: calc(var(--axis-x) + 4px);
+  left: 4px;
   top: 2px;
   font-size: var(--text-xs);
   color: var(--text-muted);
@@ -162,7 +230,7 @@
 /* Sticky so a tall block (lodging) keeps its label in view while scrolled. */
 .blockLabel {
   position: sticky;
-  top: 32px;
+  top: calc(var(--top-px, 28px) + 4px);
   display: flex;
   gap: var(--space-1);
   align-items: flex-start;
@@ -290,4 +358,10 @@
     border-color: hsl(var(--h) 30% 40%);
     border-left-color: hsl(var(--h) 60% 60%);
   }
+}
+
+.modeOn {
+  background: var(--accent);
+  color: var(--surface);
+  border-color: var(--accent);
 }

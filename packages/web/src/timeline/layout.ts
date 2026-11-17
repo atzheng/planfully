@@ -2,7 +2,8 @@ import { EVENT_TYPES, eventInterval } from '@planfully/shared';
 import type { Event, RosterMember } from '@planfully/shared';
 import type { TimeScale } from './scale';
 
-export type LaneMode = 'none' | 'type' | 'participant';
+export const LANE_MODES = ['none', 'type', 'participant'] as const;
+export type LaneMode = (typeof LANE_MODES)[number];
 export type LaneSpec = { mode: LaneMode; roster: readonly RosterMember[] };
 export type Lane = { key: string; label: string };
 export type Block = {
@@ -75,7 +76,7 @@ export function layoutEvents(events: Event[], scale: TimeScale, spec: LaneSpec):
   } else {
     lanes = spec.roster.map((m) => ({ key: m.id, label: m.name }));
     if (present.has(OTHER_LANE_KEY) || lanes.length === 0) {
-      lanes.push({ key: OTHER_LANE_KEY, label: 'Other' });
+      lanes.push({ key: OTHER_LANE_KEY, label: 'Former participants' });
     }
   }
 
@@ -124,4 +125,14 @@ export function initialScrollMs(events: Event[], nowMs: number): number {
   }
   if (first === Infinity) return nowMs;
   return nowMs >= first && nowMs <= last ? nowMs : first;
+}
+
+/**
+ * Drop lanes that have no blocks (e.g. a roster member whose events are all filtered out). The
+ * single lane of mode 'none' is kept so the canvas is never lane-less when something is scheduled.
+ */
+export function withoutEmptyLanes(layout: Layout, mode: LaneMode): Layout {
+  if (mode === 'none') return layout;
+  const used = new Set(layout.blocks.map((b) => b.laneKey));
+  return { ...layout, lanes: layout.lanes.filter((l) => used.has(l.key)) };
 }
