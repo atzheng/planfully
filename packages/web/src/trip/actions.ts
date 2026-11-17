@@ -8,12 +8,15 @@ import type { Event, RecordBody } from '@planfully/shared';
 import { getTripQueue, type TripQueue } from '../offline/queue';
 import { useTripStore, type TripStore } from './store';
 
+/** Fields of a patch: any subset of the event, optional ones `null` to clear (CONTRACTS.md section 3). */
+export type PatchFields = Extract<RecordBody, { kind: 'patch' }>['fields'];
+
 export type NewEvent = Pick<Event, 'name' | 'type'> &
   Partial<Omit<Event, 'id' | 'source' | 'createdAt'>>;
 
 export type TripActions = {
   putEvent(event: NewEvent): Promise<Event>;
-  patchEvent(id: string, fields: Partial<Omit<Event, 'id'>>): Promise<void>;
+  patchEvent(id: string, fields: PatchFields): Promise<void>;
   deleteEvent(id: string): Promise<void>;
 };
 

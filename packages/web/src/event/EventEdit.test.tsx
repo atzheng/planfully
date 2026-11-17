@@ -114,6 +114,18 @@ describe('edit and delete', () => {
     expect(posted).toHaveLength(0);
   });
 
+  test('clearing confirmation sends null and the event loses it', async () => {
+    const { posted } = await setup({ event: { confirmation: 'ABC123' } });
+    expect(screen.getAllByText(/ABC123/).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    fireEvent.change(input('Confirmation'), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(posted).toHaveLength(1));
+    expect(posted[0]).toEqual({ kind: 'patch', target: 'e1', fields: { confirmation: null } });
+    await screen.findByRole('button', { name: 'Edit' });
+    expect(screen.queryByText(/ABC123/)).toBeNull();
+  });
+
   test('a refused save keeps the form open and shows a dismissible error', async () => {
     const { store } = await setup({ failPost: true });
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
