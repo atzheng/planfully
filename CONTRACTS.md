@@ -234,7 +234,7 @@ Never log email content, event content or tokens.
   - Sync: `since=cursor`, paging while `more`; triggered on window focus, on visibilitychange to visible, and every 60 s while the page is visible. Concurrent calls share one request.
   - `createTripStore({ tripId, fragment, api?, intervalMs?, backoffMs? })` builds a store without React (for tests and caching); `openRecords(privateKey, stored)` is also exported.
   - `trip/actions.ts` adds `putEvent(e)`, `patchEvent(id, fields)`, `deleteEvent(id)`.
-- **`trip/attachments.ts`:** `fetchAttachment(a: Attachment): Promise<Blob>` (fetch, open, wrap with `a.mime`); `uploadAttachment(file: File): Promise<Attachment>`.
+- **`trip/attachments.ts`:** `type AttachmentContext = { tripId: string; accessToken: string; privateKey: Uint8Array }` (from `useTrip`: `tripId` and `keys`); `fetchAttachment(a: Attachment, ctx: AttachmentContext): Promise<Blob>` (fetch, open, wrap with `a.mime`); `uploadAttachment(file: File, ctx: AttachmentContext /* plus publicKey for sealing */): Promise<Attachment>` (ecw.4; needs the same ctx, since the module has no store access).
 - **`filters/filter.ts`:** `type Filter`, `filterEvents(events, filter)`, `useFilter()`, `useFilteredEvents()`.
 - **`event/EventSheet.tsx`:** mounted once in the shell; open an event by setting query key `e`. Views never render their own detail UI.
 - **`timeline/scale.ts`:** `type TimeScale = { pxPerHour: number; originMs: number; toY(ms: number): number; toMs(y: number): number }`, `makeScale(originMs, pxPerHour)`, and `useTimeScale()` from a context provided by `Timeline`. Anything drawn beside the axis (weather) positions itself with this and nothing else.

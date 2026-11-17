@@ -109,6 +109,11 @@ function AttachmentRow({ a }: { a: Attachment }) {
 function Details({ event }: { event: Event }) {
   const roster = useTrip((s) => s.meta?.roster ?? []);
   const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) return;
+    const t = setTimeout(() => setCopied(false), 2000);
+    return () => clearTimeout(t);
+  }, [copied]);
   const files = event.attachments.filter((a) => a.kind === 'file');
   const emails = event.attachments.filter((a) => a.kind === 'source-email');
   const duration = event.start && event.end ? formatDuration(event.start, event.end) : null;
