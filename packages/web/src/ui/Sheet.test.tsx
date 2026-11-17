@@ -53,7 +53,7 @@ describe('Sheet focus', () => {
     two.focus();
     fireEvent.keyDown(two, { key: 'Tab' });
     expect(document.activeElement).toBe(screen.getByText('one'));
-    fireEvent.keyDown((document.activeElement as Element), { key: 'Tab', shiftKey: true });
+    fireEvent.keyDown(document.activeElement as Element, { key: 'Tab', shiftKey: true });
     expect(document.activeElement).toBe(two);
   });
 
@@ -72,7 +72,7 @@ describe('Sheet focus', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(document.activeElement).toBe(opener);
     openIt();
-    fireEvent.click((screen.getByRole('dialog').parentElement as HTMLElement));
+    fireEvent.click(screen.getByRole('dialog').parentElement as HTMLElement);
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(document.activeElement).toBe(opener);
   });
