@@ -130,6 +130,8 @@ Known limitations (accepted for now):
 - A late put that bridges two groups (shared tag or id) makes patches apply retroactively across the merged group, and a compacted snapshot of one group then overrides the other group's earlier puts.
 - Groups with two or more distinct dedupe tags are never compacted.
 
+**Dedupe tag input (email ingest, `routes/default.ts`).** Events without a `confirmation` get no tag. Otherwise `dedupeTag(dedupeKey, type, input)` where `input` is the confirmation for non-transport types, and for `flight|train|bus|ferry|car` `${confirmation}|${placeKey(location)}|${placeKey(endLocation)}|${start ? dayKey(start) : ''}` (each leg of a multi-leg booking, and each day of a repeated route, gets its own tag; `dedupeTag` strips non-alphanumerics). `placeKey(loc.name)`: a 3-letter capital code counts only if parenthesised `(CDG)`, the whole trimmed name (`CDG`), or next to an airport marker (`Airport`, `Aeroporto`, `Aéroport`, `Aeropuerto`, `Flughafen`, `Terminal`, `T<digit>`), e.g. `SFO Terminal 2`, `Airport JFK`; otherwise the name lowercased with diacritics stripped and non-alphanumerics removed (`NEW YORK` stays `newyork`; `NYC JFK` gives `nycjfk`). Trade-offs: a schedule change that moves a leg to a different day creates a new event instead of updating the old one (a visible duplicate the user can delete beats silently hiding a leg); same-day time changes and cancellations fold in. Code-less names worded differently ("San Francisco International" vs "SFO") also duplicate. When some events or attachments of an email fail, ingest additionally appends one needs-review `other` event (no tag, source email attached) named `Not everything from "<subject>" could be added`.
+
 ## 4. Crypto (`crypto.ts`)
 
 ```ts
@@ -189,6 +191,9 @@ type ParsedEmail = { from: string; to: string; suffix: string; subject: string; 
                      attachments: { filename: string; mime: string; bytes: Uint8Array }[];
                      sourceAttachment: Attachment }   // the sealed raw .eml, already stored
 type EmailRoute = (ctx: { env: Env; trip: TripRow; email: ParsedEmail }) => Promise<void>
+// email/store.ts: storeAttachment(env, trip, { filename, mime, bytes }): Promise<Attachment>  (seal + putBlob, fresh uuid, kind 'file', size = plaintext)
+//                  appendEvent(env, trip, event: Event, dedupe: string | null): Promise<number>  (EventSchema-validates, seals a put, appends)
+// routes/default.ts exports setLlmClientForTests(client | undefined) so tests can inject the parseEmail client; `today` = UTC day of the Date header, else now
 // email/handler.ts exports handleEmail(message, env, ctx) and a mutable `routes` map; it picks routes[suffix] ?? routes[''];  '' -> routes/default.ts, 'receipts' -> routes/receipts.ts
 
 // email/auth.ts: sender check. From must hold exactly one mailbox (postal-mime addressParser; zero, several,
