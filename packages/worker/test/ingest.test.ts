@@ -273,11 +273,71 @@ describe('default route', () => {
   });
 });
 
+describe('review fixes', () => {
+  const train = (day: string, over: Record<string, unknown> = {}) => ({
+    name: `Train ${day}`,
+    type: 'train',
+    start: { local: `2026-06-${day}T09:00`, tz: 'Europe/Lisbon' },
+    confirmation: 'TRN777',
+    location: { name: 'Lisboa Santa Apolónia' },
+    endLocation: { name: 'Porto Campanhã' },
+    participants: [],
+    status: 'confirmed',
+    attachmentIndexes: [],
+    ...over,
+  });
+
+  test('same route on two days with one confirmation stays two events', async () => {
+    const { trip, keys } = await setup();
+    await ingest(trip, [train('01'), train('02')]);
+    expect(fold(await opened(trip.id, keys.privateKey))).toHaveLength(2);
+  });
+
+  test('same-day change and cancellation fold; moving to another day duplicates', async () => {
+    const { trip, keys } = await setup();
+    await ingest(trip, [train('01')]);
+    await ingest(trip, [
+      train('01', {
+        start: { local: '2026-06-01T11:30', tz: 'Europe/Lisbon' },
+        location: { name: 'Lisboa Santa Apolonia' },
+      }),
+    ]);
+    let events = fold(await opened(trip.id, keys.privateKey));
+    expect(events).toHaveLength(1);
+    expect(events[0]?.start?.local).toBe('2026-06-01T11:30');
+    await ingest(trip, [train('01', { status: 'cancelled' })]);
+    events = fold(await opened(trip.id, keys.privateKey));
+    expect(events).toHaveLength(1);
+    expect(events[0]?.status).toBe('cancelled');
+    await ingest(trip, [train('03')]);
+    expect(fold(await opened(trip.id, keys.privateKey))).toHaveLength(2);
+  });
+
+  test('partial failure appends a needs-review notice', async () => {
+    const { trip, keys } = await setup();
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(baseEnv.BLOBS, 'put').mockRejectedValueOnce(new Error('r2 down'));
+    await ingest(trip, [leg()]);
+    const events = fold(await opened(trip.id, keys.privateKey));
+    expect(events).toHaveLength(2);
+    const notice = events.find((e) => e.needsReview);
+    expect(notice?.name).toBe(`Not everything from "${SUBJECT}" could be added`);
+    expect(notice?.attachments).toEqual([source]);
+    expect(events.find((e) => !e.needsReview)?.attachments).toEqual([source]);
+  });
+});
+
 describe('helpers', () => {
-  test('placeKey normalises airport names', () => {
-    expect(placeKey({ name: 'San Francisco (SFO)' })).toBe('SFO');
-    expect(placeKey({ name: 'SFO' })).toBe('SFO');
-    expect(placeKey({ name: 'Gare du Nord' })).toBe('garedunord');
+  test('placeKey', () => {
+    for (const n of ['San Francisco (SFO)', 'SFO', 'SFO Terminal 2', 'Airport SFO', 'SFO T2'])
+      expect(placeKey({ name: n })).toBe('SFO');
+    expect(placeKey({ name: 'Paris Charles de Gaulle (CDG)' })).toBe(placeKey({ name: 'CDG' }));
+    expect(placeKey({ name: 'NEW YORK' })).toBe('newyork');
+    expect(placeKey({ name: 'LOS ANGELES' })).toBe('losangeles');
+    expect(placeKey({ name: 'AIR FRANCE' })).toBe('airfrance');
+    expect(placeKey({ name: 'SAN FRANCISCO' })).not.toBe(placeKey({ name: 'SAN DIEGO' }));
+    expect(placeKey({ name: 'Apolónia' })).toBe(placeKey({ name: 'Apolonia' }));
+    expect(placeKey({ name: 'NYC JFK' })).toBe('nycjfk');
     expect(placeKey(undefined)).toBe('');
   });
   test('todayFor uses the Date header when valid', () => {
