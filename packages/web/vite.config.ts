@@ -34,6 +34,15 @@ export default defineConfig({
         // Precache the built shell only. No runtimeCaching: /api is never cached by the SW
         // (trip data is cached in IndexedDB by a later bead).
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
+        // PDF export libraries (lazy chunks) stay out of the precache: export needs to be online
+        // the first time. index.es is jsPDF's canvg dependency.
+        globIgnores: [
+          '**/jspdf.es.min-*.js',
+          '**/jspdf.plugin.autotable-*.js',
+          '**/html2canvas-*.js',
+          '**/purify.es-*.js',
+          '**/index.es-*.js',
+        ],
         navigateFallback: '/index.html',
         navigateFallbackAllowlist: [/^\/$/, /^\/new$/, /^\/t\//],
         navigateFallbackDenylist: [/^\/api(\/|$)/],
