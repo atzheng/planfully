@@ -1,16 +1,49 @@
 // Attachment blobs (CONTRACTS.md sections 4, 5, 7). The sealed bytes come from the server and
-// are opened here with the trip's private key; the server never sees plaintext.
+// are opened here with the trip's private key; the server never sees plaintext. Sealed bytes
+// are also kept in the offline cache (offline/db.ts), so an opened attachment works offline.
 
 import { open, seal, type Attachment } from '@planfully/shared';
 import { getBlob, putBlob } from '../lib/api';
+import { getOfflineDb, safely, type OfflineDb } from '../offline/db';
 
 export type AttachmentContext = { tripId: string; accessToken: string; privateKey: Uint8Array };
 
-/** Fetch a sealed blob, open it in memory and wrap it with the attachment's mime type. */
+/** Attachments under this size are cached in the background after a sync; larger ones when opened. */
+export const PREFETCH_MAX_BYTES = 5 * 1024 * 1024;
+
+/** Fetch a sealed blob (cache first), open it in memory and wrap it with the attachment's mime type. */
 export async function fetchAttachment(a: Attachment, ctx: AttachmentContext): Promise<Blob> {
-  const sealed = await getBlob({ tripId: ctx.tripId, accessToken: ctx.accessToken }, a.id);
+  const cache = getOfflineDb();
+  let sealed = cache ? await safely(() => cache.getBlob(a.id)) : undefined;
+  if (!sealed) {
+    const fetched = await getBlob({ tripId: ctx.tripId, accessToken: ctx.accessToken }, a.id);
+    sealed = fetched;
+    if (cache) await safely(() => cache.putBlob(ctx.tripId, a.id, fetched));
+  }
   const plain = await open(ctx.privateKey, sealed);
   return new Blob([plain as BlobPart], { type: a.mime });
+}
+
+/** Background: cache the sealed bytes of small attachments not cached yet. Never throws. */
+export async function prefetchAttachments(
+  attachments: Attachment[],
+  ctx: { tripId: string; accessToken: string },
+  cache: OfflineDb,
+  fetchBlob: (id: string) => Promise<Uint8Array> = (id) => getBlob(ctx, id),
+  shouldContinue: () => boolean = () => true,
+): Promise<void> {
+  for (const a of attachments) {
+    if (!shouldContinue()) return;
+    if (a.size >= PREFETCH_MAX_BYTES) continue;
+    const have = await safely(() => cache.hasBlob(a.id));
+    if (have !== false) continue;
+    try {
+      const sealed = await fetchBlob(a.id);
+      if (shouldContinue()) await safely(() => cache.putBlob(ctx.tripId, a.id, sealed));
+    } catch {
+      // offline or gone: try again after a later sync
+    }
+  }
 }
 
 // Upload (planfully-ecw.4).
@@ -33,6 +66,9 @@ export async function uploadAttachment(file: File, ctx: UploadContext): Promise<
   const sealed = await seal(ctx.publicKey, plain);
   const id = crypto.randomUUID();
   await putBlob({ tripId: ctx.tripId, accessToken: ctx.accessToken }, id, sealed);
+  // Best-effort: an uploaded file is then available offline at once.
+  const cache = getOfflineDb();
+  if (cache) await safely(() => cache.putBlob(ctx.tripId, id, sealed));
   return {
     kind: 'file',
     id,

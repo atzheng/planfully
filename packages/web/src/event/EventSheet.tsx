@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import type { Attachment, Event, Location } from '@planfully/shared';
 import { stringCodec, useQueryState } from '../lib/queryState';
+import { useBlobCached } from '../offline/useBlobCached';
 import { fetchAttachment } from '../trip/attachments';
 import { useTripActions } from '../trip/actions';
 import { useTrip, useTripStore } from '../trip/store';
@@ -52,6 +53,7 @@ function AttachmentRow({ a }: { a: Attachment }) {
   const tripId = useTrip((s) => s.tripId);
   const keys = useTrip((s) => s.keys);
   const [state, setState] = useState<'idle' | 'loading' | 'error'>('idle');
+  const offline = useBlobCached(a.id, state);
 
   const onClick = async () => {
     if (!keys) return;
@@ -96,6 +98,7 @@ function AttachmentRow({ a }: { a: Attachment }) {
       </button>{' '}
       <span className={styles.meta}>
         {formatSize(a.size)}
+        {offline && ' · Available offline'}
         {state === 'loading' && ' · Opening...'}
       </span>
       {state === 'error' && (
