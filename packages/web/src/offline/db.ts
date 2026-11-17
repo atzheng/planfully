@@ -19,7 +19,12 @@ export type CachedTrip = {
   lastSeq: number;
   /** ISO instant of the last time the trip was opened. */
   openedAt: string;
+  /** ISO instant of the last full load (since=0); older than FULL_RESYNC_MS triggers another. */
+  fullLoadAt?: string;
 };
+
+/** Cached records are replaced by a full load at least this often (drops stale pre-compaction records). */
+export const FULL_RESYNC_MS = 7 * 24 * 60 * 60 * 1000;
 
 type RecordRow = StoredRecord & { tripId: string };
 type BlobRow = { blobId: string; tripId: string; bytes: Uint8Array };
@@ -55,7 +60,12 @@ export type OfflineDb = {
   getBlob(blobId: string): Promise<Uint8Array | undefined>;
   hasBlob(blobId: string): Promise<boolean>;
   putBlob(tripId: string, blobId: string, bytes: Uint8Array): Promise<void>;
-  /** Remove a trip's secret, records and blobs. Other trips are untouched. */
+  /** Add sealed records without touching lastSeq; ignored for a trip that is not cached. */
+  putRecords(tripId: string, records: StoredRecord[]): Promise<void>;
+  /**
+   * Remove a trip's secret, records and blobs. Other trips are untouched. A future store (the
+   * offline edit queue, v2) must be cleared here too.
+   */
   forgetTrip(tripId: string): Promise<void>;
   close(): void;
 };
@@ -66,10 +76,13 @@ export function createOfflineDb(name = DB_NAME): OfflineDb {
   let dbp: Promise<IDBPDatabase<PlanfullyDB>> | null = null;
   const db = () =>
     (dbp ??= openDB<PlanfullyDB>(name, 1, {
-      upgrade(d) {
-        d.createObjectStore('trips', { keyPath: 'tripId' });
-        d.createObjectStore('records', { keyPath: ['tripId', 'seq'] });
-        d.createObjectStore('blobs', { keyPath: 'blobId' }).createIndex('tripId', 'tripId');
+      upgrade(d, oldVersion) {
+        if (oldVersion < 1) {
+          d.createObjectStore('trips', { keyPath: 'tripId' });
+          d.createObjectStore('records', { keyPath: ['tripId', 'seq'] });
+          d.createObjectStore('blobs', { keyPath: 'blobId' }).createIndex('tripId', 'tripId');
+        }
+        // v2 (fh8.3) adds a `queue` store here: if (oldVersion < 2) { ... }
       },
     }));
   const range = (tripId: string) => IDBKeyRange.bound([tripId, -Infinity], [tripId, Infinity]);
@@ -115,6 +128,7 @@ export function createOfflineDb(name = DB_NAME): OfflineDb {
         meta: s.meta,
         lastSeq: s.lastSeq,
         openedAt: s.openedAt ?? new Date().toISOString(),
+        fullLoadAt: s.replace ? new Date().toISOString() : existing?.fullLoadAt,
       });
       await tx.done;
     },
@@ -136,7 +150,22 @@ export function createOfflineDb(name = DB_NAME): OfflineDb {
       return (await (await db()).getKey('blobs', blobId)) !== undefined;
     },
     async putBlob(tripId, blobId, bytes) {
-      await (await db()).put('blobs', { blobId, tripId, bytes });
+      // Same transaction as the check: a blob must not outlive a forgotten trip.
+      const tx = (await db()).transaction(['trips', 'blobs'], 'readwrite');
+      if (await tx.objectStore('trips').getKey(tripId)) {
+        await tx.objectStore('blobs').put({ blobId, tripId, bytes });
+      }
+      await tx.done;
+    },
+    async putRecords(tripId, records) {
+      const tx = (await db()).transaction(['trips', 'records'], 'readwrite');
+      if (await tx.objectStore('trips').getKey(tripId)) {
+        for (const r of records) {
+          if (isTempSeq(r.seq)) continue;
+          await tx.objectStore('records').put({ tripId, ...r });
+        }
+      }
+      await tx.done;
     },
     async forgetTrip(tripId) {
       const tx = (await db()).transaction(['trips', 'records', 'blobs'], 'readwrite');

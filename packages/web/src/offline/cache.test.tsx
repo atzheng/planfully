@@ -4,6 +4,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import {
   deriveTripKeys,
+  fold,
   encodeSecret,
   generateSecret,
   seal,
@@ -14,7 +15,7 @@ import {
   type TripMeta,
 } from '@planfully/shared';
 import { ApiError } from '../lib/api';
-import { createTripStore, type TripApi } from '../trip/store';
+import { createTripStore, openRecords, type TripApi } from '../trip/store';
 import { TEMP_SEQ_BASE } from '../trip/tempSeq';
 import { fetchAttachment, prefetchAttachments } from '../trip/attachments';
 import { createOfflineDb, setOfflineDb, type OfflineDb } from './db';
@@ -150,7 +151,7 @@ describe('store cache', () => {
     expect(second.getTrip).toHaveBeenCalled(); // meta refreshed after a cache load
   });
 
-  test('lastSeq follows the cursor, not appended records; temp records are not cached', async () => {
+  test('lastSeq follows the cursor, not appended records; appended real records are cached, temp ones are not', async () => {
     const r1 = await stored(1, put('e1', 'Dinner'));
     const s = await run(api([{ records: [r1], latestSeq: 4, more: false }]).api);
     await flush();
@@ -159,7 +160,7 @@ describe('store cache', () => {
     await flush();
     s.stop();
     expect((await db.getTrip('t1'))?.lastSeq).toBe(4);
-    expect((await db.loadRecords('t1')).map((r) => r.seq)).toEqual([1]);
+    expect((await db.loadRecords('t1')).map((r) => r.seq)).toEqual([1, 9]);
     expect((await db.loadRecords('t1')).every((r) => r.seq < TEMP_SEQ_BASE)).toBe(true);
   });
 
@@ -253,6 +254,7 @@ describe('attachment cache', () => {
   });
 
   test('fetchAttachment hits the network once, then the cache', async () => {
+    await db.saveSnapshot({ tripId: 't1', secret: frag, meta: META, lastSeq: 0, records: [] });
     const sealed = await seal(keys.publicKey, new TextEncoder().encode('hello'));
     getBlobMock.mockResolvedValue(sealed);
     const ctx = { tripId: 't1', accessToken: keys.accessToken, privateKey: keys.privateKey };
@@ -266,6 +268,7 @@ describe('attachment cache', () => {
   });
 
   test('prefetch caches small attachments only, skips cached, tolerates failures', async () => {
+    await db.saveSnapshot({ tripId: 't1', secret: frag, meta: META, lastSeq: 0, records: [] });
     await db.putBlob('t1', 'have', new Uint8Array([1]));
     const fetchBlob = vi.fn(async (id: string) => {
       if (id === 'bad') throw new Error('x');
@@ -291,6 +294,134 @@ describe('attachment cache', () => {
     await waitFor(async () => expect(await db.hasBlob('pf1')).toBe(true));
     s.stop();
     expect(getBlob).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('review fixes', () => {
+  test('compaction: the cache folds to the same events right after compacting', async () => {
+    const recs = [
+      await stored(1, put('e1', 'Dinner')),
+      await stored(2, { kind: 'patch', target: 'e1', fields: { name: 'Dinner 2' } }),
+      await stored(3, { kind: 'patch', target: 'e1', fields: { name: 'Dinner 3' } }),
+      await stored(4, { kind: 'patch', target: 'e1', fields: { name: 'Dinner 4' } }),
+    ];
+    const postRecord = vi.fn(async () => ({ seq: 100 }));
+    const deleteRecord = vi.fn(async () => undefined);
+    const s = await run(
+      api([{ records: recs, latestSeq: 4, more: false }], { postRecord, deleteRecord }).api,
+    );
+    await vi.waitFor(() => expect(deleteRecord).toHaveBeenCalledTimes(4));
+    await flush();
+    s.stop();
+    expect(s.getState().events.map((e) => e.name)).toEqual(['Dinner 4']);
+    const cached = await db.loadRecords('t1');
+    expect(cached.map((r) => r.seq)).toEqual([100]);
+    const { opened } = await openRecords(keys.privateKey, cached);
+    expect(fold(opened)).toEqual(s.getState().events);
+    expect((await db.getTrip('t1'))?.lastSeq).toBe(4);
+  });
+
+  test('a cached trip older than 7 days is fully reloaded, dropping stale records', async () => {
+    const r1 = await stored(1, put('e1', 'Keep'));
+    const r2 = await stored(2, put('e2', 'Stale'));
+    await db.saveSnapshot({
+      tripId: 't1',
+      secret: frag,
+      meta: META,
+      lastSeq: 2,
+      records: [r1, r2],
+      replace: true,
+    });
+    const t = await db.getTrip('t1');
+    if (!t) throw new Error('missing');
+    await db.saveSnapshot({ tripId: 't1', meta: META, lastSeq: 2, records: [] });
+    // age the full-load stamp
+    const raw = await new Promise<IDBDatabase>((res) => {
+      const q = indexedDB.open(`cache-${n - 1}`);
+      q.onsuccess = () => res(q.result);
+    });
+    await new Promise<void>((res) => {
+      const tx = raw.transaction('trips', 'readwrite');
+      tx.objectStore('trips').put({ ...t, fullLoadAt: '2020-01-01T00:00:00.000Z' });
+      tx.oncomplete = () => res();
+    });
+    raw.close();
+    const a = api([{ records: [r1], latestSeq: 2, more: false }]);
+    const s = await run(a.api);
+    await vi.waitFor(() => expect(a.getRecords).toHaveBeenCalled());
+    await vi.waitFor(() => expect(s.getState().events.map((e) => e.name)).toEqual(['Keep']));
+    await flush();
+    s.stop();
+    expect(a.getRecords.mock.calls[0]?.[1]).toBe(0);
+    expect((await db.loadRecords('t1')).map((r) => r.seq)).toEqual([1]);
+  });
+
+  test('a fresh cache is not fully reloaded', async () => {
+    const r1 = await stored(1, put('e1', 'A'));
+    await db.saveSnapshot({
+      tripId: 't1',
+      secret: frag,
+      meta: META,
+      lastSeq: 1,
+      records: [r1],
+      replace: true,
+    });
+    const a = api([{ records: [], latestSeq: 1, more: false }]);
+    const s = await run(a.api);
+    await vi.waitFor(() => expect(a.getRecords).toHaveBeenCalled());
+    s.stop();
+    expect(a.getRecords.mock.calls[0]?.[1]).toBe(1);
+  });
+
+  test('a 401 during sync drops that trip from the cache', async () => {
+    const r1 = await stored(1, put('e1', 'A'));
+    await db.saveSnapshot({
+      tripId: 't1',
+      secret: frag,
+      meta: META,
+      lastSeq: 1,
+      records: [r1],
+      replace: true,
+    });
+    await db.saveSnapshot({
+      tripId: 'other',
+      secret: 'x',
+      meta: { ...META, id: 'other' },
+      lastSeq: 0,
+      records: [],
+    });
+    const s = await run(api([new ApiError(401, 'no')]).api);
+    await vi.waitFor(() => expect(s.getState().status).toBe('error'));
+    await flush();
+    s.stop();
+    expect(await db.getTrip('t1')).toBeUndefined();
+    expect(await db.loadRecords('t1')).toEqual([]);
+    expect(await db.getTrip('other')).toBeDefined();
+  });
+
+  test('putBlob for a forgotten trip is skipped (no orphan blobs)', async () => {
+    await db.saveSnapshot({ tripId: 't1', secret: frag, meta: META, lastSeq: 0, records: [] });
+    await db.putBlob('t1', 'b1', new Uint8Array([1]));
+    await db.forgetTrip('t1');
+    await db.putBlob('t1', 'b2', new Uint8Array([1]));
+    expect(await db.hasBlob('b1')).toBe(false);
+    expect(await db.hasBlob('b2')).toBe(false);
+  });
+
+  test('uploadAttachment puts the sealed bytes in the blob cache', async () => {
+    await db.saveSnapshot({ tripId: 't1', secret: frag, meta: META, lastSeq: 0, records: [] });
+    const { uploadAttachment } = await import('../trip/attachments');
+    const putBlobMock = vi
+      .spyOn(await import('../lib/api'), 'putBlob')
+      .mockResolvedValue(undefined as never);
+    const att = await uploadAttachment(new File(['hi'], 'a.txt', { type: 'text/plain' }), {
+      tripId: 't1',
+      accessToken: 'tok',
+      privateKey: keys.privateKey,
+      publicKey: keys.publicKey,
+    });
+    expect(await db.hasBlob(att.id)).toBe(true);
+    putBlobMock.mockRestore();
   });
 });
 

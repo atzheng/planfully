@@ -20,6 +20,8 @@ import {
   fold,
   fromBase64,
   openJson,
+  sealJson,
+  toBase64,
   RecordBodySchema,
   type Event,
   type OpenedRecord,
@@ -27,7 +29,7 @@ import {
   type TripMeta,
 } from '@planfully/shared';
 import * as realApi from '../lib/api';
-import { getOfflineDb, safely, type OfflineDb } from '../offline/db';
+import { FULL_RESYNC_MS, getOfflineDb, safely, type OfflineDb } from '../offline/db';
 import { compactTrip } from './compact';
 import { prefetchAttachments } from './attachments';
 import { isTempSeq, TEMP_SEQ_BASE } from './tempSeq';
@@ -181,6 +183,10 @@ export function createTripStore(opts: TripStoreOptions): TripStore {
   let cacheSecret: string | null = null;
   // Set after loading from the cache: the first sync also refreshes meta.
   let metaStale = false;
+  // The cached trip is older than FULL_RESYNC_MS: the first sync reloads everything (since=0).
+  let resync = false;
+  // The cache held this trip under this store's secret (so a revoked link may drop it).
+  let hydrated = false;
   // Cache writes run in order; none happen after stop() (a replaced store must not touch the cache).
   let cacheQueue: Promise<unknown> = Promise.resolve();
   const queueCache = (fn: (c: OfflineDb) => Promise<void>) => {
@@ -203,6 +209,29 @@ export function createTripStore(opts: TripStoreOptions): TripStore {
       if (secret !== undefined && cacheSecret === secret) cacheSecret = null;
     });
   };
+  // Persist records the client wrote itself (compaction's put, settled writes) so they survive an
+  // offline reload before the next sync. Sealed again with the public key; lastSeq is untouched.
+  function persistOwn(records: OpenedRecord[]) {
+    const keys = store.getState().keys;
+    const real = records.filter((r) => !isTempSeq(r.seq));
+    if (!cache || !keys || real.length === 0) return;
+    queueCache(async (c) => {
+      const sealed: StoredRecord[] = [];
+      for (const r of real) {
+        sealed.push({
+          seq: r.seq,
+          dedupe: r.dedupe,
+          createdAt: r.createdAt,
+          ciphertext: toBase64(await sealJson(keys.publicKey, r.body)),
+        });
+      }
+      await c.putRecords(opts.tripId, sealed);
+    });
+  }
+  // A revoked link must not stay listed with its secret.
+  function dropCacheIfRevoked(err: TripError) {
+    if (err.kind === 'unauthorized' && hydrated) queueCache((c) => c.forgetTrip(opts.tripId));
+  }
   const prefetched = new Set<string>();
   function prefetch() {
     const { getBlob } = api;
@@ -284,6 +313,7 @@ export function createTripStore(opts: TripStoreOptions): TripStore {
       } catch (e) {
         const err = toError(e);
         set({ status: 'error', error: err });
+        dropCacheIfRevoked(err);
         if (err.kind === 'network' && started) {
           const delay = backoff[Math.min(attempts, backoff.length - 1)] ?? 30_000;
           attempts++;
@@ -302,12 +332,30 @@ export function createTripStore(opts: TripStoreOptions): TripStore {
           set({ meta: await api.getTrip(auth) });
           metaStale = false;
         }
-        const { opened, skipped, cursor: next, stored } = await fetchAll(keys, auth, cursor);
+        const full = resync;
+        const {
+          opened,
+          skipped,
+          cursor: next,
+          stored,
+        } = await fetchAll(keys, auth, full ? 0 : cursor);
         const s = get();
-        const records = mergeRecords(s.records, opened);
+        // A full reload replaces what the cache gave us (keeping only temp records).
+        const records = full
+          ? mergeRecords(
+              opened,
+              s.records.filter((r) => isTempSeq(r.seq)),
+            )
+          : mergeRecords(s.records, opened);
         const patch: Partial<TripState> = {};
-        if (next > s.cursor) patch.cursor = next;
-        if (skipped > 0) patch.skipped = s.skipped + skipped;
+        if (full) {
+          patch.skipped = skipped;
+          patch.cursor = next;
+          resync = false;
+        } else {
+          if (next > s.cursor) patch.cursor = next;
+          if (skipped > 0) patch.skipped = s.skipped + skipped;
+        }
         if (s.error) patch.error = null;
         if (s.offline) patch.offline = false;
         if (records !== s.records) {
@@ -315,15 +363,17 @@ export function createTripStore(opts: TripStoreOptions): TripStore {
           patch.events = fold(records);
         }
         if (Object.keys(patch).length > 0) set(patch);
-        persist(stored, next, false);
+        persist(stored, next, full);
         prefetch();
         maybeCompact();
       } catch (e) {
         const err = toError(e);
         // Keep showing the last data; a revoked link is fatal.
         const cur = get().error;
-        if (err.kind === 'unauthorized') set({ status: 'error', error: err });
-        else {
+        if (err.kind === 'unauthorized') {
+          set({ status: 'error', error: err });
+          dropCacheIfRevoked(err);
+        } else {
           if (err.kind === 'network' && !get().offline) set({ offline: true });
           if (cur?.kind !== err.kind || cur.message !== err.message) set({ error: err });
         }
@@ -364,6 +414,7 @@ export function createTripStore(opts: TripStoreOptions): TripStore {
       append: (add) => {
         const s = get();
         const records = mergeRecords(s.records, add);
+        persistOwn(add);
         if (records === s.records) return;
         // The cursor is not advanced: the server may hold records between ours and the new
         // seq, and the next sync must fetch them (merge dedupes by seq).
@@ -399,7 +450,10 @@ export function createTripStore(opts: TripStoreOptions): TripStore {
       },
       settleOptimistic: (tempSeq, real) => {
         let records = get().records.filter((r) => r.seq !== tempSeq);
-        if (real) records = mergeRecords(records, [real]);
+        if (real) {
+          records = mergeRecords(records, [real]);
+          persistOwn([real]);
+        }
         set({ records, events: fold(records) });
       },
       setWriteState: ({ pendingDelta, lastError }) => {
@@ -434,6 +488,9 @@ export function createTripStore(opts: TripStoreOptions): TripStore {
       error: null,
     });
     metaStale = true;
+    hydrated = true;
+    const last = Date.parse(cached.t.fullLoadAt ?? '');
+    resync = !(Date.now() - last < FULL_RESYNC_MS);
     cacheSecret = null; // already stored
     queueCache((c) => c.touch(opts.tripId));
   }
