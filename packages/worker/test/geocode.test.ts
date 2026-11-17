@@ -1,6 +1,6 @@
 import { env, exports } from 'cloudflare:workers';
 import { afterEach, beforeAll, describe, expect, test, vi } from 'vitest';
-import { geocode, isWeakMatch } from '../src/geo/geocode';
+import { geocode, isWeakMatch, namesOverlap } from '../src/geo/geocode';
 import type { Env } from '../src/env';
 import { applyMigrations, makeTrip } from './helpers';
 import vectors from '../../shared/test/vectors.json';
@@ -93,6 +93,101 @@ describe('geocode()', () => {
     mockFetch({ places: [place({ types: ['locality', 'political'] })] });
     const loc = { name: 'the hotel' };
     expect(await geocode(withKey, loc)).toBe(loc);
+  });
+
+  test('name-only query: accepted on token overlap, rejected otherwise', async () => {
+    mockFetch({ places: [place({ displayName: { text: 'Hilton Garden Inn Lisbon' } })] });
+    expect((await geocode(withKey, { name: 'Hilton' })).lat).toBe(38.72);
+    mockFetch({ places: [place({ displayName: { text: 'Pousada de Sintra' } })] });
+    const loc = { name: 'Hilton' };
+    expect(await geocode(withKey, loc)).toBe(loc);
+    // with an address the name check is skipped
+    const withAddr = await geocode(withKey, { name: 'Hilton', address: 'Rua X' });
+    expect(withAddr.lat).toBe(38.72);
+    expect(namesOverlap('Café São João', 'cafe sao joao bar')).toBe(true);
+    expect(namesOverlap('Hilton', 'Marriott')).toBe(false);
+  });
+
+  test('partial coords are treated as missing and both replaced', async () => {
+    mockFetch({ places: [place()] });
+    const out = await geocode(withKey, { name: 'Hotel Avenida', lat: 1 });
+    expect(out.lat).toBe(38.72);
+    expect(out.lng).toBe(-9.14);
+    const out2 = await geocode(withKey, { name: 'Hotel Avenida', lng: 5 });
+    expect(out2.lat).toBe(38.72);
+    expect(out2.lng).toBe(-9.14);
+  });
+
+  test('partial coords with no match are dropped, not kept half-set', async () => {
+    mockFetch({});
+    const out = await geocode(withKey, { name: 'Nowhere', lat: 1 });
+    expect(out).toEqual({ name: 'Nowhere' });
+  });
+
+  test('403/429 log the status only and block the rest of the session', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const spy = mockFetch({ error: 'quota' }, 429);
+    const session = {} as { blocked?: boolean };
+    const loc = { name: 'Secret Venue', address: 'Secret St' };
+    expect(await geocode(withKey, loc, session)).toBe(loc);
+    expect(session.blocked).toBe(true);
+    expect(await geocode(withKey, { name: 'Other' }, session)).toEqual({ name: 'Other' });
+    expect(spy).toHaveBeenCalledTimes(1);
+    const logged = JSON.stringify(warn.mock.calls);
+    expect(logged).toContain('429');
+    expect(logged).not.toContain('Secret');
+    expect(logged).not.toContain('k-secret');
+  });
+
+  test('other upstream errors do not block the session', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    mockFetch({}, 500);
+    const session = {} as { blocked?: boolean };
+    await geocode(withKey, { name: 'X' }, session);
+    expect(session.blocked).toBeUndefined();
+  });
+
+  test('namesOverlap: non-Latin scripts', () => {
+    expect(namesOverlap('東京タワー', '東京タワー')).toBe(true);
+    expect(namesOverlap('東京タワー', '東京タワー 展望台')).toBe(true);
+    expect(namesOverlap('Красная площадь', 'Красная площадь, Москва')).toBe(true);
+    expect(namesOverlap('Παρθενώνας', 'ΠΑΡΘΕΝΩΝΑΣ')).toBe(true);
+    expect(namesOverlap('Ακρόπολη', 'ακροπολη Αθηνών')).toBe(true);
+    expect(namesOverlap('برج خليفة', 'برج خليفة دبي')).toBe(true);
+    expect(namesOverlap('วัดพระแก้ว', 'วัดพระแก้ว กรุงเทพ')).toBe(true);
+    expect(namesOverlap('東京タワー', '大阪城')).toBe(false);
+  });
+
+  test('namesOverlap: stopwords alone do not match', () => {
+    expect(namesOverlap('Hotel Lisboa', 'Hotel Madrid')).toBe(false);
+    expect(namesOverlap('The Cafe', 'Cafe de la Paix')).toBe(false);
+    expect(namesOverlap('Hotel Lisboa', 'Lisboa Plaza Hotel')).toBe(true);
+    // event name made only of stopwords: no distinctive token, never matches
+    expect(namesOverlap('the hotel', 'The Hotel Ritz')).toBe(false);
+  });
+
+  test('stopword-only name with no address leaves location unchanged', async () => {
+    mockFetch({ places: [place({ displayName: { text: 'The Hotel Ritz' } })] });
+    const loc = { name: 'the hotel' };
+    expect(await geocode(withKey, loc)).toBe(loc);
+  });
+
+  test('no key: a lone lat or lng is dropped, no fetch', async () => {
+    const spy = mockFetch({ places: [place()] });
+    expect(await geocode(noKey, { name: 'X', lat: 1 })).toEqual({ name: 'X' });
+    expect(await geocode(noKey, { name: 'X', lng: 1 })).toEqual({ name: 'X' });
+    const full = { name: 'X', lat: 1, lng: 2 };
+    expect(await geocode(noKey, full)).toBe(full);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  test('network error or timeout blocks the rest of the session', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('timeout'));
+    const session = {} as { blocked?: boolean };
+    await geocode(withKey, { name: 'A' }, session);
+    expect(session.blocked).toBe(true);
+    await geocode(withKey, { name: 'B' }, session);
+    expect(spy).toHaveBeenCalledTimes(1);
   });
 
   test('isWeakMatch', () => {

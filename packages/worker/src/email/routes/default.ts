@@ -2,7 +2,7 @@ import { dayKey, dedupeTag, fromBase64 } from '@planfully/shared';
 import type { Attachment, Event, Location, ParsedEvent } from '@planfully/shared';
 import type { TripRow } from '../../db/trips';
 import type { Env } from '../../env';
-import { geocode } from '../../geo/geocode';
+import { geocode, type GeocodeSession } from '../../geo/geocode';
 import { parseEmail } from '../../llm/parse';
 import type { LlmClient } from '../../llm/parse';
 import { BlobTooLargeError } from '../../storage/blobs';
@@ -121,6 +121,7 @@ async function ingestEvents(
 ): Promise<{ appended: number; failed: boolean }> {
   const cache = new Map<number, Promise<Attachment | null>>();
   const failures = { count: 0 };
+  const geo: GeocodeSession = {};
   let appended = 0;
   for (const p of parsed) {
     try {
@@ -130,8 +131,10 @@ async function ingestEvents(
         const a = await storeFile(env, trip, email, i, cache, failures);
         if (a) files.push(a);
       }
-      const location = fields.location ? await geocode(env, fields.location) : undefined;
-      const endLocation = fields.endLocation ? await geocode(env, fields.endLocation) : undefined;
+      const location = fields.location ? await geocode(env, fields.location, geo) : undefined;
+      const endLocation = fields.endLocation
+        ? await geocode(env, fields.endLocation, geo)
+        : undefined;
       const event: Event = {
         ...fields,
         ...(location && { location }),
