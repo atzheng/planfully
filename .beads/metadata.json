@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "planfully",
+  "project_id": "9767d2c3-775f-49cf-a7cb-ee870469efbe"
+}
