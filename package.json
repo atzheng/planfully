@@ -13,7 +13,7 @@
     "format": "prettier --write .",
     "build": "pnpm -r run build",
     "dev": "pnpm -r --parallel run dev",
-    "seed": "echo 'not yet: pnpm seed arrives with the worker skeleton bead'"
+    "seed": "pnpm --filter @planfully/worker seed --"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
