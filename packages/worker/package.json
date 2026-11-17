@@ -7,7 +7,9 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "dev": "wrangler dev --port 8787",
+    "predev": "test -f .dev.vars || cp .dev.vars.example .dev.vars; mkdir -p ../web/dist",
+    "dev": "wrangler d1 migrations apply DB --local && wrangler dev --port 8787",
+    "seed": "tsx scripts/seed.ts",
     "test": "vitest run",
     "typecheck": "tsc -b",
     "build": "tsc -b"
@@ -23,6 +25,7 @@
     "@cloudflare/vitest-plugin": "^1.8.3",
     "@cloudflare/workers-types": "^5.20261116.1",
     "@types/node": "^22.20.5",
+    "tsx": "^4.23.15",
     "typescript": "~6.0.3",
     "vitest": "^4.1.12",
     "wrangler": "^4.163.0"
