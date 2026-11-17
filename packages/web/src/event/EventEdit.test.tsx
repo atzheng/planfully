@@ -81,7 +81,7 @@ async function setup(opts: { failPost?: boolean; event?: Record<string, unknown>
       </TripProvider>
     </MemoryRouter>,
   );
-  await screen.findByRole('heading', { name: String(event.name) });
+  await screen.findByRole('heading', { name: String(event.name).trim() });
   return { posted, loc, store };
 }
 
