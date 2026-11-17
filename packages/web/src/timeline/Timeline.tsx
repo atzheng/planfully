@@ -141,19 +141,35 @@ const Chips = memo(function Chips({
 }) {
   const [openKey, setOpenKey] = useState<string | null>(null);
   const root = useRef<HTMLDivElement>(null);
+  const chipRefs = useRef(new Map<string, HTMLButtonElement>());
+  /** Close the list; `refocus` returns focus to its chip (Escape, toggle) but not after picking an event. */
+  const close = useCallback(
+    (refocus: boolean) => {
+      if (refocus && openKey) chipRefs.current.get(openKey)?.focus();
+      setOpenKey(null);
+    },
+    [openKey],
+  );
   useEffect(() => {
-    if (!openKey) return;
+    const el = root.current;
+    if (!openKey || !el) return;
+    el.querySelector<HTMLButtonElement>('[data-testid=chip-item]')?.focus();
     const onDown = (ev: PointerEvent) => {
-      if (!root.current?.contains(ev.target as Node)) setOpenKey(null);
+      if (!el.contains(ev.target as Node)) setOpenKey(null);
     };
-    const onKey = (ev: KeyboardEvent) => ev.key === 'Escape' && setOpenKey(null);
+    // On the wrapper (not document) so an open event sheet does not also see this Escape.
+    const onKey = (ev: KeyboardEvent) => {
+      if (ev.key !== 'Escape') return;
+      ev.stopPropagation();
+      close(true);
+    };
     document.addEventListener('pointerdown', onDown);
-    document.addEventListener('keydown', onKey);
+    el.addEventListener('keydown', onKey);
     return () => {
       document.removeEventListener('pointerdown', onDown);
-      document.removeEventListener('keydown', onKey);
+      el.removeEventListener('keydown', onKey);
     };
-  }, [openKey]);
+  }, [openKey, close]);
   return (
     <div ref={root}>
       {buckets.map((b) => {
@@ -165,10 +181,14 @@ const Chips = memo(function Chips({
               type="button"
               className={`${styles.chip} ${open ? styles.chipOpen : ''}`}
               data-testid="chip"
+              ref={(n) => {
+                if (n) chipRefs.current.set(b.key, n);
+                else chipRefs.current.delete(b.key);
+              }}
               style={{ top: b.top, height: b.height }}
               aria-label={label}
               aria-expanded={open}
-              onClick={() => setOpenKey(open ? null : b.key)}
+              onClick={() => (open ? close(true) : setOpenKey(b.key))}
             >
               <span className={styles.chipCount}>{b.eventIds.length}</span>
               <span className={styles.chipIcons} aria-hidden="true">
@@ -195,7 +215,7 @@ const Chips = memo(function Chips({
                         data-testid="chip-item"
                         data-event-id={id}
                         onClick={() => {
-                          setOpenKey(null);
+                          close(false);
                           onOpen(id);
                         }}
                       >

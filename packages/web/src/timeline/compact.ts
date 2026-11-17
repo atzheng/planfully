@@ -13,6 +13,8 @@ export const COMPACT_BELOW_PX_PER_HOUR = 4;
 export const CHIP_MAX_PX = 44;
 /** Gap kept between neighbouring chips. */
 const CHIP_GAP_PX = 2;
+/** Safety cap on how many buckets one event is counted in. */
+const MAX_BUCKETS_PER_EVENT = 400;
 
 export const isCompact = (pxPerHour: number): boolean => pxPerHour < COMPACT_BELOW_PX_PER_HOUR;
 
@@ -38,7 +40,7 @@ export type Bucket = {
 
 /**
  * Group the layout's blocks into per-lane buckets by the local (display zone) day, or 7-day week counted
- * from the axis origin, of each event's start. `maxY` clips the last chip to the canvas.
+ * from the axis origin, each event overlaps (an event counts in every bucket it spans). `maxY` clips the last chip to the canvas.
  */
 export function compactBuckets(
   layout: Layout,
@@ -54,34 +56,48 @@ export function compactBuckets(
     const e = byId.get(b.eventId);
     const iv = e && eventInterval(e);
     if (!e || !iv) continue;
-    const day = DateTime.fromMillis(iv.start, { zone }).startOf('day');
-    // Weeks count from the axis origin, so every week bucket is a full week tall (no clipped first chip).
-    const weekIdx = Math.floor(Math.round(day.diff(originDay, 'days').days) / 7);
-    const start = unit === 'day' ? day : originDay.plus({ days: weekIdx * 7 });
-    const startMs = start.toMillis();
-    const key = `${b.laneKey}:${unit}:${startMs}`;
-    let bk = map.get(key);
-    if (!bk) {
-      const endMs = start.plus(unit === 'day' ? { days: 1 } : { weeks: 1 }).toMillis();
-      const top = Math.max(0, scale.toY(startMs));
-      const bottom = Math.min(maxY, scale.toY(endMs));
-      bk = {
-        key,
-        laneKey: b.laneKey,
-        unit,
-        startMs,
-        endMs,
-        top,
-        height: Math.min(CHIP_MAX_PX, Math.max(MIN_BLOCK_PX, bottom - top - CHIP_GAP_PX)),
-        eventIds: [],
-        types: [],
-        starts: [],
-      };
-      map.set(key, bk);
+    const dayOf = (ms: number) => DateTime.fromMillis(ms, { zone }).startOf('day');
+    const bucketStart = (ms: number) => {
+      const day = dayOf(ms);
+      // Weeks count from the axis origin, so every week bucket is a full week tall (no clipped first chip).
+      const weekIdx = Math.floor(Math.round(day.diff(originDay, 'days').days) / 7);
+      return unit === 'day' ? day : originDay.plus({ days: weekIdx * 7 });
+    };
+    const step = unit === 'day' ? { days: 1 } : { weeks: 1 };
+    // Every bucket the event overlaps counts it (an end exactly at midnight does not spill over).
+    const lastMs = bucketStart(iv.end > iv.start ? iv.end - 1 : iv.start).toMillis();
+    let n = 0;
+    for (
+      let start = bucketStart(iv.start);
+      start.toMillis() <= lastMs && n < MAX_BUCKETS_PER_EVENT;
+      n++
+    ) {
+      const startMs = start.toMillis();
+      const next = start.plus(step);
+      const key = `${b.laneKey}:${unit}:${startMs}`;
+      let bk = map.get(key);
+      if (!bk) {
+        const top = Math.max(0, scale.toY(startMs));
+        const bottom = Math.min(maxY, scale.toY(next.toMillis()));
+        bk = {
+          key,
+          laneKey: b.laneKey,
+          unit,
+          startMs,
+          endMs: next.toMillis(),
+          top,
+          height: Math.min(CHIP_MAX_PX, Math.max(MIN_BLOCK_PX, bottom - top - CHIP_GAP_PX)),
+          eventIds: [],
+          types: [],
+          starts: [],
+        };
+        map.set(key, bk);
+      }
+      bk.eventIds.push(e.id);
+      bk.starts.push(iv.start);
+      if (!bk.types.includes(e.type)) bk.types.push(e.type);
+      start = next;
     }
-    bk.eventIds.push(e.id);
-    bk.starts.push(iv.start);
-    if (!bk.types.includes(e.type)) bk.types.push(e.type);
   }
   return [...map.values()].map(({ starts, ...bk }) => {
     const order = bk.eventIds

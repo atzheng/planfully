@@ -90,6 +90,17 @@ test('weeks count from the axis origin so every chip has a full week', () => {
   expect(out.every((x) => x.height === CHIP_MAX_PX)).toBe(true);
 });
 
+test('a multi-day event counts in every bucket it overlaps', () => {
+  const hotel = ev('2026-06-01T15:00', {
+    type: 'lodging',
+    end: { local: '2026-06-04T00:00', tz: 'UTC' },
+  });
+  const out = run([hotel], 2).sort((x, y) => x.top - y.top);
+  expect(out).toHaveLength(3); // Jun 1, 2, 3; ends at midnight so Jun 4 is not counted
+  for (const o of out) expect(o.eventIds).toEqual([hotel.id]);
+  expect(run([hotel], 0.5)).toHaveLength(1);
+});
+
 test('labels', () => {
   const ms = Date.parse('2026-05-12T00:00:00Z');
   expect(bucketLabel(3, 'day', ms, 'UTC')).toBe('3 events on Tue 12 May');
