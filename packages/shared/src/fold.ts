@@ -175,7 +175,7 @@ function applyPatch(state: Event, fields: Record<string, unknown>): Event {
   for (const [key, value] of Object.entries(fields)) {
     if (value === undefined || key === 'id' || key === 'pinned') continue;
     if (value === null)
-      delete next[key]; // null clears an optional field
+      Reflect.deleteProperty(next, key); // null clears an optional field
     else next[key] = value; // attachments in a patch replace the list
     names.push(key);
   }
