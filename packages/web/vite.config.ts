@@ -45,6 +45,7 @@ export default defineConfig({
           '**/purify.es-*.js',
           '**/index.es-*.js',
           'fonts/**',
+          '**/fontCoverage.generated-*.js',
         ],
         navigateFallback: '/index.html',
         navigateFallbackAllowlist: [/^\/$/, /^\/new$/, /^\/t\//],
