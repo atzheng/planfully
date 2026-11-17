@@ -15,6 +15,8 @@
   "dependencies": {
     "@planfully/shared": "workspace:*",
     "idb": "8.0.3",
+    "jspdf": "4.2.1",
+    "jspdf-autotable": "5.0.9",
     "luxon": "^3.7.2",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",

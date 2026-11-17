@@ -23,6 +23,8 @@ vi.mock('../trip/store', () => ({
   },
 }));
 
+vi.mock('../event/UploadButtons', () => ({ AddReceiptButton: () => null }));
+
 afterEach(cleanup);
 
 describe('codecs', () => {

@@ -1,4 +1,6 @@
 import { Link, useLocation, useParams } from 'react-router';
+import { AddReceiptButton } from './event/UploadButtons';
+import { ExportMenu } from './export/ExportMenu';
 import { EventSheet } from './event/EventSheet';
 import { FilterBar } from './filters/FilterBar';
 import { enumCodec, useQueryState } from './lib/queryState';
@@ -27,6 +29,9 @@ export function TripShell() {
           {name ?? `Trip ${tripId}`}
         </h1>
         <div className={styles.actions} data-slot="actions">
+          {/* ecw.3's Add menu should fold this in. */}
+          {status === 'ready' && <AddReceiptButton />}
+          <ExportMenu />
           <Link
             to={{ pathname: `/t/${encodeURIComponent(tripId ?? '')}/settings`, hash }}
             className={styles.settingsLink}
