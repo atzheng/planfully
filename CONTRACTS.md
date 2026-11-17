@@ -1,0 +1,204 @@
+# Planfully contracts
+
+The interfaces that beads share. SPEC.md says what the product does; this file fixes names, shapes and file locations so that beads built separately fit together. If a bead needs to change something here, change this file in the same commit and say so in the bead's closing note.
+
+## 1. Layout
+
+```
+packages/shared/src/
+  schema.ts        zod schemas and types (section 2)
+  records.ts       record types (section 3)
+  time.ts          time helpers (section 2)
+  crypto.ts        section 4
+  fold.ts          section 3
+  index.ts         re-exports everything above
+packages/worker/
+  wrangler.jsonc
+  migrations/0001_init.sql
+  src/index.ts               export default { fetch, email }
+  src/env.ts                 Env type (section 8)
+  src/api/app.ts             Hono app; mounts the routers below
+  src/api/auth.ts            admin + access-token middleware
+  src/api/trips.ts  records.ts  blobs.ts  geocode.ts     one router each
+  src/db/trips.ts  src/db/records.ts                     D1 access
+  src/storage/blobs.ts                                   R2 access
+  src/email/handler.ts  types.ts  routes/default.ts  routes/receipts.ts
+  src/llm/parse.ts  prompt.ts
+  src/geo/geocode.ts
+  scripts/seed.ts  scripts/eval-llm.ts
+  test/fixtures/emails/*.eml
+packages/web/src/
+  main.tsx  App.tsx (shell, router, providers)
+  lib/api.ts  lib/queryState.ts
+  create/CreateTrip.tsx
+  trip/store.ts  trip/actions.ts  trip/attachments.ts  trip/compact.ts
+  filters/filter.ts  filters/FilterBar.tsx
+  event/EventSheet.tsx  event/EventForm.tsx
+  timeline/scale.ts  layout.ts  Timeline.tsx  WeatherStrip.tsx
+  map/MapView.tsx
+  weather/resolve.ts  weather/openMeteo.ts
+  export/pdf.ts  export/ics.ts  export/ExportMenu.tsx
+  settings/Settings.tsx
+  offline/db.ts  offline/queue.ts
+```
+
+Skeleton beads create placeholder files at these paths (routers, `Timeline.tsx`, `MapView.tsx`, email routes) so later beads fill in a file instead of editing a shared one.
+
+Libraries, fixed: pnpm, TypeScript, vitest, zod, luxon (time), `@noble/curves` + `@noble/hashes`, Hono, `@cloudflare/vitest-pool-workers`, postal-mime, `@anthropic-ai/sdk`, React, react-router, zustand, plain CSS modules with CSS variables (no Tailwind), `@vis.gl/react-google-maps`, jsPDF + jspdf-autotable (lazy-loaded), `idb`, vite-plugin-pwa. Use the current stable version of each. Do not add other runtime dependencies without a reason written in the bead's closing note.
+
+## 2. Shared types (`schema.ts`, `time.ts`)
+
+```ts
+type EventType = 'flight'|'train'|'bus'|'ferry'|'car'|'lodging'|'dining'
+               |'activity'|'attraction'|'receipt'|'other'
+type LocalTime = { local: string; tz: string }   // local: 'YYYY-MM-DDTHH:mm', tz: IANA zone
+type Location  = { name?: string; address?: string; lat?: number; lng?: number; placeId?: string }
+type Attachment = { id: string; filename: string; mime: string; size: number;
+                    kind: 'file' | 'source-email' }      // id = blob id
+type Event = {
+  id: string                     // uuid
+  name: string
+  type: EventType
+  start?: LocalTime
+  end?: LocalTime
+  confirmation?: string
+  location?: Location
+  endLocation?: Location         // arrival point for transport
+  attachments: Attachment[]
+  participants: string[]         // roster ids; [] means everyone
+  status: 'confirmed' | 'cancelled'
+  notes?: string
+  source: 'email' | 'manual'
+  needsReview?: boolean
+  createdAt: string              // ISO instant
+  pinned?: string[]              // field names set by hand; see section 3
+  deleted?: boolean              // tombstone; see section 3
+}
+type RosterMember = { id: string; name: string; aliases: string[] }
+type TripMeta = { id: string; name: string; address: string; domain: string;
+                  publicKey: string /* base64url */; roster: RosterMember[];
+                  allowedSenders: string[]; createdAt: string }
+```
+
+Each type has a zod schema named `<Type>Schema`. `eventsJsonSchema` is the JSON Schema for `ParsedEvent[]` (section 6) for LLM structured output.
+
+`time.ts` (luxon): `toInstant(t: LocalTime): number` (epoch ms), `fromInstant(ms: number, tz: string): LocalTime`, `dayKey(t: LocalTime): string` ('YYYY-MM-DD' in the event's zone), `eventInterval(e: Event): { start: number; end: number } | null` (null when unscheduled; `end` defaults to `start`).
+
+## 3. Records and folding (`records.ts`, `fold.ts`)
+
+Plaintext record body, JSON-encoded then sealed:
+
+```ts
+type RecordBody =
+  | { kind: 'put';    event: Event }
+  | { kind: 'patch';  target: string; fields: Partial<Omit<Event, 'id'>> }
+  | { kind: 'delete'; target: string }        // same as patch { deleted: true }
+```
+
+What the server stores and returns (it never sees the body):
+
+```ts
+type StoredRecord = { seq: number; dedupe: string | null; ciphertext: string /* base64 */; createdAt: string }
+type OpenedRecord = { seq: number; dedupe: string | null; createdAt: string; body: RecordBody }
+```
+
+`fold(records: OpenedRecord[]): Event[]` — process in `seq` order:
+
+1. **Grouping.** `put` records belong to the same event if they share a non-null `dedupe` tag or the same `event.id`. The event's id is the id of the earliest put in the group; every other put id in the group is an alias.
+2. **put.** Later put wins field by field, except fields listed in the event's `pinned`, which a put with `source: 'email'` never overwrites. Attachments are unioned by `id`. `status: 'cancelled'` sticks unless a later patch sets it back.
+3. **patch.** `target` may be the id or any alias. Sets the given fields and adds their names to `pinned`. Attachments in a patch replace the list.
+4. **delete.** Sets `deleted: true` and pins it.
+5. Output omits events with `deleted: true`. A patch or delete whose target is unknown is ignored.
+
+`planCompaction(records: OpenedRecord[], minRecords = 4): { write: { body: RecordBody; dedupe: string | null }; deleteSeqs: number[] }[]` — for each group with at least `minRecords` records, one `put` holding the folded event (including `pinned` and `deleted`), carrying the group's dedupe tag, and the seqs it replaces. Folding the log before and after applying a plan must give the same events, including when both old and new records are present.
+
+## 4. Crypto (`crypto.ts`)
+
+```ts
+generateSecret(): Uint8Array                         // 32 random bytes
+encodeSecret(s: Uint8Array): string                  // base64url, no padding; this is the URL fragment
+decodeSecret(s: string): Uint8Array
+deriveTripKeys(secret: Uint8Array): Promise<{ privateKey: Uint8Array; publicKey: Uint8Array; accessToken: string }>
+hashAccessToken(token: string): Promise<string>      // hex SHA-256
+seal(publicKey: Uint8Array, plaintext: Uint8Array): Promise<Uint8Array>
+open(privateKey: Uint8Array, sealed: Uint8Array): Promise<Uint8Array>   // throws on tamper/wrong key
+sealJson(publicKey, value): Promise<Uint8Array>;  openJson<T>(privateKey, sealed): Promise<T>
+dedupeTag(dedupeKey: Uint8Array, type: string, confirmation: string): Promise<string>
+toBase64 / fromBase64 / toBase64Url / fromBase64Url
+```
+
+- Private key = HKDF-SHA256(secret, info `planfully/x25519/v1`, 32 bytes). Access token = base64url of HKDF-SHA256(secret, info `planfully/access/v1`, 32 bytes).
+- Sealed format: `0x01 | ephemeralPublicKey(32) | nonce(12) | AES-256-GCM ciphertext+tag`. AES key = HKDF-SHA256(ikm = X25519(ephemeralPrivate, recipientPublic), salt = ephemeralPublic ‖ recipientPublic, info `planfully/seal/v1`).
+- X25519 and HKDF from `@noble`; AES-GCM and SHA-256 from `crypto.subtle` (native, so bulk work is cheap on Workers). No Node-only APIs.
+- `dedupeTag` = hex HMAC-SHA256(dedupeKey, `${type}\n${normalised}`), normalised = confirmation uppercased with everything but A-Z0-9 removed.
+
+## 5. HTTP API
+
+JSON unless noted. Errors: `{ "error": string }` with a 4xx/5xx status. Trip routes need `Authorization: Bearer <accessToken>`; the server compares `hashAccessToken(token)` with the stored hash.
+
+| Route | Request | Response |
+|---|---|---|
+| `GET /api/health` | | `{ ok: true }` |
+| `POST /api/trips` (`Authorization: Bearer <ADMIN_SECRET>`) | `{ name, publicKey, accessTokenHash, roster, allowedSenders }` | 201 `{ id, address, domain }` |
+| `GET /api/trips/:id` | | `TripMeta` |
+| `PATCH /api/trips/:id` | `{ name?, roster?, allowedSenders? }` | `TripMeta` |
+| `GET /api/trips/:id/records?since=N` | | `{ records: StoredRecord[], latestSeq: number }` (seq > N, ascending) |
+| `POST /api/trips/:id/records` | `{ ciphertext, dedupe? }` | 201 `{ seq }` |
+| `DELETE /api/trips/:id/records/:seq` | | 204 |
+| `PUT /api/trips/:id/blobs/:blobId` | raw bytes, `application/octet-stream` | 201 |
+| `GET /api/trips/:id/blobs/:blobId` | | raw bytes |
+| `GET /api/trips/:id/geocode?q=` | | `{ results: Location[] }` |
+
+`seq` comes from a per-trip counter (`trips.next_seq`, incremented in the same D1 batch as the insert). It strictly increases and is never reused, even after deletes. Blob ids are UUIDs chosen by the writer. Limits: record ciphertext 256 KB, blob 25 MB.
+
+## 6. Worker internals
+
+```ts
+// db/trips.ts
+createTrip, getTripById, getTripByAddress, updateTrip     // TripRow includes dedupeKey, accessTokenHash
+// db/records.ts
+appendRecord(env, tripId, r: { ciphertext: Uint8Array; dedupe?: string | null }): Promise<number>
+listRecords(env, tripId, since: number): Promise<StoredRecord[]>
+deleteRecord(env, tripId, seq: number): Promise<void>
+// storage/blobs.ts — R2 key `trips/<tripId>/blobs/<blobId>`
+putBlob(env, tripId, blobId, bytes): Promise<void>;  getBlob(env, tripId, blobId): Promise<ReadableStream | null>
+
+// email/types.ts
+type ParsedEmail = { from: string; to: string; suffix: string; subject: string; date: string;
+                     text?: string; html?: string;
+                     attachments: { filename: string; mime: string; bytes: Uint8Array }[];
+                     sourceAttachment: Attachment }   // the sealed raw .eml, already stored
+type EmailRoute = (ctx: { env: Env; trip: TripRow; email: ParsedEmail }) => Promise<void>
+// email/handler.ts picks routes[suffix] ?? routes[''];  '' -> routes/default.ts, 'receipts' -> routes/receipts.ts
+
+// llm/parse.ts
+type ParsedEvent = Omit<Event, 'id'|'attachments'|'source'|'createdAt'|'pinned'|'deleted'>
+                 & { attachmentIndexes: number[] }    // indexes into email.attachments
+parseEmail(email: ParsedEmail, opts: { roster: RosterMember[]; today: string; apiKey: string }): Promise<ParsedEvent[]>
+
+// geo/geocode.ts — returns the input unchanged when no key is set or the match is weak
+geocode(env: Env, loc: Location): Promise<Location>
+```
+
+Never log email content, event content or tokens.
+
+## 7. Web internals
+
+- **Routes:** `/new` (create), `/t/:tripId` (trip; secret in `location.hash`), `/t/:tripId/settings`. The secret is read from the fragment only and never placed in a query string, request URL or log.
+- **`lib/api.ts`:** typed functions for section 5, taking `{ tripId, accessToken }`.
+- **`lib/queryState.ts`:** `useQueryState<T>(key, codec, defaultValue): [T, (v: T) => void]`. All view state goes through it. Reserved keys: `view` (timeline|map), `q`, `type`, `from`, `to`, `who`, `cancelled`, `e` (open event id), `zoom`, `lanes` (none|type|participant), `wx` (0|1), `tz`.
+- **`trip/store.ts`:** `<TripProvider>` and `useTrip(): { meta, events, records, keys, status: 'loading'|'ready'|'error', error, sync(): Promise<void> }`. `events` is `fold()` output. `trip/actions.ts` adds `putEvent(e)`, `patchEvent(id, fields)`, `deleteEvent(id)`.
+- **`trip/attachments.ts`:** `fetchAttachment(a: Attachment): Promise<Blob>` (fetch, open, wrap with `a.mime`); `uploadAttachment(file: File): Promise<Attachment>`.
+- **`filters/filter.ts`:** `type Filter`, `filterEvents(events, filter)`, `useFilter()`, `useFilteredEvents()`.
+- **`event/EventSheet.tsx`:** mounted once in the shell; open an event by setting query key `e`. Views never render their own detail UI.
+- **`timeline/scale.ts`:** `type TimeScale = { pxPerHour: number; originMs: number; toY(ms: number): number; toMs(y: number): number }`, `makeScale(originMs, pxPerHour)`, and `useTimeScale()` from a context provided by `Timeline`. Anything drawn beside the axis (weather) positions itself with this and nothing else.
+- **`timeline/layout.ts`:** `layoutEvents(events, scale, lanes): { lanes: { key, label }[]; blocks: { eventId, laneKey, top, height, column, columns }[]; unscheduled: Event[] }` — pure, unit-tested.
+- **Time display:** blocks are positioned by absolute instant. The axis is labelled in one display zone (query key `tz`, default the browser's zone); each event's own local times are shown in its label and sheet.
+
+## 8. Config
+
+Worker bindings and vars (`src/env.ts`): `DB` (D1), `BLOBS` (R2), `ASSETS` (static assets), `TRIP_DOMAIN`, `ADMIN_SECRET`, `ANTHROPIC_API_KEY`, `GOOGLE_MAPS_SERVER_KEY`. Local values in `packages/worker/.dev.vars` (gitignored); commit `.dev.vars.example`. Web: `VITE_GOOGLE_MAPS_KEY` in `packages/web/.env.local` (gitignored); commit `.env.example`. Code must run with the two API keys unset: geocoding returns no coordinates, the map shows a "key not configured" notice, and LLM tests use a mocked client.
+
+## 9. Commands
+
+From the repo root: `pnpm install`, `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm build`, `pnpm dev` (Worker on :8787 and Vite on :5173 with `/api` proxied), `pnpm seed` (prints a trip URL for the local Worker). Per package: `pnpm --filter @planfully/<shared|worker|web> <script>`.

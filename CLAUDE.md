@@ -51,20 +51,50 @@ bd close <id>         # Complete work
 <!-- END BEADS INTEGRATION -->
 
 
+## No git remote
+
+This repo has no remote yet. Where the section above says to pull or push, commit locally instead and stop there. Do not add a remote or try to push.
+
+## Working a bead
+
+1. `bd show <id>` and read all of it: description, design, acceptance. Then read the sections of `SPEC.md` and `CONTRACTS.md` it names.
+2. `bd update <id> --claim`.
+3. Build only what the bead describes. Its design notes list the files it owns; avoid editing files owned by other beads. If you must, keep the change minimal and mention it when closing.
+4. `CONTRACTS.md` fixes names, shapes and file paths shared between beads. Follow it exactly. If it is wrong or incomplete, fix it in the same commit and say so when closing — do not silently diverge.
+5. Before closing: `pnpm test && pnpm typecheck && pnpm lint` must pass, and every acceptance point must be checked. For UI beads, run `pnpm dev` and `pnpm seed` and look at the result in a browser at desktop and phone width.
+6. Commit with the bead id in the message, e.g. `planfully-j7b.2: shared schema and time helpers`. Commit only your own files.
+7. `bd close <id> --reason "<what was done, anything the next bead should know>"`. File a new bead for anything you found but did not do.
+
+If a bead cannot be finished (missing key, unclear contract, blocked by something not listed as a dependency), do not guess: leave a note with `bd update <id> --append-notes "..."` and stop.
+
 ## Build & Test
 
-_Add your build and test commands here_
-
 ```bash
-# Example:
-# npm install
-# npm test
+pnpm install
+pnpm test          # all packages
+pnpm typecheck
+pnpm lint
+pnpm dev           # Worker on :8787, Vite on :5173 with /api proxied
+pnpm seed          # creates a sample trip on the local Worker, prints its URL
 ```
+
+These exist once the scaffold bead (`planfully-j7b.1`) is closed.
 
 ## Architecture Overview
 
-_Add a brief overview of your project architecture_
+Read `SPEC.md` (what the product does) and `CONTRACTS.md` (exact interfaces). In short: a Cloudflare Worker receives email, parses it with Claude, encrypts the resulting events to the trip's public key and stores ciphertext in D1 (records) and R2 (attachments). The React app holds the private key from the URL fragment, downloads the ciphertext, decrypts and renders it. The server cannot read stored trip data.
+
+- `packages/shared` — schema, crypto, log folding. Used by both sides; must run in the browser, Workers and Node.
+- `packages/worker` — email handler, HTTP API, LLM parsing, geocoding.
+- `packages/web` — React app.
 
 ## Conventions & Patterns
 
-_Add your project-specific conventions here_
+- TypeScript strict. No `any` without a comment saying why.
+- Pure logic (folding, filtering, layout, time, weather resolution) lives in plain functions with unit tests, separate from React components.
+- The trip secret lives only in the URL fragment and in memory (later IndexedDB). Never put it in a query string, a request, or a log.
+- The Worker never logs email content, event content, or tokens.
+- Every UI feature must work at 375px wide and in light and dark themes.
+- Tests must not call real external services. Anthropic, Google and Open-Meteo are mocked in tests; scripts that hit real APIs are opt-in and separate.
+- The code must run with `ANTHROPIC_API_KEY` and the Google Maps keys unset (see `CONTRACTS.md` section 8).
+- For anything involving the Anthropic API, load the `claude-api` skill or read current docs first; do not write request shapes from memory.
