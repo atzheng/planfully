@@ -31,7 +31,12 @@
   opacity: 0.5;
 }
 .empty {
-  padding: var(--space-5) 0;
+  position: absolute;
+  top: 40px;
+  left: 0;
+  right: 0;
+  margin: 0;
+  padding: var(--space-5) var(--space-3);
   color: var(--text-muted);
   text-align: center;
 }

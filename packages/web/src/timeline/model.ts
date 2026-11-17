@@ -82,3 +82,24 @@ export const TYPE_HUE: Record<EventType, number> = {
   receipt: 90,
   other: 240,
 };
+
+/**
+ * Scroll anchoring. `anchorMsAt` is the instant at the top of the viewport (the canvas starts
+ * `headingPx` below the scroller top); `scrollTopForAnchor` is the scrollTop that puts `anchorMs`
+ * back at that same screen y under a different scale (new origin or pxPerHour). Reused by zoom (gy4.7).
+ */
+export function anchorMsAt(
+  scale: { toMs(y: number): number },
+  scrollTop: number,
+  headingPx: number,
+): number {
+  return scale.toMs(scrollTop - headingPx);
+}
+
+export function scrollTopForAnchor(
+  scale: { toY(ms: number): number },
+  anchorMs: number,
+  headingPx: number,
+): number {
+  return Math.max(0, scale.toY(anchorMs) + headingPx);
+}

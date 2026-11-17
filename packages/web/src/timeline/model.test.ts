@@ -1,6 +1,15 @@
 import { describe, expect, test } from 'vitest';
 import type { Event } from '@planfully/shared';
-import { dayHeading, localStartLabel, roundRangeToHours, timelineRange, validZone } from './model';
+import { makeScale } from './scale';
+import {
+  anchorMsAt,
+  scrollTopForAnchor,
+  dayHeading,
+  localStartLabel,
+  roundRangeToHours,
+  timelineRange,
+  validZone,
+} from './model';
 
 function range(e: Event[], tz: string) {
   const r = timelineRange(e, tz);
@@ -39,6 +48,23 @@ describe('timelineRange', () => {
   test('uses the display zone', () => {
     const r = range([ev('2026-07-14T01:00')], 'America/New_York');
     expect(new Date(r.fromMs).toISOString()).toBe('2026-07-13T04:00:00.000Z');
+  });
+});
+
+describe('scroll anchoring', () => {
+  test('same time stays at the same screen y when the origin moves', () => {
+    const a = makeScale(0, 48);
+    const b = makeScale(-10 * 3_600_000, 48);
+    const ms = anchorMsAt(a, 1000, 28);
+    expect(scrollTopForAnchor(b, ms, 28)).toBe(1000 + 480);
+  });
+  test('zoom keeps the anchor', () => {
+    const a = makeScale(0, 48);
+    const b = makeScale(0, 96);
+    expect(scrollTopForAnchor(b, anchorMsAt(a, 528, 28), 28)).toBeCloseTo(1028);
+  });
+  test('never negative', () => {
+    expect(scrollTopForAnchor(makeScale(0, 48), -1e9, 28)).toBe(0);
   });
 });
 

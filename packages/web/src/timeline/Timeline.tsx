@@ -15,6 +15,7 @@ import {
   TYPE_ICON,
   validZone,
 } from './model';
+import { anchorMsAt, scrollTopForAnchor } from './model';
 import { makeScale, ticks, TimeScaleProvider, VisibleRangeProvider } from './scale';
 import type { Tick, TimeScale, VisibleRange } from './scale';
 import { usePxPerHour } from './zoom';
@@ -119,7 +120,17 @@ export function Timeline({ gutter }: { gutter?: ReactNode } = {}) {
   }, []);
 
   const range = useMemo(() => timelineRange(events, zone), [events, zone]);
-  const scale = useMemo(() => makeScale(range?.fromMs ?? 0, pxPerHour), [range, pxPerHour]);
+  // While the filter empties the view, keep the last scale and canvas height so the scroll position survives.
+  const lastScale = useRef<TimeScale | null>(null);
+  const lastHeight = useRef(0);
+  const scale = useMemo(
+    () =>
+      range
+        ? makeScale(range.fromMs, pxPerHour)
+        : (lastScale.current ?? makeScale(Date.now(), pxPerHour)),
+    [range, pxPerHour],
+  );
+  if (range) lastScale.current = scale;
   const layout = useMemo(
     () => layoutEvents(events, scale, { mode: 'none', roster }),
     [events, scale, roster],
@@ -129,13 +140,16 @@ export function Timeline({ gutter }: { gutter?: ReactNode } = {}) {
     () => (range ? ticks(scale, range.fromMs, range.toMs, zone) : []),
     [range, scale, zone],
   );
-  const height = range ? scale.toY(range.toMs) : 0;
+  const height = range ? scale.toY(range.toMs) : lastHeight.current;
+  if (range) lastHeight.current = height;
 
   const scroller = useRef<HTMLDivElement>(null);
-  const [visible, setVisible] = useState<VisibleRange>({
+  // Never empty (fromMs < toMs), even on the first frame; the layout effect below corrects it before paint.
+  const [visible, setVisible] = useState<VisibleRange>(() => ({
     fromMs: scale.originMs,
-    toMs: scale.originMs,
-  });
+    toMs: scale.originMs + 24 * 3_600_000,
+  }));
+  const anchorMs = useRef<number | null>(null);
   const [headingMs, setHeadingMs] = useState(scale.originMs);
 
   const scrollToMs = useCallback(
@@ -150,7 +164,8 @@ export function Timeline({ gutter }: { gutter?: ReactNode } = {}) {
 
   const measure = useCallback(() => {
     const el = scroller.current;
-    if (!el) return;
+    if (!el || !range) return;
+    anchorMs.current = anchorMsAt(scale, el.scrollTop, HEADING_PX);
     const topMs = scale.toMs(el.scrollTop - HEADING_PX);
     const botMs = scale.toMs(el.scrollTop + el.clientHeight - HEADING_PX);
     const r = roundRangeToHours(topMs, botMs);
@@ -165,10 +180,25 @@ export function Timeline({ gutter }: { gutter?: ReactNode } = {}) {
     if (scrolled.current || !range) return;
     scrolled.current = true;
     scrollToMs(initialScrollMs(events, Date.now()), 'auto');
-  }, [range, events, scrollToMs]);
+    anchorMs.current = anchorMsAt(scale, scroller.current?.scrollTop ?? 0, HEADING_PX);
+  }, [range, events, scrollToMs, scale]);
+  // Keep the time at the top of the viewport at the same screen y when the scale changes (filters, zoom).
+  const lastAnchoredScale = useRef(scale);
   useLayoutEffect(() => {
+    const el = scroller.current;
+    if (range && el && lastAnchoredScale.current !== scale && anchorMs.current !== null) {
+      el.scrollTop = scrollTopForAnchor(scale, anchorMs.current, HEADING_PX);
+    }
+    if (range) lastAnchoredScale.current = scale;
     measure();
-  }, [measure, height]);
+  }, [measure, height, scale, range]);
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => measure());
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [measure]);
 
   const todayTarget =
     range && nowMs >= range.fromMs && nowMs <= range.toMs ? nowMs : initialScrollMs(events, nowMs);
@@ -188,12 +218,7 @@ export function Timeline({ gutter }: { gutter?: ReactNode } = {}) {
           Today
         </button>
       </div>
-      {empty && (
-        <p className={styles.empty} role="status">
-          {totalEvents === 0 ? 'No events yet.' : 'No events match the filters.'}
-        </p>
-      )}
-      {!empty && (
+      {
         <TimeScaleProvider value={scale}>
           <VisibleRangeProvider value={visible}>
             <div
@@ -202,6 +227,14 @@ export function Timeline({ gutter }: { gutter?: ReactNode } = {}) {
               onScroll={measure}
               data-testid="timeline-scroller"
             >
+              {empty && (
+                <div className={styles.headingWrap}>
+                  <p className={styles.empty} role="status">
+                    {totalEvents === 0 ? 'No events yet.' : 'No events match the filters.'}
+                  </p>
+                </div>
+              )}
+              {empty && <div style={{ height: lastHeight.current + HEADING_PX }} />}
               {range && (
                 <>
                   <div className={styles.headingWrap}>
@@ -249,7 +282,14 @@ export function Timeline({ gutter }: { gutter?: ReactNode } = {}) {
                           onClick={() => setOpenId(e.id)}
                         >
                           <span aria-hidden="true">{TYPE_ICON[e.type]}</span> {e.name}
-                          {e.needsReview && <span className={styles.review}>!</span>}
+                          {e.needsReview && (
+                            <span className={styles.review} role="img" aria-label="Needs review">
+                              !
+                            </span>
+                          )}
+                          {e.status === 'cancelled' && (
+                            <span className={styles.srOnly}> (cancelled)</span>
+                          )}
                         </button>
                       </li>
                     ))}
@@ -259,7 +299,7 @@ export function Timeline({ gutter }: { gutter?: ReactNode } = {}) {
             </div>
           </VisibleRangeProvider>
         </TimeScaleProvider>
-      )}
+      }
     </section>
   );
 }
