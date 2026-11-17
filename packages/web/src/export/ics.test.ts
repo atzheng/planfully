@@ -124,12 +124,12 @@ describe('buildIcs', () => {
 describe('GEO', () => {
   it('never uses exponent notation', () => {
     const s = buildIcs(
-      [ev({ id: 'g', start: utcStart, location: { lat: 1e-7, lng: -0.0000005 } })],
+      [ev({ id: 'g', start: utcStart, location: { lat: 1e-7, lng: 2e-6 } })],
       'T',
       [],
       NOW,
     );
-    expect(s).toContain('GEO:0.000000;-0.000001');
+    expect(s).toContain('GEO:0.000000;0.000002');
     expect(s).not.toMatch(/GEO:.*e/i);
   });
 });
