@@ -540,3 +540,14 @@ describe('fold properties', () => {
     expect(recompacted).toBeGreaterThan(50);
   });
 });
+
+describe('compaction marker schema', () => {
+  it('rejects firstSeq > throughSeq', async () => {
+    const { RecordBodySchema } = await import('../src/records');
+    const event = fold([put(1, ev('a'))])[0];
+    const body = { kind: 'put', event, compaction: { firstSeq: 5, throughSeq: 4, aliases: [] } };
+    expect(RecordBodySchema.safeParse(body).success).toBe(false);
+    body.compaction.firstSeq = 4;
+    expect(RecordBodySchema.safeParse(body).success).toBe(true);
+  });
+});

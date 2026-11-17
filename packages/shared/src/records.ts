@@ -16,6 +16,7 @@ export const RecordBodySchema = z.discriminatedUnion('kind', [
         throughSeq: z.number().int().nonnegative(),
         aliases: z.array(z.string()),
       })
+      .refine((c) => c.firstSeq <= c.throughSeq, 'firstSeq must be <= throughSeq')
       .optional(),
   }),
   z.strictObject({
