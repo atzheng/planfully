@@ -75,7 +75,7 @@ type Event = {
   deleted?: boolean              // tombstone; see section 3
 }
 type RosterMember = { id: string; name: string; aliases: string[] }
-type TripMeta = { id: string; name: string; address: string; domain: string;
+type TripMeta = { id: string; name: string; address: string /* full lowercase: slug-xxxxxx@domain */; domain: string;
                   publicKey: string /* base64url */; roster: RosterMember[];
                   allowedSenders: string[]; createdAt: string }
 ```
@@ -159,7 +159,7 @@ JSON unless noted. Errors: `{ "error": string }` with a 4xx/5xx status. Trip rou
 | Route | Request | Response |
 |---|---|---|
 | `GET /api/health` | | `{ ok: true }` |
-| `POST /api/trips` (`Authorization: Bearer <ADMIN_SECRET>`) | `{ name, publicKey, accessTokenHash, roster, allowedSenders }` | 201 `{ id, address, domain }` |
+| `POST /api/trips` (`Authorization: Bearer <ADMIN_SECRET>`) | `{ name, publicKey, accessTokenHash, roster, allowedSenders }` | 201 `{ id, address, domain }` (`address` is the full `slug-xxxxxx@domain`) |
 | `GET /api/trips/:id` | | `TripMeta` |
 | `PATCH /api/trips/:id` | `{ name?, roster?, allowedSenders? }` | `TripMeta` |
 | `GET /api/trips/:id/records?since=N` | | `{ records: StoredRecord[], latestSeq: number, more: boolean }` (seq > N, ascending; paged, see below) |
