@@ -62,23 +62,88 @@ export interface GeocodeSession {
   blocked?: boolean;
 }
 
-/** Lowercased, accent-stripped alphanumeric tokens of 2+ characters. */
-function tokens(s: string): Set<string> {
-  return new Set(
-    s
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .toLowerCase()
-      .split(/[^a-z0-9]+/)
-      .filter((t) => t.length >= 2),
-  );
+/** Generic words that must not make two names "match" on their own. */
+const STOPWORDS = new Set([
+  'the',
+  'a',
+  'an',
+  'of',
+  'and',
+  'at',
+  'hotel',
+  'inn',
+  'cafe',
+  'restaurant',
+  'bar',
+  'hostel',
+  'de',
+  'la',
+  'le',
+  'les',
+  'el',
+  'los',
+  'las',
+  'del',
+  'des',
+  'du',
+  'et',
+  'y',
+  'e',
+  'il',
+  'lo',
+  'der',
+  'die',
+  'das',
+  'und',
+  'von',
+  'het',
+  'van',
+  'en',
+  'da',
+  'do',
+  'dos',
+  'das',
+  'hotell',
+  'albergo',
+  'ristorante',
+  'restaurante',
+  'restaurant',
+  'gasthaus',
+  'cafeteria',
+]);
+
+/** Lowercased, accent- and mark-stripped letter/digit tokens (any script). */
+function normalize(s: string): string {
+  return s
+    .normalize('NFD')
+    .replace(/\p{M}+/gu, '')
+    .toLowerCase();
 }
 
-/** True when the two names share at least one token. */
+function tokens(s: string): string[] {
+  return normalize(s)
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((t) => t.length >= 2 && !STOPWORDS.has(t));
+}
+
+const UNSPACED = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}]/u;
+
+/**
+ * True when the names share at least one non-stopword token. Names with only stopwords
+ * ("the hotel") never match: there is nothing distinctive to compare. Scripts written
+ * without spaces (Han, kana, Thai) also match when a 3+ character token of one name is
+ * contained in the other.
+ */
 export function namesOverlap(a: string, b: string): boolean {
+  const ta = tokens(a);
   const tb = tokens(b);
-  for (const t of tokens(a)) if (tb.has(t)) return true;
-  return false;
+  const setB = new Set(tb);
+  if (ta.some((t) => setB.has(t))) return true;
+  const na = normalize(a);
+  const nb = normalize(b);
+  const contained = (ts: string[], other: string) =>
+    ts.some((t) => t.length >= 3 && UNSPACED.test(t) && other.includes(t));
+  return contained(ta, nb) || contained(tb, na);
 }
 
 /**
@@ -93,8 +158,9 @@ export async function searchPlaces(
 ): Promise<PlaceResult[]> {
   const q = query.trim();
   if (!env.GOOGLE_MAPS_SERVER_KEY || !q || session?.blocked) return [];
+  let res: Response;
   try {
-    const res = await fetch(ENDPOINT, {
+    res = await fetch(ENDPOINT, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -104,6 +170,13 @@ export async function searchPlaces(
       body: JSON.stringify({ textQuery: q, pageSize: limit }),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
+  } catch {
+    // Network error or timeout: every later lookup would likely burn the timeout too.
+    // Never log: the error may carry the query.
+    if (session) session.blocked = true;
+    return [];
+  }
+  try {
     if (!res.ok) {
       if (res.status === 403 || res.status === 429) {
         if (session) session.blocked = true;
@@ -127,19 +200,19 @@ export async function searchPlaces(
  * present: it is treated as missing (a lone lat or lng is unusable) and both are replaced
  * by the match, or both dropped when there is no usable match. With no address, a match
  * is accepted only if its name shares a token with the event's location name, so a bare
- * "Hilton" cannot resolve to an unrelated first worldwide hit. Returns the input unchanged
- * when there is no key, no query, the upstream fails, or the match is weak.
+ * "Hilton" cannot resolve to an unrelated first worldwide hit. Returns the input (minus any lone
+ * lat/lng) when there is no key, no query, the upstream fails, or the match is weak.
  */
 export async function geocode(
   env: Env,
   loc: Location,
   session?: GeocodeSession,
 ): Promise<Location> {
-  if (!env.GOOGLE_MAPS_SERVER_KEY) return loc;
   if (loc.lat !== undefined && loc.lng !== undefined) return loc;
   const { lat: _lat, lng: _lng, ...rest } = loc;
   const partial = loc.lat !== undefined || loc.lng !== undefined;
   const base: Location = partial ? rest : loc;
+  if (!env.GOOGLE_MAPS_SERVER_KEY) return base;
   const name = loc.name?.trim();
   const address = loc.address?.trim();
   const query = [name, address].filter(Boolean).join(', ');

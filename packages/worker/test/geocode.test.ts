@@ -147,6 +147,49 @@ describe('geocode()', () => {
     expect(session.blocked).toBeUndefined();
   });
 
+  test('namesOverlap: non-Latin scripts', () => {
+    expect(namesOverlap('東京タワー', '東京タワー')).toBe(true);
+    expect(namesOverlap('東京タワー', '東京タワー 展望台')).toBe(true);
+    expect(namesOverlap('Красная площадь', 'Красная площадь, Москва')).toBe(true);
+    expect(namesOverlap('Παρθενώνας', 'ΠΑΡΘΕΝΩΝΑΣ')).toBe(false); // different word forms
+    expect(namesOverlap('Ακρόπολη', 'ακροπολη Αθηνών')).toBe(true);
+    expect(namesOverlap('برج خليفة', 'برج خليفة دبي')).toBe(true);
+    expect(namesOverlap('วัดพระแก้ว', 'วัดพระแก้ว กรุงเทพ')).toBe(true);
+    expect(namesOverlap('東京タワー', '大阪城')).toBe(false);
+  });
+
+  test('namesOverlap: stopwords alone do not match', () => {
+    expect(namesOverlap('Hotel Lisboa', 'Hotel Madrid')).toBe(false);
+    expect(namesOverlap('The Cafe', 'Cafe de la Paix')).toBe(false);
+    expect(namesOverlap('Hotel Lisboa', 'Lisboa Plaza Hotel')).toBe(true);
+    // event name made only of stopwords: no distinctive token, never matches
+    expect(namesOverlap('the hotel', 'The Hotel Ritz')).toBe(false);
+  });
+
+  test('stopword-only name with no address leaves location unchanged', async () => {
+    mockFetch({ places: [place({ displayName: { text: 'The Hotel Ritz' } })] });
+    const loc = { name: 'the hotel' };
+    expect(await geocode(withKey, loc)).toBe(loc);
+  });
+
+  test('no key: a lone lat or lng is dropped, no fetch', async () => {
+    const spy = mockFetch({ places: [place()] });
+    expect(await geocode(noKey, { name: 'X', lat: 1 })).toEqual({ name: 'X' });
+    expect(await geocode(noKey, { name: 'X', lng: 1 })).toEqual({ name: 'X' });
+    const full = { name: 'X', lat: 1, lng: 2 };
+    expect(await geocode(noKey, full)).toBe(full);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  test('network error or timeout blocks the rest of the session', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('timeout'));
+    const session = {} as { blocked?: boolean };
+    await geocode(withKey, { name: 'A' }, session);
+    expect(session.blocked).toBe(true);
+    await geocode(withKey, { name: 'B' }, session);
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
   test('isWeakMatch', () => {
     expect(isWeakMatch(place())).toBe(false);
     expect(isWeakMatch(place({ types: ['country', 'political'] }))).toBe(true);
