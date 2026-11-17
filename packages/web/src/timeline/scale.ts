@@ -21,8 +21,8 @@ export function makeScale(originMs: number, pxPerHour: number): TimeScale {
 }
 
 /** Suggested zoom limits for the view (gy4.7). */
-export const MIN_PX_PER_HOUR = 1;
-export const MAX_PX_PER_HOUR = 240;
+export const MIN_PX_PER_HOUR = 0.5;
+export const MAX_PX_PER_HOUR = 120;
 
 /** pxPerHour at or above this shows hour ticks (midnights still shown as day ticks). */
 export const HOUR_TICK_MIN_PX_PER_HOUR = 30;
