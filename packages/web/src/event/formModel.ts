@@ -5,6 +5,7 @@ import {
   EVENT_TYPES,
   EventSchema,
   toInstant,
+  fromInstant,
   type Event,
   type EventType,
   type Location,
@@ -91,11 +92,20 @@ export function buildLocalTime(
   if (!time) return { error: 'Enter a time' };
   const value = { local: `${date}T${time}`, tz };
   try {
-    toInstant(value);
+    // A wall-clock time inside a DST gap does not exist; luxon would silently shift it.
+    if (fromInstant(toInstant(value), tz).local !== value.local) {
+      return { error: 'That time does not exist in this time zone (clocks skip it)' };
+    }
   } catch {
     return { error: 'Not a valid date and time' };
   }
   return { value };
+}
+
+/** Trimmed input, or the original string untouched when they match once trimmed. */
+function keepIfSame(input: string, original: string | undefined): string {
+  const t = input.trim();
+  return original !== undefined && original.trim() === t ? original : t;
 }
 
 function buildLocation(
@@ -105,7 +115,9 @@ function buildLocation(
 ): Location | undefined {
   const n = name.trim();
   const a = address.trim();
-  if (n === (original?.name ?? '') && a === (original?.address ?? '')) return original;
+  if (n === (original?.name ?? '').trim() && a === (original?.address ?? '').trim()) {
+    return original;
+  }
   // Text changed: coordinates and place id would now point somewhere else, so they are dropped.
   const loc: Location = {};
   if (n) loc.name = n;
@@ -122,7 +134,7 @@ export type BuildResult = { ok: true; fields: EventFields } | { ok: false; error
  */
 export function buildFields(v: FormValues, original: Partial<Event> = {}): BuildResult {
   const errors: FormErrors = {};
-  const name = v.name.trim();
+  const name = keepIfSame(v.name, original.name);
   if (!name) errors.name = 'Enter a name';
 
   const start = buildLocalTime(v.startDate, v.startTime, v.startTz);
@@ -150,9 +162,9 @@ export function buildFields(v: FormValues, original: Partial<Event> = {}): Build
   };
   if (start.value) fields.start = start.value;
   if (end.value) fields.end = end.value;
-  const confirmation = v.confirmation.trim();
+  const confirmation = keepIfSame(v.confirmation, original.confirmation);
   if (confirmation || original.confirmation !== undefined) fields.confirmation = confirmation;
-  const notes = v.notes.trim();
+  const notes = keepIfSame(v.notes, original.notes);
   if (notes || original.notes !== undefined) fields.notes = notes;
   const loc = buildLocation(v.locationName, v.locationAddress, original.location);
   if (loc) fields.location = loc;

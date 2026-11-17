@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import {
@@ -18,7 +18,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-async function setup(opts: { failPost?: boolean } = {}) {
+async function setup(opts: { failPost?: boolean; event?: Record<string, unknown> } = {}) {
   const secret = generateSecret();
   const keys = await deriveTripKeys(secret);
   const event = {
@@ -32,6 +32,7 @@ async function setup(opts: { failPost?: boolean } = {}) {
     status: 'confirmed',
     source: 'email',
     createdAt: '2026-07-01T00:00:00.000Z',
+    ...opts.event,
   };
   const ciphertext = toBase64(await sealJson(keys.publicKey, { kind: 'put', event }));
   const api = {
@@ -80,7 +81,7 @@ async function setup(opts: { failPost?: boolean } = {}) {
       </TripProvider>
     </MemoryRouter>,
   );
-  await screen.findByRole('heading', { name: 'Dinner' });
+  await screen.findByRole('heading', { name: String(event.name) });
   return { posted, loc, store };
 }
 
@@ -139,5 +140,41 @@ describe('edit and delete', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Keep' }));
     expect(screen.getByRole('button', { name: 'Edit' })).toBeTruthy();
     expect(posted).toHaveLength(0);
+  });
+
+  test('saving with no edits sends nothing, even with untrimmed text and coordinates', async () => {
+    const { posted } = await setup({
+      event: {
+        name: 'Dinner ',
+        confirmation: ' ABC ',
+        notes: 'note ',
+        location: { name: ' Inn', address: 'Rua 1 ', lat: 38.7, lng: -9.1, placeId: 'p' },
+      },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await screen.findByRole('button', { name: 'Edit' });
+    expect(posted).toHaveLength(0);
+  });
+
+  test('a sync while the form is open does not leak stale values into the patch', async () => {
+    const { posted, store } = await setup();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    act(() => {
+      store.getState().append([
+        {
+          seq: 50,
+          dedupe: null,
+          createdAt: '2026-07-02T00:00:00.000Z',
+          body: { kind: 'patch', target: 'e1', fields: { notes: 'changed elsewhere' } },
+        },
+      ] as never);
+    });
+    fireEvent.change(input('Time'), { target: { value: '21:00' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(posted).toHaveLength(1));
+    expect((posted[0] as { fields: object }).fields).toEqual({
+      start: { local: '2026-07-14T21:00', tz: 'Europe/Lisbon' },
+    });
   });
 });

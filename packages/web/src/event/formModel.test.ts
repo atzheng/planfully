@@ -106,6 +106,36 @@ describe('buildFields validation', () => {
   });
 });
 
+describe('untrimmed originals and DST gaps', () => {
+  const messy: Event = {
+    ...base,
+    name: 'Hotel ',
+    confirmation: ' C1',
+    notes: 'n ',
+    location: { name: ' Inn', address: 'Rua ', lat: 1, lng: 2, placeId: 'p' },
+  };
+
+  test('an unedited form produces an empty patch and keeps coordinates', () => {
+    const r = buildFields(initialValues(messy), messy);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(diffFields(messy, r.fields)).toEqual({});
+  });
+
+  test('a real location edit still replaces it', () => {
+    const r = buildFields({ ...initialValues(messy), locationName: 'Other' }, messy);
+    expect(r.ok).toBe(true);
+    if (r.ok)
+      expect(diffFields(messy, r.fields).location).toEqual({ name: 'Other', address: 'Rua' });
+  });
+
+  test('a time in a DST gap is rejected', () => {
+    expect(buildLocalTime('2026-03-08', '02:30', 'America/New_York').error).toMatch(
+      /does not exist/,
+    );
+    expect(buildLocalTime('2026-03-08', '03:30', 'America/New_York').error).toBeUndefined();
+  });
+});
+
 describe('defaultZones', () => {
   test('event zone, then other time, then fallback, then browser', () => {
     expect(defaultZones({ start: base.start, end: base.end })).toEqual({

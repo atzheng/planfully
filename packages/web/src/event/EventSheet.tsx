@@ -257,7 +257,7 @@ export function EventSheet() {
 function OpenSheet({ id, setId }: { id: string; setId: (v: string) => void }) {
   const events = useTrip((s) => s.events);
   const close = useCallback(() => setId(''), [setId]);
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState<Event | null>(null);
   const actions = useTripActions();
   const event = events.find((e) => e.id === id);
 
@@ -274,18 +274,20 @@ function OpenSheet({ id, setId }: { id: string; setId: (v: string) => void }) {
         <p>This event may have been deleted.</p>
       ) : editing ? (
         <EventForm
-          initial={event}
-          onCancel={() => setEditing(false)}
+          initial={editing}
+          onCancel={() => setEditing(null)}
           onSubmit={async (fields) => {
-            const changes = diffFields(event, fields);
+            // Diff against the snapshot the form opened with, not the live event: a sync in
+            // between must not put untouched stale values into the patch.
+            const changes = diffFields(editing, fields);
             if (Object.keys(changes).length > 0) await actions.patchEvent(event.id, changes);
-            setEditing(false);
+            setEditing(null);
           }}
         />
       ) : (
         <Details
           event={event}
-          onEdit={() => setEditing(true)}
+          onEdit={() => setEditing(event)}
           onDelete={() => {
             close();
             // The write path restores the event and sets lastError on failure: reopen to show it.
