@@ -54,17 +54,21 @@ const patch = (n: number): RecordBody => ({
   fields: { name: `Dinner ${n}` },
 });
 
-async function stored(seq: number, body: RecordBody): Promise<StoredRecord> {
+async function stored(
+  seq: number,
+  body: RecordBody,
+  dedupe: string | null = null,
+): Promise<StoredRecord> {
   return {
     seq,
-    dedupe: null,
+    dedupe,
     createdAt: '2026-01-01T00:00:00.000Z',
     ciphertext: toBase64(await sealJson(keys.publicKey, body)),
   };
 }
 
-async function setup(bodies: RecordBody[]) {
-  const recs = await Promise.all(bodies.map((b, i) => stored(i + 1, b)));
+async function setup(bodies: RecordBody[], tags: (string | null)[] = []) {
+  const recs = await Promise.all(bodies.map((b, i) => stored(i + 1, b, tags[i] ?? null)));
   const getRecords = vi
     .fn<TripApi['getRecords']>()
     .mockResolvedValue({ records: recs, latestSeq: recs.length, more: false });
@@ -117,6 +121,28 @@ describe('compactTrip', () => {
     const s = t.store.getState();
     expect(s.records.map((r) => r.seq)).toEqual([1, 2, 3, 4, 100]);
     expect(s.events).toEqual(before);
+  });
+
+  test('a group with two dedupe tags gets one snapshot per tag; deletes come after both', async () => {
+    const t = await setup([put('e1'), put('e1'), patch(1), patch(2)], ['t1', 't2']);
+    const before = fold(t.store.getState().records);
+    expect(await compactTrip(t.store, t, () => true)).toBe(true);
+    expect(t.calls).toEqual(['post', 'post', 'del1', 'del2', 'del3', 'del4']);
+    const s = t.store.getState();
+    expect(s.records.map((r) => [r.seq, r.dedupe])).toEqual([
+      [100, 't1'],
+      [101, 't2'],
+    ]);
+    expect(fold(s.records)).toEqual(before);
+  });
+
+  test('a failed second snapshot write deletes nothing', async () => {
+    const t = await setup([put('e1'), put('e1'), patch(1), patch(2)], ['t1', 't2']);
+    const before = fold(t.store.getState().records);
+    t.postRecord.mockResolvedValueOnce({ seq: 100 }).mockRejectedValueOnce(new ApiError(500, 'x'));
+    await compactTrip(t.store, t, () => true);
+    expect(t.deleteRecord).not.toHaveBeenCalled();
+    expect(fold(t.store.getState().records)).toEqual(before);
   });
 
   test('a failed append deletes nothing', async () => {

@@ -129,7 +129,7 @@ export type BuildResult = { ok: true; fields: EventFields } | { ok: false; error
 
 /**
  * Validate the form and produce full event fields. Clearing is limited by CONTRACTS.md section 7
- * (a patch cannot unset a field): confirmation and notes blank to '', locations to {}, but a time
+ * (the form does not use patch null yet, CONTRACTS.md section 3): confirmation and notes blank to '', locations to {}, but a time
  * that was set cannot be removed.
  */
 export function buildFields(v: FormValues, original: Partial<Event> = {}): BuildResult {

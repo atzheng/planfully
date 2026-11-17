@@ -22,8 +22,16 @@ export const RecordBodySchema = z.discriminatedUnion('kind', [
   z.strictObject({
     kind: z.literal('patch'),
     target: z.string().min(1),
-    // any subset of the event's fields except id
-    fields: EventSchema.omit({ id: true }).partial(),
+    // any subset of the event's fields except id; optional fields may be null to clear them
+    fields: EventSchema.omit({ id: true }).partial().extend({
+      start: EventSchema.shape.start.nullable(),
+      end: EventSchema.shape.end.nullable(),
+      confirmation: EventSchema.shape.confirmation.nullable(),
+      location: EventSchema.shape.location.nullable(),
+      endLocation: EventSchema.shape.endLocation.nullable(),
+      notes: EventSchema.shape.notes.nullable(),
+      needsReview: EventSchema.shape.needsReview.nullable(),
+    }),
   }),
   z.strictObject({ kind: z.literal('delete'), target: z.string().min(1) }),
 ]);
