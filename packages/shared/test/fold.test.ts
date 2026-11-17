@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-non-null-assertion -- test assertions on known fixtures */
 import { describe, expect, it } from 'vitest';
-import { fold, planCompaction, type CompactionPlan } from '../src/fold';
+import { fold, planCompaction, TOMBSTONE_PREFIX, type CompactionPlan } from '../src/fold';
 import { RecordBodySchema, type OpenedRecord, type RecordBody } from '../src/records';
 import type { Attachment, Event } from '../src/schema';
 import { flightEvent, lodgingEvent } from './fixtures';
@@ -307,16 +307,99 @@ describe('planCompaction', () => {
     expect(planCompaction([...l, ...written])).toHaveLength(4);
   });
 
-  it('skips groups where a patch removed an attachment (tombstones cannot be carried)', () => {
-    const l = [
-      put(1, ev('a', { attachments: [att('x')] })),
-      patch(2, 'a', { attachments: [] }),
+  describe('groups with attachment tombstones', () => {
+    const base = (): OpenedRecord[] => [
+      put(1, ev('a', { attachments: [att('x'), att('y')] }), 't1'),
+      patch(2, 'a', { attachments: [att('y')] }),
       patch(3, 'a', { name: 'n' }),
       patch(4, 'a', { notes: 'n' }),
     ];
-    expect(planCompaction(l)).toEqual([]);
-    // re-adding the attachment lifts the tombstone
-    expect(planCompaction([...l, patch(5, 'a', { attachments: [att('x')] })])).toHaveLength(1);
+    /** compacts, then returns [log with deletes applied, log with snapshots only added] */
+    const compact = (l: OpenedRecord[], min = 4) => {
+      const plans = planCompaction(l, min);
+      return { plans, after: applyPlans(l, plans, true), both: applyPlans(l, plans, false) };
+    };
+
+    it('compacts them and the snapshot carries the tombstones', () => {
+      const l = base();
+      const { plans, after, both } = compact(l);
+      expect(plans).toHaveLength(1);
+      expect(fold(after)).toEqual(fold(l));
+      expect(fold(both)).toEqual(fold(l));
+      expect(fold(l)[0]!.attachments.map((a) => a.id)).toEqual(['y']);
+    });
+
+    it('a later email put re-listing the removed attachment stays removed after compaction', () => {
+      const { after } = compact(base());
+      const email = put(99, ev('a', { attachments: [att('x'), att('z')] }), 't1');
+      const l = [...base(), email];
+      expect(fold([...after, email])).toEqual(fold(l));
+      expect(fold([...after, email])[0]!.attachments.map((a) => a.id)).toEqual(['y', 'z']);
+    });
+
+    it('a later patch re-adding it lifts the tombstone', () => {
+      const { after } = compact(base());
+      const later = [
+        patch(98, 'a', { attachments: [att('x'), att('y')] }),
+        put(99, ev('a', { attachments: [att('x')] }), 't1'),
+      ];
+      expect(fold([...after, ...later])).toEqual(fold([...base(), ...later]));
+      expect(
+        fold([...after, ...later])[0]!
+          .attachments.map((a) => a.id)
+          .sort(),
+      ).toEqual(['x', 'y']);
+    });
+
+    it('tombstones survive re-compaction', () => {
+      const l = base();
+      const { after } = compact(l);
+      const more = [
+        patch(50, 'a', { name: 'm1' }),
+        patch(51, 'a', { name: 'm2' }),
+        patch(52, 'a', { name: 'm3' }),
+      ];
+      const { after: after2 } = compact([...after, ...more]);
+      const email = put(99, ev('a', { attachments: [att('x')] }), 't1');
+      expect(fold([...after2, email])).toEqual(fold([...l, ...more, email]));
+    });
+
+    it('multi-tag groups carry the tombstones on every snapshot', () => {
+      const l = [
+        put(1, ev('a', { attachments: [att('x')] }), 't1'),
+        put(2, ev('a', { attachments: [att('x')] }), 't2'),
+        patch(3, 'a', { attachments: [] }),
+        patch(4, 'a', { name: 'n' }),
+      ];
+      const { plans, after, both } = compact(l);
+      expect(plans).toHaveLength(2);
+      expect(fold(after)).toEqual(fold(l));
+      expect(fold(both)).toEqual(fold(l));
+      for (const tag of ['t1', 't2']) {
+        const email = put(99, ev('a', { attachments: [att('x')] }), tag);
+        expect(fold([...after, email]), tag).toEqual(fold([...l, email]));
+      }
+    });
+
+    it('a second pass yields no plans', () => {
+      const { after, both } = compact(base());
+      expect(planCompaction(after)).toEqual([]);
+      expect(planCompaction(after, 1)).toEqual([]);
+      expect(planCompaction(both).length).toBeGreaterThan(0); // originals still present
+    });
+
+    it('stays readable by the old strict schema (tombstones are plain aliases)', () => {
+      const { plans } = compact(base());
+      for (const p of plans) expect(RecordBodySchema.safeParse(p.write.body).success).toBe(true);
+      const body = plans[0]!.write.body;
+      expect(body.kind === 'put' && body.compaction?.aliases).toEqual([TOMBSTONE_PREFIX + 'x']);
+    });
+
+    it('groups without tombstones keep their old snapshot shape', () => {
+      const l = [1, 2, 3, 4].map((i) => put(i, ev('a', { name: `n${i}` })));
+      const body = planCompaction(l)[0]!.write.body;
+      expect(body.kind === 'put' && body.compaction?.aliases).toEqual([]);
+    });
   });
 
   it('does not touch ignored orphan patches', () => {
@@ -625,12 +708,21 @@ describe('fold properties', () => {
   it('200 random logs: compaction, concurrent writes, later writes and shuffling never change the result', () => {
     let compacted = 0;
     let recompacted = 0;
+    let withTombs = 0;
     for (let seed = 1; seed <= 200; seed++) {
       const r = prng(seed);
       const ctx = `seed ${seed}`;
       const log = randomRecords(r, `s${seed}`, 3, 1 + Math.floor(r() * 30), null);
       const plans = planCompaction(log, 2 + (seed % 3));
       if (plans.length > 0) compacted++;
+      if (
+        plans.some(
+          (p) =>
+            p.write.body.kind === 'put' &&
+            p.write.body.compaction?.aliases.some((a) => a.startsWith(TOMBSTONE_PREFIX)),
+        )
+      )
+        withTombs++;
       expect(fold(shuffle(log, r)), ctx).toEqual(fold(log));
 
       // (a) concurrent writes land between planning and writing the compacted puts
@@ -667,6 +759,7 @@ describe('fold properties', () => {
     }
     expect(compacted).toBeGreaterThan(50);
     expect(recompacted).toBeGreaterThan(50);
+    expect(withTombs).toBeGreaterThan(20);
   });
 });
 
