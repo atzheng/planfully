@@ -40,12 +40,18 @@ beforeEach(() => {
     return new Response(JSON.stringify({ ...META, ...patch }), { status: 200 });
   });
   vi.stubGlobal('fetch', fetchMock);
-  Object.assign(navigator, { clipboard: { writeText: vi.fn(async () => {}) } });
+  vi.stubGlobal('navigator', { clipboard: { writeText: vi.fn(async () => {}) } });
 });
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
 });
+
+function addBtn(i: number): HTMLElement {
+  const b = screen.getAllByRole('button', { name: 'Add' })[i];
+  if (!b) throw new Error('no add button');
+  return b;
+}
 
 function renderIt() {
   render(
@@ -74,7 +80,7 @@ test('copy buttons copy the trip and receipts addresses', async () => {
 test('invalid sender is rejected and nothing is added', () => {
   renderIt();
   fireEvent.change(screen.getByLabelText('New allowed sender'), { target: { value: 'nope' } });
-  fireEvent.click(screen.getAllByRole('button', { name: 'Add' })[1]!);
+  fireEvent.click(addBtn(1));
   expect(screen.getByRole('alert').textContent).toMatch(/not a valid email/);
   expect(screen.getByRole('button', { name: 'Save changes' })).toHaveProperty('disabled', true);
 });
@@ -82,11 +88,11 @@ test('invalid sender is rejected and nothing is added', () => {
 test('add member and sender, rename keeps id, save PATCHes and updates the store', async () => {
   renderIt();
   fireEvent.change(screen.getByLabelText('New traveller name'), { target: { value: 'Cy' } });
-  fireEvent.click(screen.getAllByRole('button', { name: 'Add' })[0]!);
+  fireEvent.click(addBtn(0));
   fireEvent.change(screen.getByLabelText('New allowed sender'), {
     target: { value: ' New@X.com ' },
   });
-  fireEvent.click(screen.getAllByRole('button', { name: 'Add' })[1]!);
+  fireEvent.click(addBtn(1));
   fireEvent.change(screen.getByLabelText('Name of Ann'), { target: { value: 'Anna' } });
   fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
   await waitFor(() => expect(setMeta).toHaveBeenCalled());
