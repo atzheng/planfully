@@ -7,7 +7,8 @@ import { planCompaction, sealJson, toBase64 } from '@planfully/shared';
 import * as realApi from '../lib/api';
 import { ApiError } from '../lib/api';
 import type { StoreApi } from 'zustand/vanilla';
-import { isTempSeq, type TripState } from './store';
+import type { TripState } from './store';
+import { isTempSeq } from './tempSeq';
 
 export type CompactApi = Pick<typeof realApi, 'postRecord' | 'deleteRecord'>;
 
@@ -23,6 +24,9 @@ export async function compactTrip(
 ): Promise<boolean> {
   const start = store.getState();
   if (!start.keys || start.status !== 'ready' || start.pending > 0 || !isOnline()) return false;
+  // Records that failed to open are invisible to the plan; a snapshot could override them for
+  // clients that can read them (e.g. a patch from a newer client). Not retried this session.
+  if (start.skipped > 0) return true;
   const { publicKey, accessToken } = start.keys;
   const auth = { tripId: start.tripId, accessToken };
 
@@ -51,6 +55,8 @@ export async function compactTrip(
       try {
         for (const s of plan.deleteSeqs) {
           if (isTempSeq(s)) continue;
+          // A user write started: leave the rest (old records are harmless).
+          if (store.getState().pending > 0) break;
           try {
             await api.deleteRecord(auth, s);
           } catch (e) {

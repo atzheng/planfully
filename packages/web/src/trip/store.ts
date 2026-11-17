@@ -28,6 +28,7 @@ import {
 } from '@planfully/shared';
 import * as realApi from '../lib/api';
 import { compactTrip } from './compact';
+import { isTempSeq, TEMP_SEQ_BASE } from './tempSeq';
 
 export type TripKeys = { privateKey: Uint8Array; publicKey: Uint8Array; accessToken: string };
 
@@ -132,11 +133,7 @@ function mergeRecords(have: OpenedRecord[], add: OpenedRecord[]): OpenedRecord[]
 
 class StalledError extends Error {}
 
-/** Temp (optimistic) records have seqs above this; skip them for compaction or offline caches. */
-const TEMP_SEQ_BASE = Number.MAX_SAFE_INTEGER - 1_000_000;
-export function isTempSeq(seq: number): boolean {
-  return seq > TEMP_SEQ_BASE;
-}
+export { isTempSeq };
 
 export function toError(e: unknown): TripError {
   if (e instanceof StalledError) return { kind: 'unknown', message: MESSAGES.stalled };

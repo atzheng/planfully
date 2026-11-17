@@ -148,6 +148,22 @@ describe('compactTrip', () => {
     expect(t.postRecord).not.toHaveBeenCalled();
   });
 
+  test('does not compact while some records failed to open', async () => {
+    const t = await setup([put('e1'), patch(1), patch(2), patch(3)]);
+    t.store.setState({ skipped: 1 });
+    await compactTrip(t.store, t, () => true);
+    expect(t.postRecord).not.toHaveBeenCalled();
+  });
+
+  test('stops deleting when a write starts between deletes', async () => {
+    const t = await setup([put('e1'), patch(1), patch(2), patch(3)]);
+    t.deleteRecord.mockImplementation(async () => {
+      t.store.getState().setWriteState({ pendingDelta: 1 });
+    });
+    await compactTrip(t.store, t, () => true);
+    expect(t.deleteRecord).toHaveBeenCalledTimes(1);
+  });
+
   test('temp records are never planned or deleted', async () => {
     const t = await setup([put('e1'), patch(1), patch(2), patch(3)]);
     // pending stays 0 on purpose: only the temp-seq filter protects it here
