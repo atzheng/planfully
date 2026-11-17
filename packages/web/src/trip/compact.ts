@@ -38,16 +38,14 @@ export async function compactTrip(
         auth,
         plan.write.dedupe === null ? { ciphertext } : { ciphertext, dedupe: plan.write.dedupe },
       );
-      store
-        .getState()
-        .append([
-          {
-            seq,
-            dedupe: plan.write.dedupe,
-            createdAt: new Date().toISOString(),
-            body: plan.write.body,
-          },
-        ]);
+      store.getState().append([
+        {
+          seq,
+          dedupe: plan.write.dedupe,
+          createdAt: new Date().toISOString(),
+          body: plan.write.body,
+        },
+      ]);
       // Only after the append succeeded.
       const gone: number[] = [];
       try {
