@@ -17,6 +17,7 @@ import {
 // The shell's view switching is under test here, not loading; stub the trip store as ready.
 vi.mock('../trip/store', () => ({
   TripProvider: ({ children }: { children: ReactNode }) => children,
+  useTripStore: () => ({ getState: () => ({}) }),
   useTrip: (sel?: (s: unknown) => unknown) => {
     const state = { status: 'ready', error: null, meta: null, events: [] };
     return sel ? sel(state) : state;

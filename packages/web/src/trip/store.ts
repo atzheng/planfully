@@ -77,6 +77,8 @@ export type TripState = {
   pending: number;
   /** True while queued writes could not be sent (network failure); drives the sync indicator. */
   queueStalled: boolean;
+  /** True while the queue is stalled because the server refused the link (401/403/404). */
+  queueAccessLost: boolean;
   /** The last failed write. Only cleared by the UI via setWriteState({ lastError: null }). */
   lastError: TripError | null;
   /** Write path: show a temporary record immediately; returns its (very large) temp seq. */
@@ -88,6 +90,7 @@ export type TripState = {
     pendingDelta?: number;
     lastError?: TripError | null;
     queueStalled?: boolean;
+    queueAccessLost?: boolean;
   }): void;
 };
 
@@ -114,6 +117,9 @@ export type TripStore = StoreApi<TripState> & { start(): void; stop(): void };
 type Auth = { tripId: string; accessToken: string };
 
 const MAX_PAGES = 1000;
+
+/** How long the first load waits for the offline cache before going to the network. */
+const HYDRATE_MAX_MS = 1500;
 
 /** Open and validate stored records; returns the good ones and the number skipped. */
 export async function openRecords(
@@ -444,6 +450,7 @@ export function createTripStore(opts: TripStoreOptions): TripStore {
       setMeta: (meta) => set({ meta }),
       pending: 0,
       queueStalled: false,
+      queueAccessLost: false,
       lastError: null,
       addOptimistic: (body) => {
         const s = get();
@@ -465,12 +472,15 @@ export function createTripStore(opts: TripStoreOptions): TripStore {
         }
         set({ records, events: fold(records) });
       },
-      setWriteState: ({ pendingDelta, lastError, queueStalled }) => {
+      setWriteState: ({ pendingDelta, lastError, queueStalled, queueAccessLost }) => {
         const patch: Partial<TripState> = {};
         if (pendingDelta) patch.pending = Math.max(0, get().pending + pendingDelta);
         if (lastError !== undefined) patch.lastError = lastError;
         if (queueStalled !== undefined && queueStalled !== get().queueStalled) {
           patch.queueStalled = queueStalled;
+        }
+        if (queueAccessLost !== undefined && queueAccessLost !== get().queueAccessLost) {
+          patch.queueAccessLost = queueAccessLost;
         }
         set(patch);
       },
@@ -487,6 +497,8 @@ export function createTripStore(opts: TripStoreOptions): TripStore {
       return { t, stored: await cache.loadRecords(opts.tripId) };
     });
     if (!cached || !started) return;
+    // The network load may have won the race while the cache was slow: do not go backwards.
+    if (store.getState().status !== 'loading') return;
     const { opened, skipped } = await openRecords(keys.privateKey, cached.stored);
     if (skipped > 0 && opened.length === 0) return;
     const records = mergeRecords(opened, store.getState().records);
@@ -517,7 +529,11 @@ export function createTripStore(opts: TripStoreOptions): TripStore {
         auth = { tripId: opts.tripId, accessToken: keys.accessToken };
         store.setState({ keys });
         cacheSecret = frag;
-        await hydrate(keys, frag);
+        // The cache must never hold up the network load: give it a short head start only.
+        await Promise.race([
+          hydrate(keys, frag),
+          new Promise((r) => setTimeout(r, HYDRATE_MAX_MS)),
+        ]);
       } catch {
         store.setState({
           status: 'error',

@@ -16,7 +16,8 @@ import { compactTrip } from '../trip/compact';
 import { createTripStore } from '../trip/store';
 import { uploadAttachment } from '../trip/attachments';
 import { createOfflineDb, type OfflineDb } from './db';
-import { createTripQueue, dbQueueStorage, type QueueApi } from './queue';
+import { openDB } from 'idb';
+import { createTripQueue, dbQueueStorage, resilientQueueStorage, type QueueApi } from './queue';
 
 const META = {
   id: 't1',
@@ -225,6 +226,54 @@ describe('offline edit queue', () => {
     expect(store.getState().events).toEqual([]);
     expect(store.getState().pending).toBe(0);
     expect(srv.posted).toEqual([]);
+    expect(store.getState().lastError?.message).toContain('a.pdf could not be uploaded');
+  });
+
+  test('401 sets queueAccessLost; discard drops the queue and rolls back', async () => {
+    const srv = fakeServer();
+    srv.postRecord.mockRejectedValue(new ApiError(401, 'no'));
+    const { store, queue, actions } = await session(srv.api);
+    await actions.putEvent({ name: 'A', type: 'activity' });
+    expect(store.getState().queueAccessLost).toBe(true);
+    await queue.discard();
+    expect(await db.queueList('t1')).toHaveLength(0);
+    expect(store.getState().events).toEqual([]);
+    expect(store.getState().pending).toBe(0);
+    expect(store.getState().queueStalled).toBe(false);
+  });
+
+  test('a database blocked by another tab falls back to memory instead of hanging', async () => {
+    const name = `blocked-${n++}`;
+    // An old-version tab holding v1 open without ever closing it.
+    const old = await openDB(name, 1, {
+      upgrade(d) {
+        d.createObjectStore('trips', { keyPath: 'tripId' });
+      },
+    });
+    const blockedDb = createOfflineDb(name, { openTimeoutMs: 50 });
+    const srv = fakeServer();
+    const store = createTripStore({
+      tripId: 't1',
+      fragment,
+      cache: blockedDb,
+      intervalMs: 1e9,
+      api: {
+        getTrip: vi.fn().mockResolvedValue(META),
+        getRecords: vi.fn().mockResolvedValue({ records: [], latestSeq: 0, more: false }),
+      },
+    });
+    store.start();
+    await vi.waitFor(() => expect(store.getState().status).toBe('ready'), { timeout: 3000 });
+    const queue = createTripQueue(store, {
+      api: srv.api,
+      storage: resilientQueueStorage(dbQueueStorage(blockedDb)),
+    });
+    const actions = createTripActions(store, { queue });
+    await actions.putEvent({ name: 'A', type: 'activity' });
+    expect(srv.log).toEqual(['record:put']);
+    expect(store.getState().pending).toBe(0);
+    old.close();
+    blockedDb.close();
   });
 
   test('401 stays queued (a revoked link may be transient)', async () => {

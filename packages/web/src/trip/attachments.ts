@@ -74,7 +74,7 @@ export async function uploadAttachment(file: File, ctx: UploadContext): Promise<
   const cache = getOfflineDb();
   if (cache) await safely(() => cache.putBlob(ctx.tripId, id, sealed));
   // Queued first, so it is sent before the record that will reference it; offline it stays queued.
-  if (ctx.queue) await ctx.queue.enqueueBlob(id, sealed);
+  if (ctx.queue) await ctx.queue.enqueueBlob(id, sealed, file.name);
   else await putBlob({ tripId: ctx.tripId, accessToken: ctx.accessToken }, id, sealed);
   return {
     kind: 'file',

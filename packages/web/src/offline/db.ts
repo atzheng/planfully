@@ -100,10 +100,27 @@ export type OfflineDb = {
 
 const DB_NAME = 'planfully';
 
-export function createOfflineDb(name = DB_NAME): OfflineDb {
-  let dbp: Promise<IDBPDatabase<PlanfullyDB>> | null = null;
-  const db = () =>
-    (dbp ??= openDB<PlanfullyDB>(name, 2, {
+/** How long a caller waits for the database to open (a blocked upgrade never does). */
+export const OPEN_TIMEOUT_MS = 3000;
+
+export function createOfflineDb(
+  name = DB_NAME,
+  { openTimeoutMs = OPEN_TIMEOUT_MS }: { openTimeoutMs?: number } = {},
+): OfflineDb {
+  // The connection. Another tab holding an older version open blocks our upgrade (the open
+  // never settles), so callers wait at most OPEN_TIMEOUT_MS and then fail fast (the cache is
+  // optional: safely() swallows it and the queue falls back to memory). If the open completes
+  // later, later calls use it. We close our own handle when another tab wants to upgrade.
+  let handle: IDBPDatabase<PlanfullyDB> | null = null;
+  let opening: Promise<IDBPDatabase<PlanfullyDB>> | null = null;
+  let gaveUp = false;
+  const reset = () => {
+    handle = null;
+    opening = null;
+  };
+  const db = async (): Promise<IDBPDatabase<PlanfullyDB>> => {
+    if (handle) return handle;
+    opening ??= openDB<PlanfullyDB>(name, 2, {
       upgrade(d, oldVersion) {
         if (oldVersion < 1) {
           d.createObjectStore('trips', { keyPath: 'tripId' });
@@ -117,7 +134,36 @@ export function createOfflineDb(name = DB_NAME): OfflineDb {
           );
         }
       },
-    }));
+      blocking() {
+        handle?.close();
+        reset();
+      },
+      terminated: reset,
+    }).then(
+      (h) => {
+        handle = h;
+        gaveUp = false;
+        return h;
+      },
+      (e: unknown) => {
+        opening = null;
+        throw e;
+      },
+    );
+    if (gaveUp) throw new Error('offline cache unavailable');
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        gaveUp = true;
+        reject(new Error('offline cache open timed out'));
+      }, openTimeoutMs);
+    });
+    try {
+      return await Promise.race([opening, timeout]);
+    } finally {
+      clearTimeout(timer);
+    }
+  };
   const range = (tripId: string) => IDBKeyRange.bound([tripId, -Infinity], [tripId, Infinity]);
 
   return {
@@ -228,8 +274,12 @@ export function createOfflineDb(name = DB_NAME): OfflineDb {
       await tx.done;
     },
     close() {
-      void dbp?.then((d) => d.close());
-      dbp = null;
+      void opening?.then(
+        (d) => d.close(),
+        () => undefined,
+      );
+      handle?.close();
+      reset();
     },
   };
 }

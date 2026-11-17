@@ -3,10 +3,11 @@ import { AddReceiptButton } from './event/UploadButtons';
 import { ExportMenu } from './export/ExportMenu';
 import { EventSheet } from './event/EventSheet';
 import { FilterBar } from './filters/FilterBar';
-import { enumCodec, useQueryState } from './lib/queryState';
+import { getTripQueue } from './offline/queue';
+import { enumCodec, stringCodec, useQueryState } from './lib/queryState';
 import { MapView } from './map/MapView';
 import { Timeline } from './timeline/Timeline';
-import { useTrip } from './trip/store';
+import { useTrip, useTripStore } from './trip/store';
 import { Chip } from './ui/Chip';
 import styles from './TripShell.module.css';
 
@@ -21,6 +22,10 @@ export function TripShell() {
   const error = useTrip((s) => s.error);
   const skipped = useTrip((s) => s.skipped);
   const waiting = useTrip((s) => (s.queueStalled ? s.pending : 0));
+  const accessLost = useTrip((s) => s.queueAccessLost);
+  const lastError = useTrip((s) => s.lastError);
+  const store = useTripStore();
+  const [openEvent] = useQueryState('e', stringCodec, '');
   const [view, setView] = useQueryState('view', viewCodec, 'timeline');
 
   return (
@@ -53,7 +58,38 @@ export function TripShell() {
           <>
             {waiting > 0 && (
               <p role="status" className={styles.waiting} data-testid="sync-waiting">
-                {waiting} {waiting === 1 ? 'change' : 'changes'} waiting to sync
+                {accessLost
+                  ? `Link no longer has access: ${waiting} ${waiting === 1 ? 'change' : 'changes'} not sent`
+                  : `${waiting} ${waiting === 1 ? 'change' : 'changes'} waiting to sync`}
+                {accessLost && (
+                  <>
+                    {' '}
+                    <button
+                      type="button"
+                      className={styles.linkButton}
+                      onClick={() => {
+                        if (window.confirm('Discard the changes that could not be sent?')) {
+                          void getTripQueue(store).discard();
+                        }
+                      }}
+                    >
+                      Discard
+                    </button>
+                  </>
+                )}
+              </p>
+            )}
+            {/* With the event sheet open it shows the same error itself. */}
+            {lastError && !openEvent && (
+              <p role="alert" className={styles.error} data-testid="write-error">
+                Could not save: {lastError.message}{' '}
+                <button
+                  type="button"
+                  className={styles.linkButton}
+                  onClick={() => store.getState().setWriteState({ lastError: null })}
+                >
+                  Dismiss
+                </button>
               </p>
             )}
             {error && <p role="status">{error.message}</p>}

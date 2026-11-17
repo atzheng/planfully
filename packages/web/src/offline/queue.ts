@@ -62,7 +62,35 @@ export function dbQueueStorage(db: OfflineDb): QueueStorage {
   };
 }
 
+/**
+ * Wraps a persistent store so that if it fails (database blocked or unavailable) the queue
+ * carries on in memory for the rest of the session instead of losing or rejecting writes.
+ */
+export function resilientQueueStorage(primary: QueueStorage): QueueStorage {
+  const memory = memoryQueueStorage();
+  let broken = false;
+  const run = async <T>(fn: (s: QueueStorage) => Promise<T>): Promise<T> => {
+    if (!broken) {
+      try {
+        return await fn(primary);
+      } catch {
+        broken = true;
+      }
+    }
+    return fn(memory);
+  };
+  return {
+    add: (i) => run((s) => s.add(i)),
+    list: (t) => run((s) => s.list(t)),
+    remove: (id) => run((s) => s.remove(id)),
+  };
+}
+
 export type QueueApi = Pick<typeof realApi, 'postRecord' | 'putBlob'>;
+
+/** A request that has not answered by then is abandoned (retried later) so it cannot block the head. */
+export const RECORD_TIMEOUT_MS = 30_000;
+export const BLOB_TIMEOUT_MS = 120_000;
 
 export type TripQueueOptions = {
   storage?: QueueStorage;
@@ -81,7 +109,9 @@ export type TripQueue = {
    */
   enqueueRecord(body: RecordBody): Promise<void>;
   /** Queue an already sealed blob (before the record that references it). Same resolution rules. */
-  enqueueBlob(blobId: string, sealed: Uint8Array): Promise<void>;
+  enqueueBlob(blobId: string, sealed: Uint8Array, filename?: string): Promise<void>;
+  /** Drop every queued item of this trip and roll back their temp records (user choice). */
+  discard(): Promise<void>;
   /** Send what can be sent now. Never throws. */
   flush(): Promise<void>;
   /** Open persisted records into the store (once keys exist), then flush; listen for retries. */
@@ -123,6 +153,7 @@ export function createTripQueue(
 
   const entries = new Map<number, Entry>(); // by queue item id
   const waiters = new Map<number, Waiter>();
+  const blobNames = new Map<string, string>(); // memory only: file names are content
   const failedPuts = new Set<string>(); // event ids whose put was dropped this session
   let addChain: Promise<unknown> = Promise.resolve();
   let flushing: Promise<void> | null = null;
@@ -174,6 +205,15 @@ export function createTripQueue(
         failedPuts.add(cur.item.eventId);
       }
       rollback(cur.item.id, cur.err, cur.quiet);
+      if (cur.item.kind === 'blob' && !cur.quiet) {
+        const name = (cur.item.blobId && blobNames.get(cur.item.blobId)) || 'An attachment';
+        ws().setWriteState({
+          lastError: {
+            kind: 'unknown',
+            message: `${name} could not be uploaded: ${toError(cur.err).message}`,
+          },
+        });
+      }
       const rest = (await safely(() => storage.list(tripId))) ?? [];
       for (const other of rest) {
         const dependsOnPut =
@@ -217,11 +257,20 @@ export function createTripQueue(
     const auth = { tripId, accessToken: keys.accessToken };
     const entry = entries.get(item.id);
     if (entry) entry.sending = true;
+    const ctl = new AbortController();
+    const timer = setTimeout(
+      () => ctl.abort(),
+      item.kind === 'blob' ? BLOB_TIMEOUT_MS : RECORD_TIMEOUT_MS,
+    );
     try {
       if (item.kind === 'blob') {
-        await api.putBlob(auth, item.blobId as string, item.payload);
+        await api.putBlob(auth, item.blobId as string, item.payload, ctl.signal);
       } else {
-        const { seq } = await api.postRecord(auth, { ciphertext: toBase64(item.payload) });
+        const { seq } = await api.postRecord(
+          auth,
+          { ciphertext: toBase64(item.payload) },
+          ctl.signal,
+        );
         await safely(() => storage.remove(item.id));
         if (entry) {
           entries.delete(item.id);
@@ -245,13 +294,14 @@ export function createTripQueue(
       if (entry) entry.sending = false;
       if (isRetryable(e)) {
         const err = toError(e);
-        ws().setWriteState({ queueStalled: true });
-        // Show a refused link; plain network trouble is signalled by the indicator alone.
-        if (err.kind === 'unauthorized') ws().setWriteState({ lastError: err });
+        // A refused link is explained by the indicator (with a Discard choice).
+        ws().setWriteState({ queueStalled: true, queueAccessLost: err.kind === 'unauthorized' });
         return 'stalled';
       }
       await drop(item, e);
       return 'sent'; // the loop carries on with the next item
+    } finally {
+      clearTimeout(timer);
     }
   }
 
@@ -262,7 +312,7 @@ export function createTripQueue(
       const head = list[0];
       if (!head) {
         attempts = 0;
-        ws().setWriteState({ queueStalled: false });
+        ws().setWriteState({ queueStalled: false, queueAccessLost: false });
         return;
       }
       const r = await sendOne(head);
@@ -271,7 +321,7 @@ export function createTripQueue(
         return;
       }
       attempts = 0;
-      ws().setWriteState({ queueStalled: false });
+      ws().setWriteState({ queueStalled: false, queueAccessLost: false });
       if (head.kind === 'record') channel?.postMessage('sent');
     }
   }
@@ -281,6 +331,7 @@ export function createTripQueue(
     if (!locks) return fn();
     await locks.request(lockName, { ifAvailable: true }, async (lock) => {
       if (lock) await fn();
+      else scheduleRetry(); // another tab is flushing; look again later in case it goes away
     });
   }
 
@@ -367,7 +418,8 @@ export function createTripQueue(
       }, undo);
     },
 
-    enqueueBlob(blobId, sealed) {
+    enqueueBlob(blobId, sealed, filename) {
+      if (filename) blobNames.set(blobId, filename);
       const added = addChain.then(() =>
         storage.add({
           tripId,
@@ -386,6 +438,16 @@ export function createTripQueue(
     },
 
     flush,
+
+    async discard() {
+      const list = (await safely(() => storage.list(tripId))) ?? [];
+      for (const item of list) {
+        await safely(() => storage.remove(item.id));
+        rollback(item.id, new Error('Discarded'), true);
+      }
+      for (const [id] of [...entries]) rollback(id, new Error('Discarded'), true);
+      ws().setWriteState({ queueStalled: false, queueAccessLost: false });
+    },
 
     start() {
       if (started) return;
@@ -471,7 +533,10 @@ export function getTripQueue(store: StoreApi<TripState>, opts: TripQueueOptions 
   let q = queues.get(store);
   if (!q) {
     const db = getOfflineDb();
-    q = createTripQueue(store, { storage: db ? dbQueueStorage(db) : undefined, ...opts });
+    q = createTripQueue(store, {
+      storage: db ? resilientQueueStorage(dbQueueStorage(db)) : undefined,
+      ...opts,
+    });
     queues.set(store, q);
   }
   return q;
