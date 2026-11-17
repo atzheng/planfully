@@ -210,7 +210,9 @@ type ParsedEvent = Omit<Event, 'id'|'attachments'|'source'|'createdAt'|'pinned'|
 parseEmail(email: ParsedEmail, opts: { roster: RosterMember[]; today: string; apiKey: string }): Promise<ParsedEvent[]>
 
 // geo/geocode.ts — returns the input unchanged when no key is set or the match is weak
-geocode(env: Env, loc: Location): Promise<Location>
+geocode(env: Env, loc: Location, session?: { blocked?: boolean }): Promise<Location>
+// name-only queries need a token overlap with the match's name; a lone lat or lng is dropped/replaced;
+// 403/429 log the status only and set session.blocked so the rest of the ingest run skips lookups
 ```
 
 Never log email content, event content or tokens.

@@ -1,6 +1,6 @@
 import { env, exports } from 'cloudflare:workers';
 import { afterEach, beforeAll, describe, expect, test, vi } from 'vitest';
-import { geocode, isWeakMatch } from '../src/geo/geocode';
+import { geocode, isWeakMatch, namesOverlap } from '../src/geo/geocode';
 import type { Env } from '../src/env';
 import { applyMigrations, makeTrip } from './helpers';
 import vectors from '../../shared/test/vectors.json';
@@ -93,6 +93,58 @@ describe('geocode()', () => {
     mockFetch({ places: [place({ types: ['locality', 'political'] })] });
     const loc = { name: 'the hotel' };
     expect(await geocode(withKey, loc)).toBe(loc);
+  });
+
+  test('name-only query: accepted on token overlap, rejected otherwise', async () => {
+    mockFetch({ places: [place({ displayName: { text: 'Hilton Garden Inn Lisbon' } })] });
+    expect((await geocode(withKey, { name: 'Hilton' })).lat).toBe(38.72);
+    mockFetch({ places: [place({ displayName: { text: 'Pousada de Sintra' } })] });
+    const loc = { name: 'Hilton' };
+    expect(await geocode(withKey, loc)).toBe(loc);
+    // with an address the name check is skipped
+    const withAddr = await geocode(withKey, { name: 'Hilton', address: 'Rua X' });
+    expect(withAddr.lat).toBe(38.72);
+    expect(namesOverlap('Café São João', 'cafe sao joao bar')).toBe(true);
+    expect(namesOverlap('Hilton', 'Marriott')).toBe(false);
+  });
+
+  test('partial coords are treated as missing and both replaced', async () => {
+    mockFetch({ places: [place()] });
+    const out = await geocode(withKey, { name: 'Hotel Avenida', lat: 1 });
+    expect(out.lat).toBe(38.72);
+    expect(out.lng).toBe(-9.14);
+    const out2 = await geocode(withKey, { name: 'Hotel Avenida', lng: 5 });
+    expect(out2.lat).toBe(38.72);
+    expect(out2.lng).toBe(-9.14);
+  });
+
+  test('partial coords with no match are dropped, not kept half-set', async () => {
+    mockFetch({});
+    const out = await geocode(withKey, { name: 'Nowhere', lat: 1 });
+    expect(out).toEqual({ name: 'Nowhere' });
+  });
+
+  test('403/429 log the status only and block the rest of the session', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const spy = mockFetch({ error: 'quota' }, 429);
+    const session = {} as { blocked?: boolean };
+    const loc = { name: 'Secret Venue', address: 'Secret St' };
+    expect(await geocode(withKey, loc, session)).toBe(loc);
+    expect(session.blocked).toBe(true);
+    expect(await geocode(withKey, { name: 'Other' }, session)).toEqual({ name: 'Other' });
+    expect(spy).toHaveBeenCalledTimes(1);
+    const logged = JSON.stringify(warn.mock.calls);
+    expect(logged).toContain('429');
+    expect(logged).not.toContain('Secret');
+    expect(logged).not.toContain('k-secret');
+  });
+
+  test('other upstream errors do not block the session', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    mockFetch({}, 500);
+    const session = {} as { blocked?: boolean };
+    await geocode(withKey, { name: 'X' }, session);
+    expect(session.blocked).toBeUndefined();
   });
 
   test('isWeakMatch', () => {

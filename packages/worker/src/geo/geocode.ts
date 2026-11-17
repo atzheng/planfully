@@ -54,10 +54,45 @@ export function toLocation(p: PlaceResult): Location {
   return loc;
 }
 
-/** Returns up to `limit` places, or [] with no key, empty query or any upstream error. */
-export async function searchPlaces(env: Env, query: string, limit = 5): Promise<PlaceResult[]> {
+/**
+ * Per-ingest-run state. Once Google answers 403 or 429 (key rejected or quota spent) every
+ * further lookup in the run would fail the same way, so `blocked` short-circuits them.
+ */
+export interface GeocodeSession {
+  blocked?: boolean;
+}
+
+/** Lowercased, accent-stripped alphanumeric tokens of 2+ characters. */
+function tokens(s: string): Set<string> {
+  return new Set(
+    s
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter((t) => t.length >= 2),
+  );
+}
+
+/** True when the two names share at least one token. */
+export function namesOverlap(a: string, b: string): boolean {
+  const tb = tokens(b);
+  for (const t of tokens(a)) if (tb.has(t)) return true;
+  return false;
+}
+
+/**
+ * Returns up to `limit` places, or [] with no key, empty query or any upstream error.
+ * A 403/429 logs the status code only (never the query, address or key) and marks the session blocked.
+ */
+export async function searchPlaces(
+  env: Env,
+  query: string,
+  limit = 5,
+  session?: GeocodeSession,
+): Promise<PlaceResult[]> {
   const q = query.trim();
-  if (!env.GOOGLE_MAPS_SERVER_KEY || !q) return [];
+  if (!env.GOOGLE_MAPS_SERVER_KEY || !q || session?.blocked) return [];
   try {
     const res = await fetch(ENDPOINT, {
       method: 'POST',
@@ -69,7 +104,15 @@ export async function searchPlaces(env: Env, query: string, limit = 5): Promise<
       body: JSON.stringify({ textQuery: q, pageSize: limit }),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
-    if (!res.ok) return [];
+    if (!res.ok) {
+      if (res.status === 403 || res.status === 429) {
+        if (session) session.blocked = true;
+        console.warn(`geocode: Google Places returned ${res.status} (key rejected or quota)`);
+      } else {
+        console.warn(`geocode: Google Places returned ${res.status}`);
+      }
+      return [];
+    }
     const data = (await res.json()) as { places?: PlaceResult[] };
     return Array.isArray(data.places) ? data.places.slice(0, limit) : [];
   } catch {
@@ -80,22 +123,33 @@ export async function searchPlaces(env: Env, query: string, limit = 5): Promise<
 
 /**
  * Fills lat/lng/placeId (and address if missing) from the best match. Fields the caller
- * already has are kept. Returns the input unchanged when there is no key, no query, the
- * location already has coordinates, the upstream fails, or the match is weak.
+ * already has are kept. Both coordinates present: returned unchanged, no lookup. Only one
+ * present: it is treated as missing (a lone lat or lng is unusable) and both are replaced
+ * by the match, or both dropped when there is no usable match. With no address, a match
+ * is accepted only if its name shares a token with the event's location name, so a bare
+ * "Hilton" cannot resolve to an unrelated first worldwide hit. Returns the input unchanged
+ * when there is no key, no query, the upstream fails, or the match is weak.
  */
-export async function geocode(env: Env, loc: Location): Promise<Location> {
+export async function geocode(
+  env: Env,
+  loc: Location,
+  session?: GeocodeSession,
+): Promise<Location> {
   if (!env.GOOGLE_MAPS_SERVER_KEY) return loc;
   if (loc.lat !== undefined && loc.lng !== undefined) return loc;
-  const query = [loc.name, loc.address]
-    .map((s) => s?.trim())
-    .filter(Boolean)
-    .join(', ');
-  if (!query) return loc;
-  const [best] = await searchPlaces(env, query, 1);
-  if (!best || isWeakMatch(best)) return loc;
+  const { lat: _lat, lng: _lng, ...rest } = loc;
+  const partial = loc.lat !== undefined || loc.lng !== undefined;
+  const base: Location = partial ? rest : loc;
+  const name = loc.name?.trim();
+  const address = loc.address?.trim();
+  const query = [name, address].filter(Boolean).join(', ');
+  if (!query) return base;
+  const [best] = await searchPlaces(env, query, 1, session);
+  if (!best || isWeakMatch(best)) return base;
+  if (!address && name && !namesOverlap(name, best.displayName?.text ?? '')) return base;
   const found = toLocation(best);
   return {
-    ...loc,
+    ...rest,
     lat: found.lat,
     lng: found.lng,
     placeId: loc.placeId ?? found.placeId,
