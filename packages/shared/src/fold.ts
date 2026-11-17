@@ -254,6 +254,14 @@ export function planCompaction(records: OpenedRecord[], minRecords = 4): Compact
   const plans: CompactionPlan[] = [];
   for (const g of buildGroups(sortedForReplay(records))) {
     if (g.ops.length < minRecords) continue;
+    // Already compacted: only snapshots with the same content (one per tag) remain.
+    const first = JSON.stringify(g.ops[0]?.body);
+    if (
+      g.ops.every(
+        (r) => r.body.kind === 'put' && r.body.compaction && JSON.stringify(r.body) === first,
+      )
+    )
+      continue;
     const { event, tombstones } = replay(g);
     // A snapshot cannot carry attachment tombstones (the record format has no room for them),
     // so such groups stay as they are; see CONTRACTS.md section 3.

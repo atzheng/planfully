@@ -298,6 +298,15 @@ describe('planCompaction', () => {
     expect(planCompaction(written)).toEqual([]);
   });
 
+  it('does not re-compact a group with 4+ tags (one snapshot per tag)', () => {
+    const l = [1, 2, 3, 4].map((i) => put(i, ev('a', { name: `n${i}` }), `t${i}`));
+    const plans = planCompaction(l);
+    expect(plans).toHaveLength(4);
+    const written = plans.map((p, i) => rec(10 + i, p.write.body, p.write.dedupe));
+    expect(planCompaction(written)).toEqual([]);
+    expect(planCompaction([...l, ...written])).toHaveLength(4);
+  });
+
   it('skips groups where a patch removed an attachment (tombstones cannot be carried)', () => {
     const l = [
       put(1, ev('a', { attachments: [att('x')] })),
