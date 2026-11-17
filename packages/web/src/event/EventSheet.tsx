@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import type { Attachment, Event, Location } from '@planfully/shared';
 import { stringCodec, useQueryState } from '../lib/queryState';
 import { fetchAttachment } from '../trip/attachments';
-import { useTrip } from '../trip/store';
+import { useTripActions } from '../trip/actions';
+import { useTrip, useTripStore } from '../trip/store';
 import { Button } from '../ui/Button';
 import { IconButton } from '../ui/IconButton';
 import { Sheet } from '../ui/Sheet';
@@ -14,6 +15,8 @@ import {
   opensInline,
   participantNames,
 } from './format';
+import { diffFields } from './formModel';
+import { EventForm } from './EventForm';
 import styles from './EventSheet.module.css';
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
@@ -23,6 +26,10 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
       <dd>{children}</dd>
     </div>
   );
+}
+
+function hasPlace(l: Location): boolean {
+  return Boolean(l.name || l.address || (l.lat !== undefined && l.lng !== undefined));
 }
 
 function LocationField({ label, loc }: { label: string; loc: Location }) {
@@ -99,7 +106,64 @@ function AttachmentRow({ a }: { a: Attachment }) {
   );
 }
 
-function Details({ event }: { event: Event }) {
+function WriteStatus() {
+  const store = useTripStore();
+  const pending = useTrip((s) => s.pending);
+  const lastError = useTrip((s) => s.lastError);
+  if (lastError) {
+    return (
+      <div role="alert" className={styles.error}>
+        Could not save: {lastError.message}{' '}
+        <button
+          type="button"
+          className={styles.linkButton}
+          onClick={() => store.getState().setWriteState({ lastError: null })}
+        >
+          Dismiss
+        </button>
+      </div>
+    );
+  }
+  return pending > 0 ? (
+    <div role="status" className={styles.meta}>
+      Saving...
+    </div>
+  ) : null;
+}
+
+function Actions({ onEdit, onDelete }: { onEdit: () => void; onDelete: () => void }) {
+  const [confirming, setConfirming] = useState(false);
+  const del = onDelete;
+  if (confirming) {
+    return (
+      <>
+        <span>Delete this event?</span>
+        <Button onClick={del} className={styles.danger}>
+          Delete
+        </Button>
+        <Button onClick={() => setConfirming(false)}>Keep</Button>
+      </>
+    );
+  }
+  return (
+    <>
+      <Button onClick={onEdit}>Edit</Button>
+      <Button onClick={() => setConfirming(true)} className={styles.danger}>
+        Delete
+      </Button>
+    </>
+  );
+}
+
+function Details({
+  event,
+  onEdit,
+  onDelete,
+}: {
+  event: Event;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
   const roster = useTrip((s) => s.meta?.roster ?? []);
   const [copied, setCopied] = useState<'idle' | 'ok' | 'failed'>('idle');
   useEffect(() => {
@@ -148,8 +212,12 @@ function Details({ event }: { event: Event }) {
             </span>
           </Field>
         )}
-        {event.location && <LocationField label="Location" loc={event.location} />}
-        {event.endLocation && <LocationField label="Arrives at" loc={event.endLocation} />}
+        {event.location && hasPlace(event.location) && (
+          <LocationField label="Location" loc={event.location} />
+        )}
+        {event.endLocation && hasPlace(event.endLocation) && (
+          <LocationField label="Arrives at" loc={event.endLocation} />
+        )}
         <Field label="Participants">{participantNames(event, roster)}</Field>
         {event.notes && <Field label="Notes">{event.notes}</Field>}
         {files.length > 0 && (
@@ -172,17 +240,25 @@ function Details({ event }: { event: Event }) {
         )}
       </dl>
       {/* Actions row: planfully-ecw.2 adds Edit and Delete, planfully-ecw.4 adds Attach. */}
-      <div className={styles.actions} data-slot="event-actions" />
+      <div className={styles.actions} data-slot="event-actions">
+        <Actions onEdit={onEdit} onDelete={onDelete} />
+      </div>
     </>
   );
 }
 
 export function EventSheet() {
   const [id, setId] = useQueryState('e', stringCodec, '');
-  const events = useTrip((s) => s.events);
   const status = useTrip((s) => s.status);
-  const close = useCallback(() => setId(''), [setId]);
   if (!id || status === 'loading') return null;
+  return <OpenSheet key={id} id={id} setId={setId} />;
+}
+
+function OpenSheet({ id, setId }: { id: string; setId: (v: string) => void }) {
+  const events = useTrip((s) => s.events);
+  const close = useCallback(() => setId(''), [setId]);
+  const [editing, setEditing] = useState(false);
+  const actions = useTripActions();
   const event = events.find((e) => e.id === id);
 
   return (
@@ -193,7 +269,30 @@ export function EventSheet() {
           ×
         </IconButton>
       </div>
-      {event ? <Details event={event} /> : <p>This event may have been deleted.</p>}
+      <WriteStatus />
+      {!event ? (
+        <p>This event may have been deleted.</p>
+      ) : editing ? (
+        <EventForm
+          initial={event}
+          onCancel={() => setEditing(false)}
+          onSubmit={async (fields) => {
+            const changes = diffFields(event, fields);
+            if (Object.keys(changes).length > 0) await actions.patchEvent(event.id, changes);
+            setEditing(false);
+          }}
+        />
+      ) : (
+        <Details
+          event={event}
+          onEdit={() => setEditing(true)}
+          onDelete={() => {
+            close();
+            // The write path restores the event and sets lastError on failure: reopen to show it.
+            actions.deleteEvent(event.id).catch(() => setId(event.id));
+          }}
+        />
+      )}
     </Sheet>
   );
 }
