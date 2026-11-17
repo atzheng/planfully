@@ -82,7 +82,9 @@ export function createTripActions(store: TripStore, opts: ActionOptions = {}): T
   return {
     async putEvent(input) {
       // Explicit undefined values must not override the defaults.
-      const given = Object.fromEntries(Object.entries(input).filter(([, v]) => v !== undefined));
+      const given = Object.fromEntries(
+        Object.entries(input).filter(([, v]) => v !== undefined),
+      ) as NewEvent;
       const event: Event = {
         attachments: [],
         participants: [],
