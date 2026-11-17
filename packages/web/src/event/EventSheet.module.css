@@ -85,3 +85,8 @@
 .actions:empty {
   display: none;
 }
+
+.danger {
+  color: var(--danger);
+  border-color: var(--danger);
+}
