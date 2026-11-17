@@ -81,6 +81,12 @@ export interface NewTrip {
   allowedSenders: string[];
 }
 
+/** D1 reports `D1_ERROR: UNIQUE constraint failed: trips.address: SQLITE_CONSTRAINT`. */
+export function isAddressCollision(err: unknown): boolean {
+  const msg = err instanceof Error ? `${err.message} ${String(err.cause ?? '')}` : String(err);
+  return /UNIQUE constraint failed: trips\.address/i.test(msg);
+}
+
 export async function createTrip(env: Env, input: NewTrip): Promise<TripRow> {
   const domain = env.TRIP_DOMAIN.toLowerCase();
   for (let attempt = 0; ; attempt++) {
@@ -116,8 +122,8 @@ export async function createTrip(env: Env, input: NewTrip): Promise<TripRow> {
         .run();
       return row;
     } catch (err) {
-      // Address collision (UNIQUE) is vanishingly rare; retry with a new suffix.
-      if (attempt >= 4) throw err;
+      // Address collision (UNIQUE) is vanishingly rare; retry with a new suffix. Anything else propagates.
+      if (!isAddressCollision(err) || attempt >= 4) throw err;
     }
   }
 }
@@ -141,18 +147,28 @@ export interface TripPatch {
   allowedSenders?: string[];
 }
 
-/** Applies the given fields; returns the updated row, or null if the trip does not exist. */
+/**
+ * Applies the given fields in a single UPDATE (only the provided columns, so concurrent patches of
+ * different fields do not clobber each other); returns the updated row, or null if the trip does not exist.
+ */
 export async function updateTrip(env: Env, id: string, patch: TripPatch): Promise<TripRow | null> {
-  const existing = await getTripById(env, id);
-  if (!existing) return null;
-  const next: TripRow = {
-    ...existing,
-    name: patch.name ?? existing.name,
-    roster: patch.roster ?? existing.roster,
-    allowedSenders: patch.allowedSenders ?? existing.allowedSenders,
-  };
-  await env.DB.prepare('UPDATE trips SET name = ?, roster = ?, allowed_senders = ? WHERE id = ?')
-    .bind(next.name, JSON.stringify(next.roster), JSON.stringify(next.allowedSenders), id)
-    .run();
-  return next;
+  const sets: string[] = [];
+  const values: unknown[] = [];
+  if (patch.name !== undefined) {
+    sets.push('name = ?');
+    values.push(patch.name);
+  }
+  if (patch.roster !== undefined) {
+    sets.push('roster = ?');
+    values.push(JSON.stringify(patch.roster));
+  }
+  if (patch.allowedSenders !== undefined) {
+    sets.push('allowed_senders = ?');
+    values.push(JSON.stringify(patch.allowedSenders));
+  }
+  if (sets.length === 0) return getTripById(env, id);
+  const r = await env.DB.prepare(`UPDATE trips SET ${sets.join(', ')} WHERE id = ? RETURNING *`)
+    .bind(...values, id)
+    .first<RawTripRow>();
+  return r ? fromRaw(r) : null;
 }
