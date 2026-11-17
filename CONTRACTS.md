@@ -130,6 +130,8 @@ Known limitations (accepted for now):
 - A late put that bridges two groups (shared tag or id) makes patches apply retroactively across the merged group, and a compacted snapshot of one group then overrides the other group's earlier puts.
 - Groups with two or more distinct dedupe tags are never compacted.
 
+**Dedupe tag input (email ingest, `routes/default.ts`).** Events without a `confirmation` get no tag. Otherwise `dedupeTag(dedupeKey, type, input)` where `input` is the confirmation for non-transport types, and for `flight|train|bus|ferry|car` `${confirmation}|${placeKey(location)}|${placeKey(endLocation)}` (so each leg of a multi-leg booking has its own tag; `dedupeTag` strips non-alphanumerics, so the separators only aid reading). `placeKey(loc)` = the 3-letter capital code in parentheses in `loc.name` if any, else the first standalone 3-letter capital token ("San Francisco (SFO)", "SFO", "SFO Terminal 2" all give `SFO`), else `name` lowercased with non-alphanumerics removed, else `''`. Limitation: a place named differently with no code (e.g. "San Francisco International" vs "SFO") yields a different tag and thus a duplicate event.
+
 ## 4. Crypto (`crypto.ts`)
 
 ```ts
@@ -189,6 +191,9 @@ type ParsedEmail = { from: string; to: string; suffix: string; subject: string; 
                      attachments: { filename: string; mime: string; bytes: Uint8Array }[];
                      sourceAttachment: Attachment }   // the sealed raw .eml, already stored
 type EmailRoute = (ctx: { env: Env; trip: TripRow; email: ParsedEmail }) => Promise<void>
+// email/store.ts: storeAttachment(env, trip, { filename, mime, bytes }): Promise<Attachment>  (seal + putBlob, fresh uuid, kind 'file', size = plaintext)
+//                  appendEvent(env, trip, event: Event, dedupe: string | null): Promise<number>  (EventSchema-validates, seals a put, appends)
+// routes/default.ts exports setLlmClientForTests(client | undefined) so tests can inject the parseEmail client; `today` = UTC day of the Date header, else now
 // email/handler.ts exports handleEmail(message, env, ctx) and a mutable `routes` map; it picks routes[suffix] ?? routes[''];  '' -> routes/default.ts, 'receipts' -> routes/receipts.ts
 
 // email/auth.ts: sender check. From must hold exactly one mailbox (postal-mime addressParser; zero, several,
