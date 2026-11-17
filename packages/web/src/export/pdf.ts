@@ -4,6 +4,14 @@ import { DateTime } from 'luxon';
 import { dayKey, toInstant, type Event, type RosterMember } from '@planfully/shared';
 import type { Filter } from '../filters/filter';
 import { participantNames } from '../event/format';
+import {
+  chooseFont,
+  coverageFor,
+  detectScripts,
+  loadFontBase64,
+  sanitize,
+  type FontLoader,
+} from './fonts';
 
 export type ItineraryRow = {
   id: string;
@@ -178,19 +186,43 @@ export function pdfFileName(tripName: string): string {
 }
 
 /**
- * jsPDF's built-in fonts only cover WinAnsi (Latin). Anything else would print as garbage,
- * so replace it with '?'. Known limitation: no embedded Unicode font yet.
+ * jsPDF's built-in fonts only cover WinAnsi (Latin); anything else would print as garbage, so it
+ * becomes '?'. renderPdf swaps in a Unicode font (see fonts.ts) when the itinerary needs one.
  */
 export function latinSafe(s: string): string {
-  return s.replace(
-    // eslint-disable-next-line no-control-regex
-    /[^\x09\x0A\x20-\x7E\xA0-\xFF–—‘’“”•…€]/gu,
-    '?',
-  );
+  return sanitize(s, null);
 }
 
+/** Every string that ends up on the page. */
+export function itineraryText(it: Itinerary): string {
+  const rows = [...it.days.flatMap((d) => d.rows), ...it.unscheduled];
+  return [
+    it.tripName,
+    it.generated,
+    ...it.filters,
+    ...it.days.map((d) => d.label),
+    ...rows.flatMap((r) => [
+      r.time,
+      r.name,
+      r.type,
+      r.confirmation,
+      r.location,
+      r.participants,
+      r.notes,
+      ...r.attachments,
+    ]),
+  ].join('\n');
+}
+
+export type RenderDeps = {
+  /** Fetches a font file as base64. Defaults to /fonts/<file> on our own origin. */
+  loadFont?: FontLoader;
+  /** Defaults to doc.save(fileName). */
+  save?: (doc: import('jspdf').jsPDF, fileName: string) => void;
+};
+
 /** Builds and downloads the PDF. Loads jsPDF and autotable on first use. */
-export async function renderPdf(it: Itinerary): Promise<void> {
+export async function renderPdf(it: Itinerary, deps: RenderDeps = {}): Promise<void> {
   const [{ jsPDF }, { autoTable }] = await Promise.all([
     import('jspdf'),
     import('jspdf-autotable'),
@@ -199,12 +231,29 @@ export async function renderPdf(it: Itinerary): Promise<void> {
   const margin = 40;
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
-  const t = latinSafe;
+  // Only fetch a Unicode font when the text needs one.
+  const choice = chooseFont(detectScripts(itineraryText(it)));
+  let family = 'helvetica';
+  if (choice) {
+    const load = deps.loadFont ?? loadFontBase64;
+    const data = new Map<string, string>();
+    for (const face of choice.faces) {
+      if (!data.has(face.file)) data.set(face.file, await load(face.file));
+    }
+    for (const face of choice.faces) {
+      const vfsName = `${face.style}-${face.file}`;
+      doc.addFileToVFS(vfsName, data.get(face.file) ?? '');
+      doc.addFont(vfsName, choice.family, face.style);
+    }
+    family = choice.family;
+  }
+  const covers = choice ? await coverageFor(choice) : null;
+  const t = (s: string) => sanitize(s, covers);
 
   let y = margin + 14;
-  doc.setFont('helvetica', 'bold').setFontSize(18).text(t(it.tripName), margin, y);
+  doc.setFont(family, 'bold').setFontSize(18).text(t(it.tripName), margin, y);
   y += 16;
-  doc.setFont('helvetica', 'normal').setFontSize(9).setTextColor(90);
+  doc.setFont(family, 'normal').setFontSize(9).setTextColor(90);
   doc.text(t(`${it.generated}. ${it.count} ${it.count === 1 ? 'event' : 'events'}.`), margin, y);
   y += 12;
   const filterLine = it.filters.length
@@ -238,7 +287,7 @@ export async function renderPdf(it: Itinerary): Promise<void> {
       ]),
       showHead: 'everyPage',
       rowPageBreak: 'avoid',
-      styles: { font: 'helvetica', fontSize: 8.5, cellPadding: 4, overflow: 'linebreak' },
+      styles: { font: family, fontSize: 8.5, cellPadding: 4, overflow: 'linebreak' },
       headStyles: { fillColor: [90, 90, 90], textColor: 255 },
       // Fixed widths so every day's table lines up (A4 content width is 515pt).
       columnStyles: {
@@ -269,5 +318,5 @@ export async function renderPdf(it: Itinerary): Promise<void> {
     doc.setFontSize(8).setTextColor(120);
     doc.text(`Page ${i} of ${pages}`, pageW - margin, pageH - 20, { align: 'right' });
   }
-  doc.save(pdfFileName(it.tripName));
+  (deps.save ?? ((d, name) => d.save(name)))(doc, pdfFileName(it.tripName));
 }

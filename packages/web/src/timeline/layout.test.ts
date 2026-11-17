@@ -1,6 +1,12 @@
 import type { Event, RosterMember } from '@planfully/shared';
 import { expect, test } from 'vitest';
-import { initialScrollMs, layoutEvents, MIN_BLOCK_PX, type LaneSpec } from './layout';
+import {
+  initialScrollMs,
+  layoutEvents,
+  MIN_BLOCK_PX,
+  withoutEmptyLanes,
+  type LaneSpec,
+} from './layout';
 import { makeScale } from './scale';
 
 const TZ = 'UTC';
@@ -103,6 +109,31 @@ test('participant lane for unknown ids and empty roster', () => {
   expect(r.blocks).toHaveLength(1);
   const r2 = layoutEvents([x], scale, { mode: 'participant', roster: [] });
   expect(r2.lanes.map((l) => l.key)).toEqual(['_other']);
+  expect(r.lanes[2]?.label).toBe('Former participants');
+});
+
+test('withoutEmptyLanes hides participant lanes with no events but keeps the single lane', () => {
+  const x = ev('2026-06-01T09:00', null, { participants: ['alice'] });
+  const r = layoutEvents([x], scale, { mode: 'participant', roster });
+  expect(r.lanes.map((l) => l.key)).toEqual(['alice', 'bob']);
+  expect(withoutEmptyLanes(r, 'participant').lanes.map((l) => l.key)).toEqual(['alice']);
+  const none = layoutEvents([], scale, { mode: 'none', roster });
+  expect(withoutEmptyLanes(none, 'none').lanes).toHaveLength(1);
+});
+
+test('empty roster: everyone events land in the single fallback lane', () => {
+  const x = ev('2026-06-01T09:00', null, { participants: [] });
+  const r = layoutEvents([x], scale, { mode: 'participant', roster: [] });
+  expect(r.lanes).toEqual([{ key: '_other', label: 'Everyone' }]);
+  expect(r.blocks.map((b) => b.eventId)).toEqual([x.id]);
+});
+
+test('only: participant mode shows just the selected participants lanes', () => {
+  const all = ev('2026-06-01T09:00', null, { participants: [] });
+  const both = ev('2026-06-01T10:00', null, { participants: ['alice', 'bob'] });
+  const r = layoutEvents([all, both], scale, { mode: 'participant', roster, only: ['bob'] });
+  expect(r.lanes.map((l) => l.key)).toEqual(['bob']);
+  expect(r.blocks.map((b) => b.laneKey)).toEqual(['bob', 'bob']);
 });
 
 test('unscheduled events are separated', () => {
