@@ -269,14 +269,45 @@ describe('planCompaction', () => {
     expect(body.kind === 'put' && body.event.pinned).toEqual(['deleted']);
   });
 
-  it('skips groups joined by more than one dedupe tag', () => {
+  it('writes one identical snapshot per dedupe tag, deletes on the last', () => {
     const l = [
       put(1, ev('a'), 't1'),
-      put(2, ev('a'), 't2'),
+      put(2, ev('a', { notes: 'x' }), 't2'),
       put(3, ev('a'), 't1'),
-      put(4, ev('a'), 't2'),
+      patch(4, 'a', { name: 'edited' }),
+    ];
+    const plans = planCompaction(l);
+    expect(plans.map((p) => p.write.dedupe)).toEqual(['t1', 't2']);
+    expect(plans[0]!.deleteSeqs).toEqual([]);
+    expect(plans[1]!.deleteSeqs).toEqual([1, 2, 3, 4]);
+    expect(plans[0]!.write.body).toEqual(plans[1]!.write.body);
+    const expected = fold(l);
+    const written = plans.map((p, i) => rec(10 + i, p.write.body, p.write.dedupe));
+    expect(fold(written)).toEqual(expected);
+    expect(fold([...l, ...written])).toEqual(expected);
+    // stopped after the first write (nothing deleted yet)
+    expect(fold([...l, written[0]!])).toEqual(expected);
+    // an email carrying either tag, written later, still joins the group
+    for (const tag of ['t1', 't2']) {
+      const later = put(20, ev('n', { name: 'later' }), tag);
+      const want = fold([...l, later]);
+      expect(want).toHaveLength(1);
+      expect(fold([...written, later])).toEqual(want);
+    }
+    // and the compacted log compacts no further until it grows again
+    expect(planCompaction(written)).toEqual([]);
+  });
+
+  it('skips groups where a patch removed an attachment (tombstones cannot be carried)', () => {
+    const l = [
+      put(1, ev('a', { attachments: [att('x')] })),
+      patch(2, 'a', { attachments: [] }),
+      patch(3, 'a', { name: 'n' }),
+      patch(4, 'a', { notes: 'n' }),
     ];
     expect(planCompaction(l)).toEqual([]);
+    // re-adding the attachment lifts the tombstone
+    expect(planCompaction([...l, patch(5, 'a', { attachments: [att('x')] })])).toHaveLength(1);
   });
 
   it('does not touch ignored orphan patches', () => {
@@ -301,6 +332,93 @@ describe('planCompaction', () => {
     expect(e!.id).toBe('a');
     expect(e!.name).toBe('mine');
     expect(e!.notes).toBe('fresh');
+  });
+});
+
+describe('attachment tombstones', () => {
+  const base = [put(1, ev('a', { attachments: [att('x'), att('y')] }), 't')];
+  it('an email put cannot re-add an attachment a patch removed', () => {
+    const l = [
+      ...base,
+      patch(2, 'a', { attachments: [att('y')] }),
+      put(3, ev('a2', { attachments: [att('x'), att('z')] }), 't'),
+    ];
+    expect(fold(l)[0]!.attachments.map((a) => a.id)).toEqual(['y', 'z']);
+  });
+  it('a later patch can re-add it, and then emails may list it again', () => {
+    const l = [
+      ...base,
+      patch(2, 'a', { attachments: [att('y')] }),
+      patch(3, 'a', { attachments: [att('x'), att('y')] }),
+      put(4, ev('a', { attachments: [att('x')] }), 't'),
+    ];
+    expect(fold(l)[0]!.attachments.map((a) => a.id)).toEqual(['x', 'y']);
+  });
+  it('a put before the patch is unaffected', () => {
+    const l = [
+      ...base,
+      put(2, ev('a', { attachments: [att('w')] }), 't'),
+      patch(3, 'a', { attachments: [att('w')] }),
+    ];
+    expect(fold(l)[0]!.attachments.map((a) => a.id)).toEqual(['w']);
+  });
+});
+
+describe('patches that clear fields (null)', () => {
+  it('null removes an optional field and pins it against emails', () => {
+    const l = [
+      put(
+        1,
+        ev('a', {
+          notes: 'n',
+          confirmation: 'C',
+          start: { local: '2026-06-01T10:00', tz: 'Europe/Paris' },
+        }),
+      ),
+      patch(2, 'a', { notes: null, start: null }),
+      put(3, ev('a', { notes: 'again', start: { local: '2026-06-02T10:00', tz: 'Europe/Paris' } })),
+    ];
+    const [e] = fold(l);
+    expect(e).toEqual(ev('a', { confirmation: 'C', pinned: ['notes', 'start'] }));
+    expect('notes' in e!).toBe(false);
+  });
+  it('is allowed only on optional fields', () => {
+    const body = (fields: unknown) => ({ kind: 'patch', target: 'a', fields });
+    expect(
+      RecordBodySchema.safeParse(body({ location: null, endLocation: null, notes: null })).success,
+    ).toBe(true);
+    for (const f of [
+      'name',
+      'type',
+      'attachments',
+      'participants',
+      'status',
+      'deleted',
+      'pinned',
+    ]) {
+      expect(RecordBodySchema.safeParse(body({ [f]: null })).success, f).toBe(false);
+    }
+  });
+});
+
+describe('late bridges are not retroactive', () => {
+  it('a patch written before its target id existed stays ignored after a bridging put', () => {
+    const l = [
+      put(1, ev('a', { name: 'A' }), 't'),
+      patch(2, 'x', { name: 'too early' }),
+      del(3, 'x'),
+      put(4, ev('x', { name: 'X' }), 't'), // bridges: same tag as a
+    ];
+    expect(fold(l)).toEqual([ev('a', { name: 'X' })]);
+  });
+  it('a patch to an id written after its put still applies in the merged group', () => {
+    const l = [
+      put(1, ev('a', { name: 'A' }), 't1'),
+      put(2, ev('b', { name: 'B' }), 't2'),
+      patch(3, 'b', { notes: 'mine' }),
+      put(4, ev('b', { name: 'B2' }), 't1'),
+    ];
+    expect(fold(l)).toEqual([ev('a', { name: 'B2', notes: 'mine', pinned: ['notes'] })]);
   });
 });
 
@@ -418,7 +536,7 @@ const TAGS = ['t1', 't2', 't3', null, null];
 /**
  * Random records with seqs from `startSeq`. When `existing` is given, puts never bridge
  * existing groups: they reuse the (id, tag) pair of an existing put or use fresh ones.
- * Bridging after compaction is a documented limitation (CONTRACTS.md section 3).
+ * Bridging after compaction (a late put joining a compacted group to another) is a documented limitation (CONTRACTS.md section 3).
  */
 function randomRecords(
   r: () => number,
@@ -471,6 +589,8 @@ function randomRecords(
         if (r() < 0.3) fields.status = pick(['confirmed', 'cancelled']);
         if (r() < 0.3) fields.attachments = [att(pick(['x', 'y', 'w']))];
         if (r() < 0.1) fields.deleted = false;
+        if (r() < 0.15) fields.notes = null;
+        if (r() < 0.1) fields.start = null;
         log.push(patch(seq, target, fields));
       } else {
         log.push(del(seq, target));

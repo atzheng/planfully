@@ -43,8 +43,9 @@ function sortedForReplay(records: OpenedRecord[]): OpenedRecord[] {
  * Splits the log into groups. Puts are joined by a shared non-null dedupe tag or a shared
  * event id (union-find, so chains such as A~B by tag and B~C by id collapse to one group); a
  * compacted put also owns its recorded aliases. A patch/delete joins the group that owns its
- * target id (canonical or alias), but only if it comes after that group's earliest put;
- * otherwise the target was unknown when it was written and it is ignored.
+ * target id (canonical or alias), but only if it comes after the first put that introduced that
+ * id; otherwise the target was unknown when it was written and it is ignored (so a later put
+ * that bridges two groups does not revive patches written before their target existed).
  */
 function buildGroups(sorted: OpenedRecord[]): Group[] {
   const parent: number[] = sorted.map((_, i) => i);
@@ -71,9 +72,15 @@ function buildGroups(sorted: OpenedRecord[]): Group[] {
     if (seen === undefined) byKey.set(key, i);
     else union(i, seen);
   };
+  // seq at which each id first appeared in a put (a compacted put introduces its aliases at its
+  // `firstSeq`); a patch to an id counts only after this, wherever later puts merge the groups.
+  const introSeq = new Map<string, number>();
   sorted.forEach((rec, i) => {
     if (rec.body.kind !== 'put') return;
-    for (const id of putIds(rec)) join('i:' + id, i);
+    for (const id of putIds(rec)) {
+      introSeq.set(id, Math.min(introSeq.get(id) ?? Infinity, firstOf(rec)));
+      join('i:' + id, i);
+    }
     if (rec.dedupe !== null) join('d:' + rec.dedupe, i);
   });
 
@@ -107,7 +114,7 @@ function buildGroups(sorted: OpenedRecord[]): Group[] {
     if (rec.body.kind === 'put') g = groups.get(find(i));
     else {
       g = groupOfId.get(rec.body.target);
-      if (g && rec.seq <= g.firstSeq) g = undefined;
+      if (g && rec.seq <= (introSeq.get(rec.body.target) ?? Infinity)) g = undefined;
     }
     g?.ops.push(rec);
   });
@@ -154,8 +161,7 @@ function applyPut(state: Event | undefined, ev: Event): Event {
   }
   const out = next as unknown as Event;
   // Attachments always union, even when pinned: they are additive provenance (a later email
-  // adds its source-email attachment). A removal made by a patch can therefore be undone by a
-  // later email that re-lists the attachment.
+  // adds its source-email attachment). `replay` filters out ones a patch removed.
   out.attachments = unionAttachments(state.attachments, ev.attachments);
   // createdAt stays the earliest put's
   const p = mergePinned(state.pinned, ev.pinned ?? []);
@@ -168,7 +174,9 @@ function applyPatch(state: Event, fields: Record<string, unknown>): Event {
   const names: string[] = [];
   for (const [key, value] of Object.entries(fields)) {
     if (value === undefined || key === 'id' || key === 'pinned') continue;
-    next[key] = value; // attachments in a patch replace the list
+    if (value === null)
+      delete next[key]; // null clears an optional field
+    else next[key] = value; // attachments in a patch replace the list
     names.push(key);
   }
   const out = next as unknown as Event;
@@ -178,18 +186,39 @@ function applyPatch(state: Event, fields: Record<string, unknown>): Event {
   return out;
 }
 
-function replay(g: Group): Event {
+interface Replayed {
+  event: Event;
+  /** attachment ids a patch removed and no later patch re-added (emails cannot re-add them) */
+  tombstones: Set<string>;
+}
+
+function replay(g: Group): Replayed {
   let state: Event | undefined;
+  let tombs = new Set<string>();
   for (const rec of g.ops) {
     const b = rec.body;
-    // a compacted put is a snapshot: it replaces the state wholesale, whatever the pins say
-    if (b.kind === 'put') state = applyPut(b.compaction ? undefined : state, b.event);
-    else if (!state)
+    if (b.kind === 'put') {
+      if (b.compaction) {
+        // a compacted put is a snapshot: it replaces the state wholesale, whatever the pins say
+        state = applyPut(undefined, b.event);
+        tombs = new Set();
+      } else {
+        const attachments = b.event.attachments.filter((a) => !tombs.has(a.id));
+        state = applyPut(state, { ...b.event, attachments });
+      }
+    } else if (!state)
       continue; // cannot happen: ops start with the group's earliest put
-    else if (b.kind === 'patch') state = applyPatch(state, b.fields as Record<string, unknown>);
-    else state = applyPatch(state, { deleted: true });
+    else if (b.kind === 'patch') {
+      const fields = b.fields as Record<string, unknown>;
+      if (Array.isArray(fields.attachments)) {
+        const kept = new Set((fields.attachments as Attachment[]).map((a) => a.id));
+        for (const a of state.attachments) if (!kept.has(a.id)) tombs.add(a.id);
+        for (const id of kept) tombs.delete(id);
+      }
+      state = applyPatch(state, fields);
+    } else state = applyPatch(state, { deleted: true });
   }
-  return { ...must(state), id: g.canonicalId };
+  return { event: { ...must(state), id: g.canonicalId }, tombstones: tombs };
 }
 
 /**
@@ -199,7 +228,7 @@ function replay(g: Group): Event {
 export function fold(records: OpenedRecord[]): Event[] {
   const out: Event[] = [];
   for (const g of buildGroups(sortedForReplay(records))) {
-    const ev = replay(g);
+    const ev = replay(g).event;
     if (ev.deleted !== true) out.push(ev);
   }
   return out.sort((a, b) =>
@@ -218,28 +247,32 @@ export interface CompactionPlan {
  * carries the group's first seq and aliases and the last replaced seq, so the compacted put
  * behaves as if it still sat where the records it replaces were: patches written after
  * `throughSeq` (even ones that landed before the compacted put did) apply on top of it, and
- * patches to an alias still resolve. Groups joined by more than one distinct dedupe tag are
- * skipped: a single record can carry only one tag.
+ * patches to an alias still resolve. A group with several dedupe tags gets one identical
+ * snapshot per tag. A group with attachment tombstones is skipped.
  */
 export function planCompaction(records: OpenedRecord[], minRecords = 4): CompactionPlan[] {
   const plans: CompactionPlan[] = [];
   for (const g of buildGroups(sortedForReplay(records))) {
-    if (g.ops.length < minRecords || g.tags.size > 1) continue;
+    if (g.ops.length < minRecords) continue;
+    const { event, tombstones } = replay(g);
+    // A snapshot cannot carry attachment tombstones (the record format has no room for them),
+    // so such groups stay as they are; see CONTRACTS.md section 3.
+    if (tombstones.size > 0) continue;
     const deleteSeqs = g.ops.map((r) => r.seq);
-    plans.push({
-      write: {
-        body: {
-          kind: 'put',
-          event: replay(g),
-          compaction: {
-            firstSeq: g.firstSeq,
-            throughSeq: Math.max(...deleteSeqs),
-            aliases: [...g.ids].filter((id) => id !== g.canonicalId).sort(),
-          },
-        },
-        dedupe: g.tags.size === 1 ? must([...g.tags][0]) : null,
-      },
-      deleteSeqs,
+    const compaction = {
+      firstSeq: g.firstSeq,
+      throughSeq: Math.max(...deleteSeqs),
+      aliases: [...g.ids].filter((id) => id !== g.canonicalId).sort(),
+    };
+    // One record carries one dedupe tag, so a group with several tags gets one identical
+    // snapshot per tag (later emails with any of those tags keep joining the group). The
+    // deletes ride on the last plan: stopping part way leaves every tag still covered.
+    const tags: (string | null)[] = g.tags.size === 0 ? [null] : [...g.tags].sort();
+    tags.forEach((dedupe, i) => {
+      plans.push({
+        write: { body: { kind: 'put', event, compaction }, dedupe },
+        deleteSeqs: i === tags.length - 1 ? deleteSeqs : [],
+      });
     });
   }
   return plans;
