@@ -64,7 +64,7 @@ export type TripState = {
   setMeta(meta: TripMeta): void;
   /** Writes in flight (trip/actions.ts). */
   pending: number;
-  /** The last failed write, cleared by the next successful one. */
+  /** The last failed write. Only cleared by the UI via setWriteState({ lastError: null }). */
   lastError: TripError | null;
   /** Write path: show a temporary record immediately; returns its (very large) temp seq. */
   addOptimistic(body: OpenedRecord['body']): number;
@@ -127,6 +127,12 @@ function mergeRecords(have: OpenedRecord[], add: OpenedRecord[]): OpenedRecord[]
 }
 
 class StalledError extends Error {}
+
+/** Temp (optimistic) records have seqs above this; skip them for compaction or offline caches. */
+const TEMP_SEQ_BASE = Number.MAX_SAFE_INTEGER - 1_000_000;
+export function isTempSeq(seq: number): boolean {
+  return seq > TEMP_SEQ_BASE;
+}
 
 export function toError(e: unknown): TripError {
   if (e instanceof StalledError) return { kind: 'unknown', message: MESSAGES.stalled };
@@ -286,7 +292,7 @@ export function createTripStore(opts: TripStoreOptions): TripStore {
         const s = get();
         // Temp seqs sit above any real seq so they fold last, in submission order.
         tempCounter++;
-        const seq = Number.MAX_SAFE_INTEGER - 1_000_000 + tempCounter;
+        const seq = TEMP_SEQ_BASE + tempCounter;
         const records = [
           ...s.records,
           { seq, dedupe: null, createdAt: new Date().toISOString(), body },

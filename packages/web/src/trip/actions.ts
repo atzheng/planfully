@@ -38,14 +38,30 @@ export function createTripActions(store: TripStore, opts: ActionOptions = {}): T
   };
   const sendRecord = opts.sendRecord ?? defaultSend;
 
+  // Sends go out one at a time, in call order, so a patch can never get a lower seq than the
+  // put it targets. The optimistic apply still happens immediately.
+  let chain: Promise<unknown> = Promise.resolve();
+  // Ids of puts that failed; queued patches/deletes targeting them are dropped, not sent.
+  const failedPuts = new Set<string>();
+
   async function write(body: RecordBody): Promise<void> {
     const s = store.getState();
     if (!s.keys) throw new Error('trip not ready');
+    const publicKey = s.keys.publicKey;
     const tempSeq = s.addOptimistic(body);
     s.setWriteState({ pendingDelta: 1 });
+    const target = body.kind === 'put' ? null : body.target;
+    const run = async () => {
+      if (target !== null && failedPuts.has(target)) {
+        throw new Error('The event this edit belongs to could not be saved.');
+      }
+      const sealed = await sealJson(publicKey, body);
+      return sendRecord(sealed);
+    };
+    const result = chain.then(run, run);
+    chain = result.catch(() => undefined);
     try {
-      const sealed = await sealJson(s.keys.publicKey, body);
-      const { seq } = await sendRecord(sealed);
+      const { seq } = await result;
       const now = store.getState();
       now.settleOptimistic(tempSeq, {
         seq,
@@ -53,8 +69,9 @@ export function createTripActions(store: TripStore, opts: ActionOptions = {}): T
         createdAt: new Date().toISOString(),
         body,
       });
-      now.setWriteState({ pendingDelta: -1, lastError: null });
+      now.setWriteState({ pendingDelta: -1 });
     } catch (e) {
+      if (body.kind === 'put') failedPuts.add(body.event.id);
       const now = store.getState();
       now.settleOptimistic(tempSeq);
       now.setWriteState({ pendingDelta: -1, lastError: toError(e) });
@@ -64,11 +81,13 @@ export function createTripActions(store: TripStore, opts: ActionOptions = {}): T
 
   return {
     async putEvent(input) {
+      // Explicit undefined values must not override the defaults.
+      const given = Object.fromEntries(Object.entries(input).filter(([, v]) => v !== undefined));
       const event: Event = {
         attachments: [],
         participants: [],
         status: 'confirmed',
-        ...input,
+        ...given,
         id: crypto.randomUUID(),
         source: 'manual',
         createdAt: new Date().toISOString(),

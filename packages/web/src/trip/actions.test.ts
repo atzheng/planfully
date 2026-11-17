@@ -114,7 +114,7 @@ describe('actions', () => {
     expect(store.getState().events).toEqual([]);
   });
 
-  test('a failed POST rolls back and sets lastError; the next success clears it', async () => {
+  test('a failed POST rolls back and sets lastError, which a later success does not clear', async () => {
     const post = vi
       .fn()
       .mockRejectedValueOnce(new ApiError(500, 'boom'))
@@ -129,7 +129,9 @@ describe('actions', () => {
     expect(s.lastError?.kind).toBe('network');
     await actions.patchEvent('e1', { name: 'Y' });
     s = store.getState();
-    expect(s.lastError).toBeNull();
+    expect(s.lastError?.kind).toBe('network');
+    s.setWriteState({ lastError: null });
+    expect(store.getState().lastError).toBeNull();
     expect(s.events[0]?.name).toBe('Y');
   });
 
@@ -155,5 +157,54 @@ describe('actions', () => {
     const ev = store.getState().events;
     expect(ev).toHaveLength(1);
     expect(ev[0]).toMatchObject({ id: 'e1', name: 'My flight', notes: 'gate B' });
+  });
+
+  test('sends go out in call order, so a patch never gets a lower seq than its put', async () => {
+    const order: string[] = [];
+    let n = 0;
+    const post = vi.fn().mockImplementation(async (_a, req: { ciphertext: string }) => {
+      const body = await openJson<RecordBody>(keys.privateKey, fromBase64(req.ciphertext));
+      // The put is slower than the patch would be if sends were concurrent.
+      if (body.kind === 'put') await new Promise((r) => setTimeout(r, 30));
+      order.push(body.kind);
+      return { seq: ++n };
+    });
+    const { store, actions } = await setup(post);
+    const ev = actions.putEvent({ name: 'A', type: 'activity' });
+    const id = store.getState().events[0]?.id as string;
+    const patch = actions.patchEvent(id, { name: 'B' });
+    await Promise.all([ev, patch]);
+    expect(order).toEqual(['put', 'patch']);
+    expect(store.getState().records.map((r) => r.seq)).toEqual([1, 2]);
+    expect(store.getState().events[0]?.name).toBe('B');
+  });
+
+  test('when a put fails, queued patches and deletes for it are dropped, not sent', async () => {
+    const post = vi.fn().mockRejectedValueOnce(new ApiError(500, 'boom'));
+    const { store, actions } = await setup(post);
+    const put = actions.putEvent({ name: 'A', type: 'activity' });
+    const id = store.getState().events[0]?.id as string;
+    const patch = actions.patchEvent(id, { name: 'B' });
+    const del = actions.deleteEvent(id);
+    const results = await Promise.allSettled([put, patch, del]);
+    expect(results.map((r) => r.status)).toEqual(['rejected', 'rejected', 'rejected']);
+    expect(post).toHaveBeenCalledTimes(1);
+    const s = store.getState();
+    expect(s.records).toEqual([]);
+    expect(s.pending).toBe(0);
+  });
+
+  test('explicit undefined fields in putEvent do not override defaults', async () => {
+    const post = vi.fn().mockResolvedValue({ seq: 1 });
+    const { store, actions } = await setup(post);
+    const e = await actions.putEvent({
+      name: 'A',
+      type: 'activity',
+      attachments: undefined,
+      participants: undefined,
+      status: undefined,
+    });
+    expect(e).toMatchObject({ attachments: [], participants: [], status: 'confirmed' });
+    expect(store.getState().events).toHaveLength(1);
   });
 });
