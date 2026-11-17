@@ -12,7 +12,7 @@
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",
     "build": "pnpm -r run build",
-    "dev": "pnpm --filter @planfully/worker dev",
+    "dev": "pnpm -r --parallel run dev",
     "seed": "echo 'not yet: pnpm seed arrives with the worker skeleton bead'"
   },
   "devDependencies": {
