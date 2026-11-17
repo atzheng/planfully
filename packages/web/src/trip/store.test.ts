@@ -253,3 +253,102 @@ describe('append', () => {
     expect(store.getState().cursor).toBe(1);
   });
 });
+
+describe('review fixes', () => {
+  test('more:true with no progress stops and reports an error on load', async () => {
+    const { api, getRecords } = fakeApi([]);
+    getRecords.mockResolvedValue({ records: [], latestSeq: 0, more: true });
+    const store = createTripStore({ tripId: 't1', fragment, api });
+    await ready(store);
+    store.stop();
+    expect(getRecords.mock.calls.length).toBeLessThan(5);
+    expect(store.getState().status).toBe('error');
+    expect(store.getState().error?.kind).toBe('unknown');
+  });
+
+  test('stalled paging during sync keeps data and sets the error', async () => {
+    const r1 = await stored(1, put('e1', 'Dinner'));
+    const { api, getRecords } = fakeApi([{ records: [r1], latestSeq: 1, more: false }]);
+    const store = createTripStore({ tripId: 't1', fragment, api });
+    await ready(store);
+    getRecords.mockClear();
+    getRecords.mockResolvedValue({ records: [], latestSeq: 1, more: true });
+    await store.getState().sync();
+    store.stop();
+    expect(getRecords).toHaveBeenCalledTimes(1);
+    expect(store.getState().status).toBe('ready');
+    expect(store.getState().events).toHaveLength(1);
+    expect(store.getState().error?.kind).toBe('unknown');
+  });
+
+  test('records present but none open gives a terminal undecryptable error', async () => {
+    const other = await deriveTripKeys(generateSecret());
+    const foreign: StoredRecord = {
+      seq: 1,
+      dedupe: null,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      ciphertext: toBase64(await sealJson(other.publicKey, put('e1', 'X'))),
+    };
+    const { api } = fakeApi([{ records: [foreign], latestSeq: 1, more: false }]);
+    const store = createTripStore({ tripId: 't1', fragment, api });
+    await ready(store);
+    store.stop();
+    expect(store.getState().status).toBe('error');
+    expect(store.getState().error?.kind).toBe('undecryptable');
+    expect(store.getState().skipped).toBe(1);
+  });
+
+  test('429 and 5xx on initial load retry with backoff', async () => {
+    for (const status of [429, 503]) {
+      const r1 = await stored(1, put('e1', 'Dinner'));
+      const { api, getTrip } = fakeApi([{ records: [r1], latestSeq: 1, more: false }]);
+      getTrip.mockRejectedValueOnce(new ApiError(status, 'busy'));
+      const store = createTripStore({ tripId: 't1', fragment, api, backoffMs: [300] });
+      store.start();
+      await vi.waitFor(() => expect(store.getState().error?.kind).toBe('network'));
+      await vi.waitFor(() => expect(store.getState().status).toBe('ready'));
+      store.stop();
+    }
+  });
+
+  test('a no-change sync does not notify subscribers', async () => {
+    const r1 = await stored(1, put('e1', 'Dinner'));
+    const { api, getRecords } = fakeApi([{ records: [r1], latestSeq: 1, more: false }]);
+    getRecords.mockResolvedValue({ records: [], latestSeq: 1, more: false });
+    const store = createTripStore({ tripId: 't1', fragment, api });
+    await ready(store);
+    const listener = vi.fn();
+    store.subscribe(listener);
+    await store.getState().sync();
+    store.stop();
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  describe('hashchange', () => {
+    afterEach(() => {
+      window.location.hash = '';
+    });
+
+    test('a different secret calls onReplace; removal and same secret do not', async () => {
+      const onReplace = vi.fn();
+      const { api } = fakeApi([{ records: [], latestSeq: 0, more: false }]);
+      window.location.hash = fragment;
+      const store = createTripStore({ tripId: 't1', fragment, api, onReplace });
+      await ready(store);
+
+      window.location.hash = '';
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+      window.location.hash = fragment;
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+      await new Promise((r) => setTimeout(r, 50));
+      expect(onReplace).not.toHaveBeenCalled();
+      expect(store.getState().status).toBe('ready');
+
+      const next = '#' + encodeSecret(generateSecret());
+      window.location.hash = next;
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+      await vi.waitFor(() => expect(onReplace).toHaveBeenCalledWith(next.slice(1)));
+      store.stop();
+    });
+  });
+});

@@ -13,14 +13,17 @@ const viewCodec = enumCodec(VIEWS);
 
 export function TripShell() {
   const { tripId } = useParams();
-  const trip = useTrip();
+  const name = useTrip((s) => s.meta?.name);
+  const status = useTrip((s) => s.status);
+  const error = useTrip((s) => s.error);
+  const skipped = useTrip((s) => s.skipped);
   const [view, setView] = useQueryState('view', viewCodec, 'timeline');
 
   return (
     <div className={styles.shell}>
       <header className={styles.header}>
         <h1 className={styles.title} data-slot="trip-name">
-          {trip.meta?.name ?? `Trip ${tripId}`}
+          {name ?? `Trip ${tripId}`}
         </h1>
         <div className={styles.actions} data-slot="actions" />
       </header>
@@ -28,13 +31,18 @@ export function TripShell() {
         <FilterBar />
       </div>
       <main className={styles.main}>
-        {trip.status === 'error' ? (
-          <p role="alert">{trip.error?.message}</p>
-        ) : trip.status === 'loading' ? (
+        {status === 'error' ? (
+          <p role="alert">{error?.message}</p>
+        ) : status === 'loading' ? (
           <p role="status">Loading trip...</p>
         ) : (
           <>
-            {trip.error?.kind === 'network' && <p role="status">{trip.error.message}</p>}
+            {error && <p role="status">{error.message}</p>}
+            {skipped > 0 && (
+              <p role="status">
+                {skipped} {skipped === 1 ? 'item' : 'items'} couldn&apos;t be read
+              </p>
+            )}
             {view === 'map' ? <MapView /> : <Timeline />}
           </>
         )}

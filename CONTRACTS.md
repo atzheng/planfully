@@ -219,12 +219,12 @@ Never log email content, event content or tokens.
   ```ts
   { tripId: string; meta: TripMeta | null; events: Event[]; records: OpenedRecord[] /* by seq */;
     keys: { privateKey, publicKey, accessToken } | null; status: 'loading' | 'ready' | 'error';
-    error: { kind: 'bad-link' | 'unauthorized' | 'network' | 'unknown'; message: string } | null;
+    error: { kind: 'bad-link' | 'unauthorized' | 'undecryptable' | 'network' | 'unknown'; message: string } | null;
     skipped: number; cursor: number;
     sync(): Promise<void>; append(records: OpenedRecord[]): void; setMeta(meta: TripMeta): void }
   ```
   - `events` is `fold(records)`, recomputed once per change to `records`. `skipped` counts records that failed to open or validate (cumulative); they are never thrown. `cursor` is the server's `latestSeq`, used as `since` on the next fetch.
-  - Errors: missing or invalid fragment gives `bad-link` ("This link is missing its key"); 401/403/404 gives `unauthorized` ("Trip not found or wrong key"); network or 5xx gives `network`. A failed initial load sets `status: 'error'` and retries with backoff (2s, 5s, 15s, then 30s). A network failure during sync keeps `status: 'ready'` and the last data and sets `error` to the `network` error; the next success clears it. A 401 during sync is fatal (`status: 'error'`).
+  - Errors: missing or invalid fragment gives `bad-link` ("This link is missing its key"); 401/403/404 gives `unauthorized` ("Trip not found or wrong key"); records present but none opening gives terminal `undecryptable`; network, 429 or 5xx gives `network`; a paging response that promises more but makes no progress gives `unknown`. `hashchange` to a different secret replaces the store (`onReplace`); removing the fragment keeps the current keys. A failed initial load sets `status: 'error'` and retries with backoff (2s, 5s, 15s, then 30s). A network failure during sync keeps `status: 'ready'` and the last data and sets `error` to the `network` error; the next success clears it. A 401 during sync is fatal (`status: 'error'`).
   - `append(opened)`: for the write path; merges already-opened records by `seq` (duplicates ignored) and re-folds. It does not advance `cursor`, so the next sync still fetches records written by others in between. `setMeta` replaces `meta` after a PATCH.
   - Sync: `since=cursor`, paging while `more`; triggered on window focus, on visibilitychange to visible, and every 60 s while the page is visible. Concurrent calls share one request.
   - `createTripStore({ tripId, fragment, api?, intervalMs?, backoffMs? })` builds a store without React (for tests and caching); `openRecords(privateKey, stored)` is also exported.

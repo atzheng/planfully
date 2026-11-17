@@ -3,7 +3,15 @@
 // The raw secret is not retained after key derivation and is never sent anywhere; only the
 // access token goes out, via lib/api.ts's Authorization header.
 
-import { createContext, createElement, useContext, useEffect, useRef, type ReactNode } from 'react';
+import {
+  createContext,
+  createElement,
+  useContext,
+  useEffect,
+  useReducer,
+  useRef,
+  type ReactNode,
+} from 'react';
 import { useStore } from 'zustand';
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import {
@@ -22,12 +30,14 @@ import * as realApi from '../lib/api';
 
 export type TripKeys = { privateKey: Uint8Array; publicKey: Uint8Array; accessToken: string };
 
-export type TripErrorKind = 'bad-link' | 'unauthorized' | 'network' | 'unknown';
+export type TripErrorKind = 'bad-link' | 'unauthorized' | 'undecryptable' | 'network' | 'unknown';
 export type TripError = { kind: TripErrorKind; message: string };
 
 export const MESSAGES = {
   badLink: 'This link is missing its key',
   unauthorized: 'Trip not found or wrong key',
+  undecryptable: "This link's key doesn't open this trip's data.",
+  stalled: 'The server sent an incomplete response.',
   network: 'Could not reach the server. Retrying...',
 } as const;
 
@@ -63,6 +73,8 @@ export type TripStoreOptions = {
   api?: TripApi;
   /** Polling interval in ms while the page is visible. */
   intervalMs?: number;
+  /** Called when the URL fragment changes to a different secret; the owner should replace the store. */
+  onReplace?: (fragment: string) => void;
   /** Initial-load retry delays in ms; the last repeats. */
   backoffMs?: number[];
 };
@@ -104,12 +116,15 @@ function mergeRecords(have: OpenedRecord[], add: OpenedRecord[]): OpenedRecord[]
   return [...have, ...fresh].sort((a, b) => a.seq - b.seq);
 }
 
+class StalledError extends Error {}
+
 function toError(e: unknown): TripError {
+  if (e instanceof StalledError) return { kind: 'unknown', message: MESSAGES.stalled };
   if (e instanceof realApi.ApiError) {
     if (e.status === 401 || e.status === 403 || e.status === 404) {
       return { kind: 'unauthorized', message: MESSAGES.unauthorized };
     }
-    if (e.status >= 500) return { kind: 'network', message: MESSAGES.network };
+    if (e.status === 429 || e.status >= 500) return { kind: 'network', message: MESSAGES.network };
     return { kind: 'unknown', message: e.message };
   }
   return { kind: 'network', message: MESSAGES.network };
@@ -125,6 +140,8 @@ export function createTripStore(opts: TripStoreOptions): TripStore {
   let retryTimer: ReturnType<typeof setTimeout> | undefined;
   let attempts = 0;
   let started = false;
+  // The raw fragment is only held until keys are derived.
+  let fragment: string | null = opts.fragment;
 
   const store = createStore<TripState>((set, get) => {
     // Pages through records since `since`, opening as it goes.
@@ -137,8 +154,14 @@ export function createTripStore(opts: TripStoreOptions): TripStore {
         const r = await openRecords(keys.privateKey, page.records);
         opened.push(...r.opened);
         skipped += r.skipped;
-        cursor = Math.max(cursor, page.latestSeq);
-        if (!page.more) break;
+        const next = Math.max(cursor, page.latestSeq);
+        if (!page.more) {
+          cursor = next;
+          break;
+        }
+        // More pages promised but no progress: bail out instead of hammering the server.
+        if (page.records.length === 0 && next <= cursor) throw new StalledError();
+        cursor = next;
       }
       return { opened, skipped, cursor };
     }
@@ -150,6 +173,14 @@ export function createTripStore(opts: TripStoreOptions): TripStore {
         const meta = await api.getTrip(auth);
         const { opened, skipped, cursor } = await fetchAll(keys, auth, 0);
         attempts = 0;
+        if (skipped > 0 && opened.length === 0) {
+          set({
+            status: 'error',
+            error: { kind: 'undecryptable', message: MESSAGES.undecryptable },
+            skipped,
+          });
+          return;
+        }
         set({
           meta,
           records: opened,
@@ -179,16 +210,21 @@ export function createTripStore(opts: TripStoreOptions): TripStore {
         const { opened, skipped, cursor: next } = await fetchAll(keys, auth, cursor);
         const s = get();
         const records = mergeRecords(s.records, opened);
-        set({
-          cursor: Math.max(s.cursor, next),
-          skipped: s.skipped + skipped,
-          error: null,
-          ...(records !== s.records ? { records, events: fold(records) } : {}),
-        });
+        const patch: Partial<TripState> = {};
+        if (next > s.cursor) patch.cursor = next;
+        if (skipped > 0) patch.skipped = s.skipped + skipped;
+        if (s.error) patch.error = null;
+        if (records !== s.records) {
+          patch.records = records;
+          patch.events = fold(records);
+        }
+        if (Object.keys(patch).length > 0) set(patch);
       } catch (e) {
         const err = toError(e);
         // Keep showing the last data; a revoked link is fatal.
-        set(err.kind === 'unauthorized' ? { status: 'error', error: err } : { error: err });
+        const cur = get().error;
+        if (err.kind === 'unauthorized') set({ status: 'error', error: err });
+        else if (cur?.kind !== err.kind || cur.message !== err.message) set({ error: err });
       }
     }
 
@@ -235,7 +271,9 @@ export function createTripStore(opts: TripStoreOptions): TripStore {
   });
 
   async function init() {
-    const frag = opts.fragment.replace(/^#/, '');
+    if (store.getState().keys) return; // restarted (e.g. effect re-run): keys already derived
+    const frag = (fragment ?? '').replace(/^#/, '');
+    fragment = null;
     try {
       const secret = decodeSecret(frag);
       const keys = await deriveTripKeys(secret);
@@ -250,6 +288,22 @@ export function createTripStore(opts: TripStoreOptions): TripStore {
     if (document.visibilityState !== 'hidden') void store.getState().sync();
   };
 
+  const onHashChange = () => {
+    const frag = window.location.hash.replace(/^#/, '');
+    // A removed fragment (in-app navigation) keeps the current keys.
+    if (frag === '' || !opts.onReplace) return;
+    const replace = opts.onReplace;
+    void (async () => {
+      try {
+        const keys = await deriveTripKeys(decodeSecret(frag));
+        if (keys.accessToken === store.getState().keys?.accessToken) return;
+      } catch {
+        // an invalid new fragment replaces the store too, which shows the bad-link error
+      }
+      replace(frag);
+    })();
+  };
+
   return Object.assign(store, {
     start() {
       if (started) return;
@@ -258,6 +312,7 @@ export function createTripStore(opts: TripStoreOptions): TripStore {
         if (started && store.getState().keys) void store.getState().sync();
       });
       window.addEventListener('focus', onFocus);
+      window.addEventListener('hashchange', onHashChange);
       document.addEventListener('visibilitychange', onFocus);
       timer = setInterval(() => {
         if (document.visibilityState !== 'hidden' && store.getState().status === 'ready') {
@@ -270,6 +325,7 @@ export function createTripStore(opts: TripStoreOptions): TripStore {
       clearInterval(timer);
       clearTimeout(retryTimer);
       window.removeEventListener('focus', onFocus);
+      window.removeEventListener('hashchange', onHashChange);
       document.removeEventListener('visibilitychange', onFocus);
     },
   });
@@ -287,13 +343,21 @@ export function TripProvider({
   /** Tests may inject a store. */
   store?: TripStore;
 }) {
-  // Read the fragment once per trip; the store never exposes it.
+  // Read the fragment once per trip; the store never exposes it. A different secret in the
+  // fragment (hashchange) replaces the store.
   const ref = useRef<{ id: string; store: TripStore } | null>(null);
+  const [, bump] = useReducer((n: number) => n + 1, 0);
+  const make = (fragment: string): TripStore =>
+    createTripStore({
+      tripId,
+      fragment,
+      onReplace: (f) => {
+        ref.current = { id: tripId, store: make(f) };
+        bump();
+      },
+    });
   if (!ref.current || ref.current.id !== tripId) {
-    ref.current = {
-      id: tripId,
-      store: store ?? createTripStore({ tripId, fragment: window.location.hash }),
-    };
+    ref.current = { id: tripId, store: store ?? make(window.location.hash) };
   }
   const current = ref.current.store;
   useEffect(() => {
