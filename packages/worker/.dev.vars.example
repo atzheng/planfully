@@ -1,0 +1,4 @@
+# Copy to .dev.vars (gitignored). Code runs with the two API keys unset.
+ADMIN_SECRET=dev-admin-secret
+ANTHROPIC_API_KEY=
+GOOGLE_MAPS_SERVER_KEY=
