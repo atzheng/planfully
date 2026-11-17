@@ -44,7 +44,7 @@ packages/web/src/
 
 Skeleton beads create placeholder files at these paths (routers, `Timeline.tsx`, `MapView.tsx`, email routes) so later beads fill in a file instead of editing a shared one.
 
-Libraries, fixed: pnpm, TypeScript, vitest, zod, luxon (time), `@noble/curves` + `@noble/hashes`, Hono, `@cloudflare/vitest-pool-workers`, postal-mime, `@anthropic-ai/sdk`, React, react-router, zustand, plain CSS modules with CSS variables (no Tailwind), `@vis.gl/react-google-maps`, jsPDF + jspdf-autotable (lazy-loaded), `idb`, vite-plugin-pwa. Use the current stable version of each. Do not add other runtime dependencies without a reason written in the bead's closing note.
+Libraries, fixed: pnpm, TypeScript, vitest, zod, luxon (time), `@noble/curves` + `@noble/hashes`, Hono, `@cloudflare/vitest-plugin` (successor of vitest-pool-workers), postal-mime, `@anthropic-ai/sdk`, React, react-router, zustand, plain CSS modules with CSS variables (no Tailwind), `@vis.gl/react-google-maps`, jsPDF + jspdf-autotable (lazy-loaded), `idb`, vite-plugin-pwa. Use the current stable version of each. Do not add other runtime dependencies without a reason written in the bead's closing note.
 
 ## 2. Shared types (`schema.ts`, `time.ts`)
 
