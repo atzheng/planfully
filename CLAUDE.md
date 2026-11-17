@@ -84,6 +84,7 @@ One coordinator session runs several implementer and reviewer subagents. The coo
    - contract changes or deviations;
    - anything noticed but not done.
 6. UI beads must check the result in a browser at 375px and desktop, light and dark, and attach at most four screenshots. If no browser is available, say so in the PR. Do not claim the check was done.
+   - When no browser extension is connected, use headless Chrome. Install `playwright-core` into a temp dir outside the repo and launch with `executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'`, a `viewport` and `colorScheme`. Check `document.documentElement.scrollWidth <= clientWidth`, then view the screenshots.
 
 **Reviewer brief.** The coordinator gives the reviewer:
 - the PR number and bead id;
@@ -121,6 +122,12 @@ Keep the reviewer brief self-contained so it does not need to read all of `SPEC.
 Then the coordinator merges with `gh pr merge --merge`, closes the bead with a reason, and starts agents for any newly ready beads.
 
 **Scheduling.** Start a bead only after its dependencies are merged; do not build stand-ins for unmerged work. Start new beads as earlier ones merge rather than in fixed waves.
+
+**Worktrees.**
+- Keep an implementer's and a reviewer's worktree until their PR merges. A subagent whose worktree was removed cannot be resumed with SendMessage.
+- After a merge, remove the worktrees and delete the local branches.
+
+**Bead state.** Do not silence `bd` output: a failed `bd close` otherwise goes unnoticed.
 
 **Keeping the coordinator lean.**
 - Fix environment problems once, before starting agents, and pass known pitfalls in each brief.
