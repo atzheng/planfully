@@ -2,6 +2,7 @@
 //   trips   { tripId, secret, meta, lastSeq, openedAt }   key tripId
 //   records { tripId, seq, ...StoredRecord }              key [tripId, seq]; still sealed
 //   blobs   { blobId, tripId, bytes }                     key blobId; sealed bytes, index tripId
+//   queue   QueueItem (v2, fh8.3)                         key id (autoIncrement), index tripId; sealed payloads
 // The trip secret is stored here in plain form, by design: it is what lets an installed app
 // reopen a trip without the link. Nothing here is ever sent anywhere or logged. Temp
 // (optimistic) records are never persisted.
@@ -28,6 +29,24 @@ export type CachedTrip = {
 /** Cached records are replaced by a full load at least this often (drops stale pre-compaction records). */
 export const FULL_RESYNC_MS = 7 * 24 * 60 * 60 * 1000;
 
+/** One unsent write (offline edit queue, offline/queue.ts). `payload` is always sealed. */
+export type QueueItem = {
+  /** Autoincrement key; ascending id is send order. */
+  id: number;
+  tripId: string;
+  kind: 'record' | 'blob';
+  payload: Uint8Array;
+  /** kind 'blob': the blob id to PUT. */
+  blobId?: string;
+  /** kind 'record': the operation and the event it concerns (a random UUID, not content). */
+  op?: 'put' | 'patch' | 'delete';
+  eventId?: string;
+  /** kind 'record': blobs this record's attachments reference (they must upload first). */
+  blobIds?: string[];
+  createdAt: string;
+};
+export type NewQueueItem = Omit<QueueItem, 'id'>;
+
 type RecordRow = StoredRecord & { tripId: string };
 type BlobRow = { blobId: string; tripId: string; bytes: Uint8Array };
 
@@ -35,6 +54,7 @@ interface PlanfullyDB extends DBSchema {
   trips: { key: string; value: CachedTrip };
   records: { key: [string, number]; value: RecordRow };
   blobs: { key: string; value: BlobRow; indexes: { tripId: string } };
+  queue: { key: number; value: QueueItem; indexes: { tripId: string } };
 }
 
 export type Snapshot = {
@@ -67,28 +87,83 @@ export type OfflineDb = {
   /** Add sealed records without touching lastSeq; ignored for a trip that is not cached. */
   putRecords(tripId: string, records: StoredRecord[]): Promise<void>;
   /**
-   * Remove a trip's secret, records and blobs. Other trips are untouched. A future store (the
-   * offline edit queue, v2) must be cleared here too.
+   * Remove a trip's secret, records, blobs and queued writes. Other trips are untouched. Any
+   * new store must be cleared here too.
    */
   forgetTrip(tripId: string): Promise<void>;
+  /** Offline edit queue: append, list in send order, remove one. */
+  queueAdd(item: NewQueueItem): Promise<number>;
+  queueList(tripId: string): Promise<QueueItem[]>;
+  queueRemove(id: number): Promise<void>;
   close(): void;
 };
 
 const DB_NAME = 'planfully';
 
-export function createOfflineDb(name = DB_NAME): OfflineDb {
-  let dbp: Promise<IDBPDatabase<PlanfullyDB>> | null = null;
-  const db = () =>
-    (dbp ??= openDB<PlanfullyDB>(name, 1, {
+/** How long a caller waits for the database to open (a blocked upgrade never does). */
+export const OPEN_TIMEOUT_MS = 3000;
+
+export function createOfflineDb(
+  name = DB_NAME,
+  { openTimeoutMs = OPEN_TIMEOUT_MS }: { openTimeoutMs?: number } = {},
+): OfflineDb {
+  // The connection. Another tab holding an older version open blocks our upgrade (the open
+  // never settles), so callers wait at most OPEN_TIMEOUT_MS and then fail fast (the cache is
+  // optional: safely() swallows it and the queue falls back to memory). If the open completes
+  // later, later calls use it. We close our own handle when another tab wants to upgrade.
+  let handle: IDBPDatabase<PlanfullyDB> | null = null;
+  let opening: Promise<IDBPDatabase<PlanfullyDB>> | null = null;
+  let gaveUp = false;
+  const reset = () => {
+    handle = null;
+    opening = null;
+  };
+  const db = async (): Promise<IDBPDatabase<PlanfullyDB>> => {
+    if (handle) return handle;
+    opening ??= openDB<PlanfullyDB>(name, 2, {
       upgrade(d, oldVersion) {
         if (oldVersion < 1) {
           d.createObjectStore('trips', { keyPath: 'tripId' });
           d.createObjectStore('records', { keyPath: ['tripId', 'seq'] });
           d.createObjectStore('blobs', { keyPath: 'blobId' }).createIndex('tripId', 'tripId');
         }
-        // v2 (fh8.3) adds a `queue` store here: if (oldVersion < 2) { ... }
+        if (oldVersion < 2) {
+          d.createObjectStore('queue', { keyPath: 'id', autoIncrement: true }).createIndex(
+            'tripId',
+            'tripId',
+          );
+        }
       },
-    }));
+      blocking() {
+        handle?.close();
+        reset();
+      },
+      terminated: reset,
+    }).then(
+      (h) => {
+        handle = h;
+        gaveUp = false;
+        return h;
+      },
+      (e: unknown) => {
+        opening = null;
+        throw e;
+      },
+    );
+    if (gaveUp) throw new Error('offline cache unavailable');
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        gaveUp = true;
+        reject(new Error('offline cache open timed out'));
+      }, openTimeoutMs);
+    });
+    try {
+      return await Promise.race([opening, timeout]);
+    } finally {
+      clearTimeout(timer);
+    }
+  };
   const range = (tripId: string) => IDBKeyRange.bound([tripId, -Infinity], [tripId, Infinity]);
 
   return {
@@ -177,8 +252,21 @@ export function createOfflineDb(name = DB_NAME): OfflineDb {
       }
       await tx.done;
     },
+    async queueAdd(item) {
+      // `id` is assigned by the store.
+      return (await db()).add('queue', item as QueueItem);
+    },
+    async queueList(tripId) {
+      const rows = await (await db()).getAllFromIndex('queue', 'tripId', tripId);
+      return rows.sort((a, b) => a.id - b.id);
+    },
+    async queueRemove(id) {
+      await (await db()).delete('queue', id);
+    },
     async forgetTrip(tripId) {
-      const tx = (await db()).transaction(['trips', 'records', 'blobs'], 'readwrite');
+      const tx = (await db()).transaction(['trips', 'records', 'blobs', 'queue'], 'readwrite');
+      const q = tx.objectStore('queue');
+      for (const key of await q.index('tripId').getAllKeys(tripId)) await q.delete(key);
       await tx.objectStore('trips').delete(tripId);
       await tx.objectStore('records').delete(range(tripId));
       const blobs = tx.objectStore('blobs');
@@ -186,8 +274,12 @@ export function createOfflineDb(name = DB_NAME): OfflineDb {
       await tx.done;
     },
     close() {
-      void dbp?.then((d) => d.close());
-      dbp = null;
+      void opening?.then(
+        (d) => d.close(),
+        () => undefined,
+      );
+      handle?.close();
+      reset();
     },
   };
 }
