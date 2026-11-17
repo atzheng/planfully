@@ -60,6 +60,58 @@ export function toLocation(p: PlaceResult): Location {
  */
 export interface GeocodeSession {
   blocked?: boolean;
+  /** Bias for name-only lookups, derived from other located events in the run. */
+  bias?: GeoBias;
+}
+
+/** Places Text Search `locationBias.circle`; radius in metres (API max 50000). */
+export interface GeoBias {
+  latitude: number;
+  longitude: number;
+  radius: number;
+}
+
+const MAX_BIAS_RADIUS_M = 50_000;
+const MIN_BIAS_RADIUS_M = 25_000;
+const EARTH_RADIUS_M = 6_371_000;
+
+function distanceM(a: [number, number], b: [number, number]): number {
+  const rad = Math.PI / 180;
+  const dLat = (b[0] - a[0]) * rad;
+  const dLng = (b[1] - a[1]) * rad;
+  const h =
+    Math.sin(dLat / 2) ** 2 + Math.cos(a[0] * rad) * Math.cos(b[0] * rad) * Math.sin(dLng / 2) ** 2;
+  return 2 * EARTH_RADIUS_M * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+
+/**
+ * Pure. Centroid of [lat, lng] points (mean of unit vectors, so antimeridian-safe) with a
+ * radius that covers the spread (x1.2), clamped to 25 km..50 km (Google's maximum; a wider
+ * spread just means a best-effort bias). Invalid points are ignored; undefined if none left.
+ */
+export function computeBias(points: Array<[number, number]>): GeoBias | undefined {
+  const pts = points.filter(
+    ([la, ln]) =>
+      Number.isFinite(la) && Number.isFinite(ln) && Math.abs(la) <= 90 && Math.abs(ln) <= 180,
+  );
+  if (pts.length === 0) return undefined;
+  const rad = Math.PI / 180;
+  let x = 0;
+  let y = 0;
+  let z = 0;
+  for (const [la, ln] of pts) {
+    x += Math.cos(la * rad) * Math.cos(ln * rad);
+    y += Math.cos(la * rad) * Math.sin(ln * rad);
+    z += Math.sin(la * rad);
+  }
+  const n = pts.length;
+  const centre: [number, number] = [
+    Math.atan2(z / n, Math.hypot(x / n, y / n)) / rad,
+    Math.atan2(y / n, x / n) / rad,
+  ];
+  const spread = Math.max(...pts.map((p) => distanceM(centre, p)));
+  const radius = Math.min(MAX_BIAS_RADIUS_M, Math.max(MIN_BIAS_RADIUS_M, Math.round(spread * 1.2)));
+  return { latitude: centre[0], longitude: centre[1], radius };
 }
 
 /** Generic words that must not make two names "match" on their own. */
@@ -155,6 +207,7 @@ export async function searchPlaces(
   query: string,
   limit = 5,
   session?: GeocodeSession,
+  bias?: GeoBias,
 ): Promise<PlaceResult[]> {
   const q = query.trim();
   if (!env.GOOGLE_MAPS_SERVER_KEY || !q || session?.blocked) return [];
@@ -167,7 +220,18 @@ export async function searchPlaces(
         'x-goog-api-key': env.GOOGLE_MAPS_SERVER_KEY,
         'x-goog-fieldmask': FIELD_MASK,
       },
-      body: JSON.stringify({ textQuery: q, pageSize: limit }),
+      body: JSON.stringify({
+        textQuery: q,
+        pageSize: limit,
+        ...(bias && {
+          locationBias: {
+            circle: {
+              center: { latitude: bias.latitude, longitude: bias.longitude },
+              radius: bias.radius,
+            },
+          },
+        }),
+      }),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
   } catch {
@@ -217,7 +281,7 @@ export async function geocode(
   const address = loc.address?.trim();
   const query = [name, address].filter(Boolean).join(', ');
   if (!query) return base;
-  const [best] = await searchPlaces(env, query, 1, session);
+  const [best] = await searchPlaces(env, query, 1, session, address ? undefined : session?.bias);
   if (!best || isWeakMatch(best)) return base;
   if (!address && name && !namesOverlap(name, best.displayName?.text ?? '')) return base;
   const found = toLocation(best);
