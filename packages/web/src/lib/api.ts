@@ -1,35 +1,11 @@
 // Typed client for CONTRACTS.md section 5.
 //
-// The API-shape types below are local stand-ins. Switch them to imports from
-// `@planfully/shared` once schema.ts / records.ts land.
-//
 // The trip secret (URL fragment) is never sent here; only the access token
 // derived from it goes in the Authorization header.
 
-export type Location = {
-  name?: string;
-  address?: string;
-  lat?: number;
-  lng?: number;
-  placeId?: string;
-};
-export type RosterMember = { id: string; name: string; aliases: string[] };
-export type TripMeta = {
-  id: string;
-  name: string;
-  address: string;
-  domain: string;
-  publicKey: string;
-  roster: RosterMember[];
-  allowedSenders: string[];
-  createdAt: string;
-};
-export type StoredRecord = {
-  seq: number;
-  dedupe: string | null;
-  ciphertext: string;
-  createdAt: string;
-};
+import type { Location, RosterMember, StoredRecord, TripMeta } from '@planfully/shared';
+
+export type { Location, RosterMember, StoredRecord, TripMeta };
 
 export type TripAuth = { tripId: string; accessToken: string };
 
