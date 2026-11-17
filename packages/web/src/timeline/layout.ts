@@ -3,7 +3,7 @@ import type { Event, RosterMember } from '@planfully/shared';
 import type { TimeScale } from './scale';
 
 export type LaneMode = 'none' | 'type' | 'participant';
-export type LaneSpec = { mode: LaneMode; roster: RosterMember[] };
+export type LaneSpec = { mode: LaneMode; roster: readonly RosterMember[] };
 export type Lane = { key: string; label: string };
 export type Block = {
   eventId: string;

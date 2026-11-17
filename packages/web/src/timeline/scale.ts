@@ -50,17 +50,21 @@ export function ticks(scale: TimeScale, fromMs: number, toMs: number, tz: string
   const density = tickDensity(scale.pxPerHour);
   const start = DateTime.fromMillis(fromMs, { zone: tz });
   if (!start.isValid) throw new Error(`invalid zone: ${tz}`);
-  const step = density === 'hour' ? { hours: 1 } : density === 'day' ? { days: 1 } : { weeks: 1 };
   const unit = density === 'hour' ? 'hour' : density === 'day' ? 'day' : 'week';
   const out: Tick[] = [];
-  let cur = start.startOf(unit);
-  if (cur.toMillis() < fromMs) cur = cur.plus(step);
-  for (; cur.toMillis() <= toMs; cur = cur.plus(step)) {
+  const base = start.startOf(unit);
+  // Each tick is derived from the base (not chained from the previous tick) so a skipped local
+  // midnight cannot shift later ticks off midnight; startOf('day') re-resolves to the day's first moment.
+  for (let i = 0; ; i++) {
+    let cur = base.plus({ [unit + 's']: i });
+    if (unit !== 'hour') cur = cur.startOf('day');
     const ms = cur.toMillis();
+    if (ms > toMs) break;
+    if (ms < fromMs) continue;
     if (density === 'hour') {
-      const midnight = cur.hour === 0 && cur.minute === 0;
+      // The first moment of a local date is the day tick (also when DST skipped midnight).
       out.push(
-        midnight
+        ms === cur.startOf('day').toMillis()
           ? { ms, label: dayLabel(cur), kind: 'day' }
           : { ms, label: cur.toFormat('h a'), kind: 'hour' },
       );

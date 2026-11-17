@@ -81,3 +81,45 @@ test('week ticks on local Monday midnight', () => {
 test('empty range', () => {
   expect(ticks(makeScale(0, 10), 5, 1, 'UTC')).toEqual([]);
 });
+
+test('day ticks stay on first moment of day after a skipped midnight (Santiago)', () => {
+  const tz = 'America/Santiago'; // 2026-09-06 00:00 does not exist; day starts 01:00
+  const from = at('2026-09-03T12:00', tz);
+  const to = at('2026-09-10T12:00', tz);
+  const t = ticks(makeScale(from, 10), from, to, tz);
+  const f = t.map((x) => DateTime.fromMillis(x.ms, { zone: tz }).toFormat("yyyy-MM-dd'T'HH:mm"));
+  expect(f).toEqual([
+    '2026-09-04T00:00',
+    '2026-09-05T00:00',
+    '2026-09-06T01:00',
+    '2026-09-07T00:00',
+    '2026-09-08T00:00',
+    '2026-09-09T00:00',
+    '2026-09-10T00:00',
+  ]);
+});
+
+test('week ticks after skipped midnight (Santiago)', () => {
+  const tz = 'America/Santiago';
+  const from = at('2026-08-24T00:00', tz);
+  const to = at('2026-09-30T00:00', tz);
+  const t = ticks(makeScale(from, 1), from, to, tz);
+  for (const x of t) {
+    const dt = DateTime.fromMillis(x.ms, { zone: tz });
+    expect(dt.weekday).toBe(1);
+    expect(x.ms).toBe(dt.startOf('day').toMillis());
+  }
+  expect(t.length).toBe(6);
+});
+
+test('hour density marks first tick of a skipped-midnight day as the day tick', () => {
+  const tz = 'America/Santiago';
+  const from = at('2026-09-05T22:00', tz);
+  const to = at('2026-09-06T03:00', tz);
+  const t = ticks(makeScale(from, 60), from, to, tz);
+  const days = t.filter((x) => x.kind === 'day');
+  expect(days).toHaveLength(1);
+  expect(DateTime.fromMillis(need(days[0]).ms, { zone: tz }).toFormat('yyyy-MM-dd HH:mm')).toBe(
+    '2026-09-06 01:00',
+  );
+});
