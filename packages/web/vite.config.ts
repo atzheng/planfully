@@ -34,6 +34,8 @@ export default defineConfig({
         // Precache the built shell only. No runtimeCaching: /api is never cached by the SW
         // (trip data is cached in IndexedDB by a later bead).
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
+        // (public/fonts/*.ttf is not matched by globPatterns either: PDF fonts stay out of the
+        // precache. globIgnores below is a belt-and-braces guard.)
         // PDF export libraries (lazy chunks) stay out of the precache: export needs to be online
         // the first time. index.es is jsPDF's canvg dependency.
         globIgnores: [
@@ -42,6 +44,8 @@ export default defineConfig({
           '**/html2canvas-*.js',
           '**/purify.es-*.js',
           '**/index.es-*.js',
+          'fonts/**',
+          '**/fontCoverage.generated-*.js',
         ],
         navigateFallback: '/index.html',
         navigateFallbackAllowlist: [/^\/$/, /^\/new$/, /^\/t\//],
