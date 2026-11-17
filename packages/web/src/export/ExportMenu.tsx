@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useFilter, useFilteredEvents } from '../filters/filter';
 import { useTrip } from '../trip/store';
 import { Button } from '../ui/Button';
+import { downloadIcs } from './ics';
 import { buildItinerary, renderPdf } from './pdf';
 import styles from './ExportMenu.module.css';
 
@@ -25,6 +26,11 @@ export function ExportMenu() {
         renderPdf(
           buildItinerary(events, meta?.roster ?? [], filter, { tripName: meta?.name ?? 'Trip' }),
         ),
+    },
+    {
+      id: 'ics',
+      label: 'Calendar (.ics)',
+      run: async () => downloadIcs(events, meta?.name ?? 'Trip', meta?.roster ?? []),
     },
   ];
 
