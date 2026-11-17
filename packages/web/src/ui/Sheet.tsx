@@ -1,7 +1,12 @@
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
+import { focusInitial, trapTab } from './focusTrap';
 import styles from './ui.module.css';
 
-/** Bottom sheet on phones, centred dialog on desktop. */
+/**
+ * Bottom sheet on phones, centred dialog or side panel on desktop. Always
+ * modal: even the `side` variant renders a full-screen backdrop that closes on
+ * click, so focus is moved in on open, trapped, and restored on close.
+ */
 export function Sheet({
   open,
   onClose,
@@ -11,19 +16,31 @@ export function Sheet({
 }: {
   open: boolean;
   onClose: () => void;
+  /** Accessible name (aria-label). */
   label: string;
   /** Right-hand panel on desktop (phones still get a bottom sheet). */
   side?: boolean;
   children: ReactNode;
 }) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
   useEffect(() => {
     if (!open) return;
+    const previous = document.activeElement as HTMLElement | null;
+    const dialog = dialogRef.current;
+    if (dialog && !dialog.contains(document.activeElement)) focusInitial(dialog);
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') onCloseRef.current();
+      else if (dialogRef.current) trapTab(e, dialogRef.current);
     };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      if (previous && previous.isConnected) previous.focus();
+    };
+  }, [open]);
 
   if (!open) return null;
   return (
@@ -32,6 +49,8 @@ export function Sheet({
       onClick={onClose}
     >
       <div
+        ref={dialogRef}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-label={label}
