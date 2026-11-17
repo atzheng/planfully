@@ -1,0 +1,19 @@
+{
+  "secretHex": "0707070707070707070707070707070707070707070707070707070707070707",
+  "secretEncoded": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc",
+  "publicKeyHex": "9fa31aba8a94acc2c7f2c5fdbf3d3c6933cd8ee0c520af01f9a191308ad2be7f",
+  "accessToken": "udZDdcb78n_Jj7qzldt0shRQkq5Yo64-E_gD6f8QmAM",
+  "accessTokenHash": "a9da5b402d3910dfb1fe993f910c47df3ae4eb8349cd44b22560c17de5830608",
+  "dedupe": {
+    "keyHex": "0909090909090909090909090909090909090909090909090909090909090909",
+    "type": "flight",
+    "confirmation": "ab-12 3",
+    "tag": "afa73da79a7fd58114c1f7752f900d6abe7ebf6e8003d78c1cf209e2ac71783d"
+  },
+  "seal": {
+    "ephemeralPrivateHex": "0303030303030303030303030303030303030303030303030303030303030303",
+    "nonceHex": "050505050505050505050505",
+    "plaintext": "Flight AB123 departs 09:30",
+    "sealedHex": "015dfedd3b6bd47f6fa28ee15d969d5bb0ea53774d488bdaf9df1c6e0124b3ef220505050505050505050505051af734d440bf6ebeadb91b20a64de4210d15c40cdb2128f6c2533c00461efb976f3cdea47e42fc4b7c24"
+  }
+}
