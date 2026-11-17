@@ -17,6 +17,7 @@ import {
 } from './format';
 import { diffFields } from './formModel';
 import { EventForm } from './EventForm';
+import { AttachButton } from './UploadButtons';
 import styles from './EventSheet.module.css';
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
@@ -131,7 +132,15 @@ function WriteStatus() {
   ) : null;
 }
 
-function Actions({ onEdit, onDelete }: { onEdit: () => void; onDelete: () => void }) {
+function Actions({
+  event,
+  onEdit,
+  onDelete,
+}: {
+  event: Event;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
   const [confirming, setConfirming] = useState(false);
   const del = onDelete;
   if (confirming) {
@@ -148,6 +157,7 @@ function Actions({ onEdit, onDelete }: { onEdit: () => void; onDelete: () => voi
   return (
     <>
       <Button onClick={onEdit}>Edit</Button>
+      <AttachButton event={event} />
       <Button onClick={() => setConfirming(true)} className={styles.danger}>
         Delete
       </Button>
@@ -241,7 +251,7 @@ function Details({
       </dl>
       {/* Actions row: planfully-ecw.2 adds Edit and Delete, planfully-ecw.4 adds Attach. */}
       <div className={styles.actions} data-slot="event-actions">
-        <Actions onEdit={onEdit} onDelete={onDelete} />
+        <Actions event={event} onEdit={onEdit} onDelete={onDelete} />
       </div>
     </>
   );
