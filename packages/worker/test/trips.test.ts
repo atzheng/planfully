@@ -145,8 +145,8 @@ describe('GET /api/trips/:id', () => {
       expect(wrong.status).toBe(401);
     }
     expect((await call('/api/trips/does-not-exist/records')).status).toBe(401);
-    // authenticated passes the middleware (the stub router then 404s)
-    expect((await call(`/api/trips/${t.id}/records`, { headers: auth })).status).toBe(404);
+    // authenticated passes the middleware (an unrouted path then 404s)
+    expect((await call(`/api/trips/${t.id}/nothing-here`, { headers: auth })).status).toBe(404);
   });
 });
 

@@ -87,7 +87,7 @@ export async function patchTrip(
 export async function getRecords(
   a: TripAuth,
   since = 0,
-): Promise<{ records: StoredRecord[]; latestSeq: number }> {
+): Promise<{ records: StoredRecord[]; latestSeq: number; more: boolean }> {
   return json(await request(`${trip(a.tripId)}/records?since=${since}`, a.accessToken));
 }
 
