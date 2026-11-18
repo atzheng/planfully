@@ -1,3 +1,4 @@
+/* Top-right cluster: small, content-first, clear of the bottom (attribution, FAB). */
 .control {
   position: absolute;
   top: var(--space-3);
@@ -10,27 +11,7 @@
   max-width: calc(100% - var(--space-5));
 }
 .btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: var(--tap);
-  height: var(--tap);
-  padding: 0;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--surface);
-  color: var(--text);
-  box-shadow: var(--shadow);
-  cursor: pointer;
-}
-.btn[data-active] {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--accent-text);
-}
-.btn:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+  box-shadow: var(--shadow-sm);
 }
 .msg {
   margin: 0;
@@ -39,21 +20,21 @@
   border-radius: var(--radius-pill);
   background: var(--surface);
   color: var(--text-muted);
-  font-size: var(--text-md);
-  box-shadow: var(--shadow);
-}
-/* Blue with a white ring and dark hairline: readable on both light and dark map schemes. */
-.dot {
-  width: 16px;
-  height: 16px;
-  border: 3px solid #fff;
-  border-radius: var(--radius-pill);
-  background: #2a6df4;
-  box-shadow:
-    0 0 0 1px rgb(0 0 0 / 0.25),
-    0 1px 4px rgb(0 0 0 / 0.5);
-  pointer-events: none;
+  font-size: var(--text-sm);
+  box-shadow: var(--shadow-sm);
 }
 .msg[data-empty] {
   display: none;
+}
+/* Accent dot with a surface ring: readable on both map schemes. */
+.dot {
+  width: 16px;
+  height: 16px;
+  border: 3px solid var(--surface);
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  box-shadow:
+    0 0 0 1px rgb(15 23 42 / 0.25),
+    0 1px 4px rgb(15 23 42 / 0.5);
+  pointer-events: none;
 }
