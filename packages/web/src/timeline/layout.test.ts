@@ -7,7 +7,6 @@ import {
   railBudgetPx,
   RAIL_PX,
   RAIL_STEP_PX,
-  MAX_RAILS,
   layoutEvents,
   blockTier,
   DEPTH_STEP_PX,
