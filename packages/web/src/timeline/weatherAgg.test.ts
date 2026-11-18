@@ -7,8 +7,11 @@ import {
   describeHit,
   fetchRange,
   hitAt,
+  inGap,
   noForecastBands,
+  scaleMax,
   stepFor,
+  thinBuckets,
 } from './weatherAgg';
 
 const H = 3_600_000;
@@ -146,5 +149,64 @@ describe('fetchRange', () => {
   it('adds a margin and rounds to whole days', () => {
     const r = fetchRange({ fromMs: T0 + 10 * H, toMs: T0 + 20 * H });
     expect(r).toEqual({ fromMs: T0, toMs: T0 + 48 * H });
+  });
+});
+
+describe('thinBuckets (condensed time)', () => {
+  const seg = { fromMs: T0, toMs: T0 + 40 * H, lat: 1, lng: 1, label: 'X' };
+  const hourly = bucketize(mk(40), seg, 'hour', 'UTC');
+  const input = [{ segment: seg, series: mk(40), status: 'ready' as const }];
+  // Hours 4..36 collapsed into 24px; the rest is 20 px/h.
+  const gap = { fromMs: T0 + 4 * H, toMs: T0 + 36 * H, fromY: 80, toY: 104 };
+  const toY = (ms: number) => {
+    const h = (ms - T0) / H;
+    if (h <= 4) return h * 20;
+    if (h >= 36) return 104 + (h - 36) * 20;
+    return 80 + ((h - 4) / 32) * 24;
+  };
+  const lin = (ms: number) => ((ms - T0) / H) * 20;
+
+  it('returns buckets unchanged without gaps (linear mode)', () => {
+    expect(thinBuckets(hourly, [], lin)).toEqual(hourly);
+    expect(buildStrip(input, 'hour', 'UTC').segments[0]?.buckets).toEqual(hourly);
+    expect(buildStrip(input, 'hour', 'UTC', [], lin).segments[0]?.buckets).toEqual(hourly);
+  });
+  it('folds the squashed hours of a gap into one bucket and keeps the others', () => {
+    const out = thinBuckets(hourly, [gap], toY);
+    expect(out).toHaveLength(4 + 1 + 4);
+    const m = out[4];
+    expect(m).toMatchObject({ fromMs: gap.fromMs, toMs: gap.toMs, n: 32, merged: true });
+    expect(m?.tempMin).toBe(14);
+    expect(m?.tempMax).toBe(45);
+    expect(m?.tempAvg).toBeCloseTo(29.5);
+    expect(m?.precipSum).toBeCloseTo(16);
+    expect(out[3]?.merged).toBeUndefined();
+    expect(out[8]?.toMs).toBe(T0 + 40 * H);
+  });
+  it('does not fold buckets drawn tall enough (short gap at its linear height)', () => {
+    const small = { fromMs: T0 + 4 * H, toMs: T0 + 6 * H, fromY: 80, toY: 120 };
+    expect(thinBuckets(hourly, [small], lin)).toEqual(hourly);
+  });
+  it('keeps the hit-test working across the folded bucket', () => {
+    const strip = buildStrip(input, 'hour', 'UTC', [gap], toY);
+    const hit = hitAt(strip.segments, T0 + 20.5 * H);
+    expect(hit).toMatchObject({ kind: 'bucket' });
+    if (hit?.kind === 'bucket') {
+      expect(hit.bucket.merged).toBe(true);
+      expect(describeHit(hit, 'hour', 'UTC', { temp: 'C', wind: 'kmh' })).toContain(' to ');
+    }
+    expect(hitAt(strip.segments, T0 + 2.5 * H)).toMatchObject({ kind: 'bucket' });
+  });
+  it('condensing does not change the rain scale ceiling', () => {
+    const linear = buildStrip(input, 'hour', 'UTC');
+    const condensed = buildStrip(input, 'hour', 'UTC', [gap], toY);
+    expect(condensed.segments[0]?.buckets.some((b) => b.merged)).toBe(true);
+    expect(condensed.extents.precipMax).toBe(linear.extents.precipMax);
+    expect(scaleMax(condensed.extents, 'hour')).toEqual(scaleMax(linear.extents, 'hour'));
+  });
+  it('inGap is strict', () => {
+    expect(inGap(gap.fromMs, [gap])).toBe(false);
+    expect(inGap(gap.fromMs + 1, [gap])).toBe(true);
+    expect(inGap(gap.toMs, [gap])).toBe(false);
   });
 });
