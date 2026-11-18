@@ -15,6 +15,7 @@ import {
   RAIL_STEP_PX,
   MAX_RAILS,
   blockGeometry,
+  isIconOnly,
   withoutEmptyLanes,
 } from './layout';
 import type { Layout } from './layout';
@@ -128,22 +129,23 @@ const Blocks = memo(function Blocks({
           );
         }
         const geo = blockGeometry(b, laneWidth);
+        // Too narrow for text (planfully-f9n): icon only, name and time in aria-label / title.
+        const iconOnly = !bar && isIconOnly(geo.x1 - geo.x0);
+        const nameOnly = bar || iconOnly;
+        const fullName = `${e.name}${time ? `, ${time}` : ''}${cancelled ? ' (cancelled)' : ''}${e.needsReview ? ' (needs review)' : ''}`;
         return (
           <button
             key={`${b.laneKey}:${b.eventId}`}
             type="button"
-            className={`${styles.block} ${cancelled ? styles.cancelled : ''} ${tier === 'full' ? '' : bar ? styles.bar : styles.compact} ${selected ? styles.selected : ''}`}
+            className={`${styles.block} ${cancelled ? styles.cancelled : ''} ${bar ? styles.bar : iconOnly ? styles.iconOnly : tier === 'full' ? '' : styles.compact} ${selected ? styles.selected : ''}`}
             aria-current={selected ? 'true' : undefined}
             data-testid="block"
             data-event-id={e.id}
             data-type={e.type}
             data-tier={tier}
-            title={bar ? e.name : undefined}
-            aria-label={
-              bar
-                ? `${e.name}${time ? `, ${time}` : ''}${cancelled ? ' (cancelled)' : ''}${e.needsReview ? ' (needs review)' : ''}`
-                : undefined
-            }
+            data-icon-only={iconOnly ? 'true' : undefined}
+            title={nameOnly ? fullName : undefined}
+            aria-label={nameOnly ? fullName : undefined}
             style={{
               top: b.top,
               height: b.height,
@@ -152,7 +154,11 @@ const Blocks = memo(function Blocks({
             }}
             onClick={() => onOpen(e.id)}
           >
-            {bar ? null : (
+            {bar ? null : iconOnly ? (
+              <span className={styles.blockIcon} aria-hidden="true">
+                <EventIcon event={e} />
+              </span>
+            ) : (
               <span className={styles.blockLabel}>
                 <span className={styles.blockIcon} aria-hidden="true">
                   <EventIcon event={e} />
@@ -167,7 +173,7 @@ const Blocks = memo(function Blocks({
                 </span>
               </span>
             )}
-            {e.needsReview && !bar && (
+            {e.needsReview && !nameOnly && (
               <Badge
                 tone="warning"
                 className={styles.review}

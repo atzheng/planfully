@@ -81,6 +81,29 @@ export function maxColumnsForWidth(laneWidthPx: number, railPx = 0): number {
   return Math.min(MAX_COLUMNS, Math.max(1, Number.isFinite(n) ? n : MAX_COLUMNS));
 }
 
+/**
+ * Rendered block width (px) below which a text block shows only its type icon (title and time move to
+ * aria-label / title). The bead said ~48px, but measured block chrome (3px border, 13px padding, 16px icon,
+ * gap) is ~37px, so 48px leaves a 1-2 character title; 64px leaves at least ~27px (3+ characters).
+ */
+export const ICON_ONLY_PX = 64;
+
+/** True when a block `widthPx` wide is too narrow for readable text (one or two characters of title). */
+export function isIconOnly(widthPx: number): boolean {
+  return widthPx < ICON_ONLY_PX;
+}
+
+/**
+ * Cascade levels a block of `availPx` (column width before the 1px margins and depth inset) can use:
+ * each level costs DEPTH_STEP_PX and the block keeps at least DEPTH_STEP_PX of width. Capped at MAX_DEPTH.
+ * This is the exact bound for exposure: a column keeps every block uncovered while at most
+ * `maxDepthFor(availPx) + 1` blocks overlap in it (identical blocks beyond that share the deepest level).
+ */
+export function maxDepthFor(availPx: number): number {
+  const room = Math.floor((availPx - 2 - DEPTH_STEP_PX) / DEPTH_STEP_PX);
+  return Math.max(0, Math.min(MAX_DEPTH, room));
+}
+
 export type BlockTier = 'full' | 'line' | 'bar';
 
 /** Minimum rendered height of a block at this zoom: shrinks as you zoom out so overlaps stay small. */
@@ -352,8 +375,7 @@ export function blockGeometry(
   const from = b.column / b.columns;
   const span = b.span / b.columns;
   const avail = (laneWidthPx - railPx) * span;
-  const room = Math.floor((avail - 2 - DEPTH_STEP_PX) / DEPTH_STEP_PX);
-  const depth = Math.max(0, Math.min(b.depth, room));
+  const depth = Math.min(b.depth, maxDepthFor(avail));
   const inset = 1 + depth * DEPTH_STEP_PX;
   return {
     left: `calc((100% - ${railPx}px) * ${from} + ${inset}px)`,

@@ -3,6 +3,11 @@ import { expect, test } from 'vitest';
 import {
   initialScrollMs,
   isRailEvent,
+  isIconOnly,
+  ICON_ONLY_PX,
+  maxDepthFor,
+  MAX_RAILS,
+  MAX_DEPTH,
   blockGeometry,
   railBudgetPx,
   RAIL_PX,
@@ -512,4 +517,127 @@ test('rails in the exposure invariant: non-rail blocks keep clear of rails', () 
   // Only the shared deepest level may fail the strip test (9 blocks <= cols * 5 here, so none).
   expect(bad).toEqual([]);
   expect(railsExposed(blocks)).toEqual([]);
+});
+
+test('isIconOnly: blocks narrower than ICON_ONLY_PX (64) drop their text', () => {
+  expect(ICON_ONLY_PX).toBe(64);
+  expect(isIconOnly(63.9)).toBe(true);
+  expect(isIconOnly(64)).toBe(false);
+  expect(isIconOnly(0)).toBe(true);
+  // A fresh 90px column is never icon-only; each cascade level costs 16px, so level 2+ is (72px at level 1, 56px at level 2).
+  const lane = 90;
+  const g = (depth: number) =>
+    blockGeometry({ column: 0, columns: 1, span: 1, depth, railInset: 0 }, lane);
+  const w = (depth: number) => g(depth).x1 - g(depth).x0;
+  expect(isIconOnly(w(0))).toBe(false);
+  expect(isIconOnly(w(1))).toBe(false);
+  expect(isIconOnly(w(2))).toBe(true);
+  // The column cap never produces a column under MIN_COLUMN_PX, so only the cascade narrows a block.
+  expect(maxColumnsForWidth(179)).toBe(1);
+  expect(maxColumnsForWidth(180)).toBe(2);
+});
+
+test('maxDepthFor: levels a block of a given width can cascade, capped at MAX_DEPTH', () => {
+  expect(maxDepthFor(80)).toBe(3);
+  expect(maxDepthFor(100)).toBe(4);
+  expect(maxDepthFor(1000)).toBe(MAX_DEPTH);
+  expect(maxDepthFor(10)).toBe(0);
+});
+
+/** True when no later-drawn block covers the DEPTH_STEP_PX strip at the left of block `i` (blocks drawn in array order). */
+function stripUncovered(
+  rects: { top: number; height: number; x0: number; x1: number }[],
+  i: number,
+): boolean {
+  const b = rects[i] as (typeof rects)[number];
+  return rects
+    .slice(i + 1)
+    .every(
+      (l) =>
+        !(
+          l.top < b.top + b.height &&
+          b.top < l.top + l.height &&
+          l.x0 < b.x0 + DEPTH_STEP_PX &&
+          b.x0 < l.x1
+        ),
+    );
+}
+
+test('narrow lanes (140-200px) with 0-4 rails: stacked identical blocks keep an uncovered strip up to the exact bound', () => {
+  const evs = (k: number) =>
+    Array.from({ length: k }, () => ev('2026-06-02T09:00', '2026-06-02T10:00'));
+  for (let lane = 140; lane <= 200; lane += 10) {
+    for (let rails = 0; rails <= MAX_RAILS; rails++) {
+      const hotels = Array.from({ length: rails }, () =>
+        ev('2026-06-01T00:00', '2026-06-04T00:00', { type: 'lodging' }),
+      );
+      const cols = maxColumnsForWidth(lane, railBudgetPx(rails));
+      const avail = (lane - railBudgetPx(rails)) / cols;
+      const bound = cols * (maxDepthFor(avail) + 1);
+      for (const k of [1, bound, bound + 3, 12]) {
+        const { blocks } = layoutEvents(
+          [...hotels, ...evs(k)],
+          scale,
+          none,
+          maxColumnsForWidth(lane),
+          lane,
+        );
+        const flat = blocks.filter((x) => !x.rail);
+        expect(flat).toHaveLength(k);
+        const rects = flat.map((b) => ({
+          ...blockGeometry(b, lane),
+          top: b.top,
+          height: b.height,
+        }));
+        const covered = rects.filter((_, i) => !stripUncovered(rects, i)).length;
+        const ctx = `lane ${lane} rails ${rails} k ${k}`;
+        for (const r of rects) {
+          expect(r.x1 - r.x0, ctx).toBeGreaterThanOrEqual(DEPTH_STEP_PX - 2);
+          expect(r.x1, ctx).toBeLessThanOrEqual(lane - railBudgetPx(rails));
+        }
+        // Within the bound nothing is covered; beyond it only blocks at the shared deepest level are.
+        if (k <= bound) expect(covered, ctx).toBe(0);
+        else expect(covered, ctx).toBeLessThanOrEqual(k - bound + cols);
+      }
+    }
+  }
+});
+
+/** Same-slot check: a rail stays tappable if part of its height is free of later-drawn rails in its slot (lower slots are covered by railsExposed). */
+function railsUncovered(blocks: Block[]): Block[] {
+  const rails = blocks.filter((b) => b.rail);
+  const overlaps = (a: Block, b: Block) => a.top < b.top + b.height && b.top < a.top + a.height;
+  return rails.filter((b, i) => {
+    const same = rails.slice(i + 1).filter((o) => o.railSlot === b.railSlot && overlaps(o, b));
+    // y: is any part of b's interval free of same-slot later rails?
+    const pts = [b.top, b.top + b.height - 0.01, ...same.flatMap((o) => [o.top, o.top + o.height])];
+    const freeY = pts.some(
+      (y) =>
+        y >= b.top && y < b.top + b.height && !same.some((o) => o.top <= y && y < o.top + o.height),
+    );
+    return !freeY;
+  });
+}
+
+test('rails beyond MAX_RAILS share the last slot but stay uncovered unless intervals are identical', () => {
+  // 7 staggered, nested rails all overlapping: slots 0..3 then shared slot 3.
+  const day = (d: number) => `2026-06-${String(d).padStart(2, '0')}T00:00`;
+  const staggered = Array.from({ length: 7 }, (_, i) =>
+    ev(day(1 + i), day(12), { type: 'lodging' }),
+  );
+  const { blocks } = layoutEvents(staggered, scale, none);
+  expect(blocks.filter((b) => b.rail)).toHaveLength(7);
+  expect(Math.max(...blocks.map((b) => b.railSlot))).toBe(MAX_RAILS - 1);
+  expect(railsUncovered(blocks)).toEqual([]);
+  expect(railsExposed(blocks)).toEqual([]);
+  // Different ends too (nested, shorter drawn later).
+  const nested = Array.from({ length: 7 }, (_, i) =>
+    ev(day(1 + i), day(20 - i), { type: 'lodging' }),
+  );
+  expect(railsUncovered(layoutEvents(nested, scale, none).blocks)).toEqual([]);
+  // Documented bound: up to MAX_RAILS simultaneous rails are always exposed; identical intervals beyond that are not.
+  const four = Array.from({ length: MAX_RAILS }, () => ev(day(1), day(5), { type: 'lodging' }));
+  expect(railsUncovered(layoutEvents(four, scale, none).blocks)).toEqual([]);
+  const six = Array.from({ length: MAX_RAILS + 2 }, () => ev(day(1), day(5), { type: 'lodging' }));
+  expect(railsUncovered(layoutEvents(six, scale, none).blocks).length).toBeGreaterThan(0);
 });

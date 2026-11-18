@@ -265,8 +265,13 @@
   text-align: left;
   cursor: pointer;
 }
+/* Blocks sit above rails (inline z-index 1..4), so a rail's 24px hit-area extension never steals taps
+   from a neighbouring block (planfully-f9n). */
+.block {
+  z-index: 5;
+}
 .block:focus-visible {
-  z-index: 3;
+  z-index: 7;
 }
 .block:focus-visible,
 .todayPill:focus-visible,
@@ -444,7 +449,7 @@
   background: color-mix(in srgb, var(--type-bg) 85%, var(--surface));
 }
 .block.selected {
-  z-index: 2;
+  z-index: 6;
   border-color: var(--accent);
   border-left-color: var(--type-bar);
   box-shadow: 0 0 0 1px var(--accent);
@@ -453,6 +458,12 @@
   align-items: center;
   padding-top: 0;
   padding-bottom: 0;
+}
+/* Too narrow for text: just the type icon, centred; the name is in aria-label / title. */
+.iconOnly {
+  align-items: center;
+  justify-content: center;
+  padding: 0;
 }
 .compact .blockLabel {
   align-items: center;
