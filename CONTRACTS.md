@@ -291,7 +291,7 @@ Never log email content, event content or tokens.
 
 ## 8. Config
 
-Worker bindings and vars (`src/env.ts`): `DB` (D1), `BLOBS` (R2), `ASSETS` (static assets), `TRIP_DOMAIN`, `ADMIN_SECRET`, `ANTHROPIC_API_KEY`, `GOOGLE_MAPS_SERVER_KEY`. Local values in `packages/worker/.dev.vars` (gitignored); commit `.dev.vars.example`. Web: `VITE_GOOGLE_MAPS_KEY` in `packages/web/.env.local` (gitignored); commit `.env.example`. Code must run with the two API keys unset: geocoding returns no coordinates, the map shows a "key not configured" notice, and LLM tests use a mocked client.
+Worker bindings and vars (`src/env.ts`): `DB` (D1), `BLOBS` (R2), `ASSETS` (static assets), `TRIP_DOMAIN`, `ADMIN_SECRET`, `ANTHROPIC_API_KEY`, `GOOGLE_MAPS_SERVER_KEY`. Local values in `packages/worker/.dev.vars` (gitignored); commit `.dev.vars.example`. Web: `VITE_GOOGLE_MAPS_KEY` in `packages/web/.env.local` (gitignored); commit `.env.example`. Production deploy: see `DEPLOY.md` (`pnpm run deploy`; `TRIP_DOMAIN=planfully.us`, app at the apex via a Workers custom domain). Code must run with the two API keys unset: geocoding returns no coordinates, the map shows a "key not configured" notice, and LLM tests use a mocked client.
 
 ## 9. Commands
 

@@ -9,7 +9,11 @@ export default defineConfig({
       return {
         wrangler: { configPath: './wrangler.jsonc' },
         miniflare: {
-          bindings: { TEST_MIGRATIONS: migrations, ADMIN_SECRET: 'test-admin-secret' },
+          bindings: {
+            TEST_MIGRATIONS: migrations,
+            ADMIN_SECRET: 'test-admin-secret',
+            TRIP_DOMAIN: 'trips.example.com',
+          },
         },
       };
     }),
