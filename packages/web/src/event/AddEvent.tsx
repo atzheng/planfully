@@ -12,6 +12,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { Plus } from 'lucide-react';
 import { fromInstant, type Event } from '@planfully/shared';
 import { useTripActions } from '../trip/actions';
 import { useTrip, useTripStore } from '../trip/store';
@@ -135,8 +136,8 @@ export function AddEventButton() {
   const status = useTrip((s) => s.status);
   if (!add || status !== 'ready') return null;
   return (
-    <Button primary onClick={() => add.open()} aria-label="Add event">
-      Add
+    <Button fab aria-label="Add event" title="Add event" onClick={() => add.open()}>
+      <Plus size={24} aria-hidden="true" />
     </Button>
   );
 }

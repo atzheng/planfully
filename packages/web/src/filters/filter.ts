@@ -128,6 +128,24 @@ export function useFilter(): Filter {
   return useFilterState().filter;
 }
 
+const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+/**
+ * One-line summary of the active criteria for the app bar chip, e.g. 'Dining, Alex'.
+ * Empty when nothing is filtered. Pure.
+ */
+export function filterSummary(f: Filter, roster: readonly { id: string; name: string }[]): string {
+  const parts: string[] = [];
+  if (f.q.trim() !== '') parts.push(`"${f.q.trim()}"`);
+  parts.push(...f.types.map(cap));
+  parts.push(...f.who.map((id) => roster.find((m) => m.id === id)?.name ?? id));
+  if (f.from && f.to) parts.push(`${f.from} to ${f.to}`);
+  else if (f.from) parts.push(`from ${f.from}`);
+  else if (f.to) parts.push(`to ${f.to}`);
+  if (f.cancelled) parts.push('Cancelled');
+  return parts.join(', ');
+}
+
 export function useFilteredEvents(): Event[] {
   const events = useTrip((s) => s.events);
   const filter = useFilter();

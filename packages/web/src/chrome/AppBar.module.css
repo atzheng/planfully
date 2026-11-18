@@ -1,0 +1,174 @@
+/* The only permanent chrome: 44px on phones, 48px on desktop. */
+.bar {
+  position: relative;
+  z-index: 30;
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+  height: 44px;
+  padding: 0 var(--space-2) 0 var(--space-3);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+@media (min-width: 720px) {
+  .bar {
+    height: 48px;
+    padding: 0 var(--space-3) 0 var(--space-4);
+    gap: var(--space-2);
+  }
+}
+.title {
+  display: flex;
+  flex: 0 4 auto;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+.titleButton {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  max-width: 100%;
+  height: var(--control-sm);
+  padding: 0 var(--space-2);
+  margin-left: calc(-1 * var(--space-2));
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.titleButton:hover {
+  background: var(--surface-2);
+}
+.titleButton:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+.titleText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.titleChevron {
+  flex: none;
+  color: var(--text-muted);
+}
+.summary {
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 72px;
+  height: 24px;
+  padding: 0 var(--space-2) 0 var(--space-2);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-pill);
+  background: var(--accent-subtle);
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  cursor: pointer;
+}
+.summary svg {
+  flex: none;
+}
+.summary:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+.summaryText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.spacer {
+  flex: 1 0 0;
+}
+/* Upload progress and export errors: floating, so the bar stays one row. */
+.toasts {
+  position: fixed;
+  left: var(--space-3);
+  bottom: var(--space-3);
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-width: min(360px, calc(100vw - 2 * var(--space-3) - 72px));
+  pointer-events: none;
+}
+.toasts > * {
+  pointer-events: auto;
+}
+.toast {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--raised);
+  box-shadow: var(--shadow-sm);
+  font-size: var(--text-sm);
+}
+.toastError {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.linkButton {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: underline;
+}
+.info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.infoTitle {
+  margin: 0;
+  font-size: var(--text-xl);
+}
+.infoList {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-2) var(--space-4);
+  margin: 0;
+}
+.infoList dt {
+  color: var(--text-muted);
+}
+.infoList dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+/* Offline edits queued for sending: only present while there are some. */
+.sync {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+  height: 24px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+.syncLost {
+  border-color: var(--danger);
+  color: var(--danger);
+  cursor: pointer;
+}

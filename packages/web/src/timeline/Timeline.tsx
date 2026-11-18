@@ -2,20 +2,16 @@ import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useStat
 import type { ReactNode } from 'react';
 import type { Event, EventType, RosterMember } from '@planfully/shared';
 import { useFilteredEvents } from '../filters/filter';
-import {
-  booleanCodec,
-  enumCodec,
-  stringCodec,
-  stringListCodec,
-  useQueryState,
-} from '../lib/queryState';
+import { booleanCodec, stringCodec, stringListCodec, useQueryState } from '../lib/queryState';
 import { useRegisterCentre } from '../event/AddEvent';
 import { useTrip } from '../trip/store';
 import { bucketLabel, compactBuckets, isCompact } from './compact';
 import { EventIcon } from '../ui/EventIcon';
 import type { Bucket } from './compact';
-import { initialScrollMs, LANE_MODES, layoutEvents, withoutEmptyLanes } from './layout';
-import type { Layout, LaneMode } from './layout';
+import { initialScrollMs, layoutEvents, withoutEmptyLanes } from './layout';
+import type { Layout } from './layout';
+import { laneModeCodec } from './lanes';
+import { useRegisterFit, useTimelineControls } from './controls';
 import { dayHeading, localStartLabel, roundRangeToHours, timelineRange, validZone } from './model';
 import { anchorMsAt, scrollTopForAnchor } from './model';
 import {
@@ -37,6 +33,7 @@ import {
   useZoom,
   wheelPx,
 } from './zoom';
+import { ChevronDown, ChevronUp, Minus, Plus } from 'lucide-react';
 import { TimeZonePicker } from './TimeZonePicker';
 import { WEATHER_GUTTER_PX, WeatherLegend, WeatherStrip } from './WeatherStrip';
 import styles from './Timeline.module.css';
@@ -45,12 +42,6 @@ import styles from './Timeline.module.css';
 const HEADING_PX = 28;
 /** Height of the sticky lane header row (only present in a lane mode). */
 const LANE_HEAD_PX = 32;
-const LANE_MODE_LABEL: Record<LaneMode, string> = {
-  none: 'Single',
-  type: 'By type',
-  participant: 'By person',
-};
-const laneModeCodec = enumCodec(LANE_MODES);
 /** Context kept above the target when scrolling to a time. */
 const SCROLL_LEAD_PX = 48;
 const NO_ROSTER: readonly RosterMember[] = [];
@@ -272,8 +263,8 @@ export function Timeline({ gutter: gutterProp }: { gutter?: ReactNode } = {}) {
   const [tzRaw, setTzRaw] = useQueryState('tz', stringCodec, '');
   const [, setOpenId] = useQueryState('e', stringCodec, '');
   const [who] = useQueryState('who', stringListCodec, NO_WHO);
-  const [laneMode, setLaneMode] = useQueryState('lanes', laneModeCodec, 'none');
-  const [wxOn, setWxOn] = useQueryState('wx', booleanCodec, false);
+  const [laneMode] = useQueryState('lanes', laneModeCodec, 'none');
+  const [wxOn] = useQueryState('wx', booleanCodec, false);
   const { pxPerHour, setPx } = useZoom();
   const gutter = wxOn ? <WeatherStrip /> : gutterProp;
   const gutterPx = wxOn ? WEATHER_GUTTER_PX : 64;
@@ -501,72 +492,13 @@ export function Timeline({ gutter: gutterProp }: { gutter?: ReactNode } = {}) {
     range && nowMs >= range.fromMs && nowMs <= range.toMs ? nowMs : initialScrollMs(events, nowMs);
   const showNow = !!range && nowMs >= range.fromMs && nowMs <= range.toMs;
 
+  useRegisterFit(range ? fitTrip : null);
+  const tzControls = useTimelineControls();
+  const todayOff = !!range && (todayTarget < visible.fromMs || todayTarget > visible.toMs);
+
   const empty = events.length === 0;
   return (
     <section className={styles.timeline} aria-label="Timeline">
-      <div className={styles.toolbar}>
-        <TimeZonePicker
-          zone={zone}
-          browserZone={browserZone()}
-          events={allEvents}
-          onChange={setTzRaw}
-        />
-        <div className={styles.zoomBar} role="group" aria-label="Zoom">
-          <button
-            type="button"
-            className={styles.zoomBtn}
-            onClick={() => pxPerHour > MIN_PX_PER_HOUR && zoomButton(-1)}
-            aria-disabled={pxPerHour <= MIN_PX_PER_HOUR}
-            aria-label="Zoom out"
-          >
-            −
-          </button>
-          <button
-            type="button"
-            className={styles.zoomBtn}
-            onClick={() => pxPerHour < MAX_PX_PER_HOUR && zoomButton(1)}
-            aria-disabled={pxPerHour >= MAX_PX_PER_HOUR}
-            aria-label="Zoom in"
-          >
-            +
-          </button>
-          <button type="button" className={styles.zoomBtn} onClick={fitTrip} disabled={!range}>
-            Fit trip
-          </button>
-        </div>
-        <div className={styles.zoomBar} role="group" aria-label="Lanes">
-          {LANE_MODES.map((m) => (
-            <button
-              key={m}
-              type="button"
-              className={`${styles.zoomBtn} ${laneMode === m ? styles.modeOn : ''}`}
-              aria-pressed={laneMode === m}
-              data-testid={`lanes-${m}`}
-              onClick={() => setLaneMode(m)}
-            >
-              {LANE_MODE_LABEL[m]}
-            </button>
-          ))}
-        </div>
-        <button
-          type="button"
-          className={`${styles.zoomBtn} ${wxOn ? styles.modeOn : ''}`}
-          aria-pressed={wxOn}
-          data-testid="wx-toggle"
-          onClick={() => setWxOn(!wxOn)}
-        >
-          Weather
-        </button>
-        <button
-          type="button"
-          className={styles.today}
-          onClick={() => scrollToMs(todayTarget)}
-          disabled={!range}
-        >
-          Today
-        </button>
-        {wxOn && <WeatherLegend />}
-      </div>
       {
         <TimeScaleProvider value={scale}>
           <VisibleRangeProvider value={visible}>
@@ -707,6 +639,57 @@ export function Timeline({ gutter: gutterProp }: { gutter?: ReactNode } = {}) {
           </VisibleRangeProvider>
         </TimeScaleProvider>
       }
+      <div className={styles.tzCorner}>
+        <TimeZonePicker
+          compact
+          zone={zone}
+          browserZone={browserZone()}
+          events={allEvents}
+          onChange={setTzRaw}
+          open={tzControls?.tzOpen}
+          onOpenChange={tzControls?.setTzOpen}
+        />
+      </div>
+      {wxOn && (
+        <div className={styles.legend}>
+          <WeatherLegend />
+        </div>
+      )}
+      {todayOff && (
+        <button
+          type="button"
+          className={styles.todayPill}
+          data-testid="today-pill"
+          onClick={() => scrollToMs(todayTarget)}
+        >
+          {todayTarget < visible.fromMs ? (
+            <ChevronUp size={14} aria-hidden="true" />
+          ) : (
+            <ChevronDown size={14} aria-hidden="true" />
+          )}
+          Today
+        </button>
+      )}
+      <div className={styles.zoomPair} role="group" aria-label="Zoom">
+        <button
+          type="button"
+          className={styles.zoomBtn}
+          onClick={() => pxPerHour < MAX_PX_PER_HOUR && zoomButton(1)}
+          aria-disabled={pxPerHour >= MAX_PX_PER_HOUR}
+          aria-label="Zoom in"
+        >
+          <Plus size={18} aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          className={styles.zoomBtn}
+          onClick={() => pxPerHour > MIN_PX_PER_HOUR && zoomButton(-1)}
+          aria-disabled={pxPerHour <= MIN_PX_PER_HOUR}
+          aria-label="Zoom out"
+        >
+          <Minus size={18} aria-hidden="true" />
+        </button>
+      </div>
     </section>
   );
 }

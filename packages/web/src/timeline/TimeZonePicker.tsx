@@ -21,13 +21,26 @@ export function TimeZonePicker({
   browserZone,
   events,
   onChange,
+  compact,
+  open: openProp,
+  onOpenChange,
 }: {
   zone: string;
   browserZone: string;
   events: readonly Event[];
   onChange: (tz: string) => void;
+  /** Tiny trigger showing only the UTC offset (for the canvas corner). */
+  compact?: boolean;
+  /** Controlled open state; the picker manages its own when omitted. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const [openState, setOpenState] = useState(false);
+  const open = openProp ?? openState;
+  const setOpen = (o: boolean) => {
+    setOpenState(o);
+    onOpenChange?.(o);
+  };
   const [searching, setSearching] = useState(false);
   const [query, setQuery] = useState('');
   const root = useRef<HTMLDivElement>(null);
@@ -89,15 +102,21 @@ export function TimeZonePicker({
       <button
         ref={trigger}
         type="button"
-        className={styles.trigger}
+        className={`${styles.trigger} ${compact ? styles.compact : ''}`}
         data-testid="tz-trigger"
         aria-expanded={open}
         aria-controls={open ? popId : undefined}
         aria-label={`Time zone: ${summary}. Change`}
         onClick={() => (open ? close(true) : setOpen(true))}
       >
-        <span aria-hidden="true">🌐</span>
-        <span className={styles.summary}>{summary}</span>
+        {compact ? (
+          <span className={styles.summary}>{offsetLabel(zone, atMs)}</span>
+        ) : (
+          <>
+            <span aria-hidden="true">🌐</span>
+            <span className={styles.summary}>{summary}</span>
+          </>
+        )}
       </button>
       {open && (
         <div

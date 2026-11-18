@@ -24,7 +24,7 @@ vi.mock('../trip/store', () => ({
   },
 }));
 
-vi.mock('../event/UploadButtons', () => ({ AddReceiptButton: () => null }));
+vi.mock('../event/UploadButtons', () => ({ AddReceiptAction: () => null }));
 
 afterEach(() => {
   cleanup();
@@ -132,10 +132,10 @@ describe('app shell', () => {
       </MemoryRouter>,
     );
     expect(screen.getByText('No events yet.')).toBeTruthy();
-    act(() => screen.getByRole('button', { name: 'Map' }).click());
+    act(() => screen.getByRole('button', { name: 'Show map' }).click());
     expect(screen.getByTestId('loc').textContent).toBe('/t/x?view=map#abc');
     expect(await screen.findByText('Map key not configured')).toBeTruthy();
-    act(() => screen.getByRole('button', { name: 'Timeline' }).click());
+    act(() => screen.getByRole('button', { name: 'Show timeline' }).click());
     expect(screen.getByTestId('loc').textContent).toBe('/t/x#abc');
   });
 });
