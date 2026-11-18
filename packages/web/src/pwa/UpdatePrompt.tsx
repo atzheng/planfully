@@ -1,4 +1,5 @@
 import { useRegisterSW } from 'virtual:pwa-register/react';
+import { Button } from '../ui/Button';
 import styles from './UpdatePrompt.module.css';
 
 /** Registers the service worker and offers a reload when a new version is waiting. */
@@ -10,17 +11,13 @@ export function UpdatePrompt() {
   if (!needRefresh) return null;
   return (
     <div className={styles.prompt} role="status">
-      <span>New version available</span>
-      <button
-        type="button"
-        className={styles.reload}
-        onClick={() => void updateServiceWorker(true)}
-      >
-        Reload
-      </button>
-      <button type="button" className={styles.dismiss} onClick={() => setNeedRefresh(false)}>
+      <span className={styles.text}>New version available</span>
+      <Button variant="ghost" size="sm" onClick={() => setNeedRefresh(false)}>
         Later
-      </button>
+      </Button>
+      <Button variant="primary" size="sm" onClick={() => void updateServiceWorker(true)}>
+        Reload
+      </Button>
     </div>
   );
 }
