@@ -150,6 +150,7 @@ const Blocks = memo(function Blocks({
               top: b.top,
               height: b.height,
               left: geo.left,
+              ['--depth' as string]: geo.depth,
               width: geo.width,
             }}
             onClick={() => onOpen(e.id)}

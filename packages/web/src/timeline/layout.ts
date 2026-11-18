@@ -96,12 +96,18 @@ export function isIconOnly(widthPx: number): boolean {
 /**
  * Cascade levels a block of `availPx` (column width before the 1px margins and depth inset) can use:
  * each level costs DEPTH_STEP_PX and the block keeps at least DEPTH_STEP_PX of width. Capped at MAX_DEPTH.
- * This is the exact bound for exposure: a column keeps every block uncovered while at most
- * `maxDepthFor(availPx) + 1` blocks overlap in it (identical blocks beyond that share the deepest level).
+ * Exact bound for exposure: a column keeps every block uncovered while at most `maxDepthFor(availPx) + 1`
+ * blocks of it overlap at any instant (depth = lowest free level among overlapping earlier blocks of the
+ * column, so depth <= simultaneous overlap - 1); beyond that the deepest level is shared.
  */
 export function maxDepthFor(availPx: number): number {
   const room = Math.floor((availPx - 2 - DEPTH_STEP_PX) / DEPTH_STEP_PX);
   return Math.max(0, Math.min(MAX_DEPTH, room));
+}
+
+/** Vertical reach (px, each side) of a thin bar's 24px hit area beyond its box; 0 for blocks of 16px or more. */
+export function hitExtensionPx(heightPx: number): number {
+  return heightPx >= LINE_BLOCK_MIN_PX ? 0 : (24 - heightPx) / 2;
 }
 
 export type BlockTier = 'full' | 'line' | 'bar';
@@ -264,8 +270,11 @@ export function layoutEvents(
         : Math.min(maxColumns, maxColumnsForWidth(laneWidthPx, railBudgetPx(slotEnds.length)));
     const insetFor = (top: number, height: number): number => {
       let n = 0;
+      // A bar's 24px hit area reaches past its box: keep it clear of rails in its vertical reach too.
+      const ext = hitExtensionPx(height);
       for (const r of rails) {
-        if (r.top < top + height && r.top + r.height > top) n = Math.max(n, r.railSlot + 1);
+        if (r.top < top + height + ext && r.top + r.height > top - ext)
+          n = Math.max(n, r.railSlot + 1);
       }
       return n;
     };
@@ -286,10 +295,14 @@ export function layoutEvents(
       colItems = [];
       clusterEnd = -Infinity;
     };
+    // Lowest depth not used by an earlier block of this column that overlaps in time (interval colouring), so
+    // depth <= simultaneous overlap - 1. Deeper blocks are drawn on top (z-index by depth), so each keeps its strip.
     const depthIn = (c: number, top: number): number => {
-      let d = -1;
-      for (const o of colItems[c] ?? []) if (o.end > top) d = Math.max(d, o.depth);
-      return d + 1;
+      const used = new Set<number>();
+      for (const o of colItems[c] ?? []) if (o.end > top) used.add(o.depth);
+      let d = 0;
+      while (used.has(d)) d++;
+      return d;
     };
     for (const it of items) {
       if (it.top >= clusterEnd) flush();

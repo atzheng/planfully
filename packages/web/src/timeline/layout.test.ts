@@ -4,6 +4,7 @@ import {
   initialScrollMs,
   isRailEvent,
   isIconOnly,
+  hitExtensionPx,
   ICON_ONLY_PX,
   maxDepthFor,
   MAX_RAILS,
@@ -311,7 +312,9 @@ function exposed(blocks: Block[], w: number): Block[] {
   const bad: Block[] = [];
   blocks.forEach((b, i) => {
     const r = rect(b);
-    const later = blocks.slice(i + 1).map(rect);
+    const later = blocks
+      .filter((o, j) => o.depth > b.depth || (o.depth === b.depth && j > i))
+      .map(rect);
     const overlapsY = (l: { y0: number; y1: number }, y0: number, y1: number) =>
       l.y0 < y1 && y0 < l.y1;
     const strip = later.every(
@@ -505,7 +508,7 @@ test('rails in the exposure invariant: non-rail blocks keep clear of rails', () 
   const rects = flat.map((b) => ({ b, g: blockGeometry(b, lane) }));
   const bad = rects.filter(({ b, g }, i) =>
     rects
-      .slice(i + 1)
+      .filter((o, j) => o.b.depth > b.depth || (o.b.depth === b.depth && j > i))
       .some(
         (o) =>
           o.b.top < b.top + b.height &&
@@ -546,12 +549,13 @@ test('maxDepthFor: levels a block of a given width can cascade, capped at MAX_DE
 
 /** True when no later-drawn block covers the DEPTH_STEP_PX strip at the left of block `i` (blocks drawn in array order). */
 function stripUncovered(
-  rects: { top: number; height: number; x0: number; x1: number }[],
+  rects: { top: number; height: number; x0: number; x1: number; depth: number }[],
   i: number,
 ): boolean {
   const b = rects[i] as (typeof rects)[number];
+  // Drawn order: deeper levels on top, then array order.
   return rects
-    .slice(i + 1)
+    .filter((o, j) => o.depth > b.depth || (o.depth === b.depth && j > i))
     .every(
       (l) =>
         !(
@@ -640,4 +644,87 @@ test('rails beyond MAX_RAILS share the last slot but stay uncovered unless inter
   expect(railsUncovered(layoutEvents(four, scale, none).blocks)).toEqual([]);
   const six = Array.from({ length: MAX_RAILS + 2 }, () => ev(day(1), day(5), { type: 'lodging' }));
   expect(railsUncovered(layoutEvents(six, scale, none).blocks).length).toBeGreaterThan(0);
+});
+
+/** Pixel rects (clamped geometry) for a lane; returns how many blocks have no uncovered left strip. */
+function coveredCount(blocks: Block[], lane: number): number {
+  const rects = blocks
+    .filter((b) => !b.rail)
+    .map((b) => ({ ...blockGeometry(b, lane), top: b.top, height: b.height }));
+  return rects.filter((_, i) => !stripUncovered(rects, i)).length;
+}
+
+test('review: staggered overlaps - depth is the lowest free level, so the review counterexample is exposed', () => {
+  // 140px lane, 6 blocks, at most 5 overlapping at once (top, height in px at 6 px/h => hours).
+  const lane = 140;
+  const pxEv = (top: number, height: number) => {
+    const m0 = Math.round((top / 6) * 60);
+    const m1 = m0 + Math.round((height / 6) * 60);
+    const f = (m: number) =>
+      `2026-06-01T${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+    return ev(f(m0), f(m1));
+  };
+  const sc6 = makeScale(Date.UTC(2026, 5, 1), 6);
+  const evs = [
+    [624, 96],
+    [672, 96],
+    [696, 72],
+    [720, 96],
+    [744, 96],
+    [744, 72],
+  ].map(([t, h]) => pxEv(t as number, h as number));
+  const { blocks } = layoutEvents(evs, sc6, none, maxColumnsForWidth(lane), lane);
+  expect(blocks).toHaveLength(6);
+  expect(Math.max(...blocks.map((b) => b.depth))).toBeLessThanOrEqual(4);
+  expect(coveredCount(blocks, lane)).toBe(0);
+});
+
+test('randomised staggered blocks: no block is covered while simultaneous overlap per column is within the bound', () => {
+  let seed = 7;
+  const rnd = () => (seed = (seed * 1664525 + 1013904223) % 4294967296) / 4294967296;
+  const sc6 = makeScale(Date.UTC(2026, 5, 1), 6);
+  const f = (m: number) =>
+    `2026-06-01T${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+  let checked = 0;
+  for (let trial = 0; trial < 1500; trial++) {
+    const lane = [140, 160, 200, 331][Math.floor(rnd() * 4)] as number;
+    const n = 2 + Math.floor(rnd() * 9);
+    const evs: Event[] = [];
+    for (let i = 0; i < n; i++) {
+      const st = Math.floor(rnd() * 16) * 15;
+      evs.push(ev(f(st), f(st + 30 + Math.floor(rnd() * 6) * 15)));
+    }
+    const cols = maxColumnsForWidth(lane);
+    const { blocks } = layoutEvents(evs, sc6, none, cols, lane);
+    // Max simultaneous overlap (rendered heights) over any instant.
+    let maxOverlap = 0;
+    for (const b of blocks) {
+      let c = 0;
+      for (const o of blocks) if (o.top <= b.top && o.top + o.height > b.top) c++;
+      maxOverlap = Math.max(maxOverlap, c);
+    }
+    const avail = lane / cols;
+    // Documented bound (columns * (maxDepthFor(avail) + 1)) on simultaneous overlap.
+    if (maxOverlap > cols * (maxDepthFor(avail) + 1)) continue;
+    checked++;
+    expect(coveredCount(blocks, lane), `trial ${trial} lane ${lane}`).toBe(0);
+  }
+  expect(checked).toBeGreaterThan(300);
+});
+
+test('bars keep their 24px hit area clear of rails in vertical reach (railInset)', () => {
+  // A 6px bar ending just before a short rail: no time overlap, but its hit area reaches the rail.
+  const hotelStart = '2026-06-01T10:00';
+  const sc6 = makeScale(Date.UTC(2026, 5, 1), 1);
+  const bar = ev('2026-06-01T09:00', null);
+  const hotel = ev(hotelStart, '2026-06-03T10:00', { type: 'lodging' });
+  const { blocks } = layoutEvents([bar, hotel], sc6, none);
+  const b = blocks.find((x) => !x.rail) as Block;
+  expect(hitExtensionPx(b.height)).toBeGreaterThan(0);
+  expect(b.railInset).toBe(1);
+  expect(hitExtensionPx(28)).toBe(0);
+  // Far from the rail: no inset.
+  const far = ev('2026-05-31T00:00', null);
+  const r2 = layoutEvents([far, hotel], sc6, none).blocks.find((x) => !x.rail) as Block;
+  expect(r2.railInset).toBe(0);
 });
