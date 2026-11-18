@@ -162,6 +162,14 @@ describe('describeFilter', () => {
   it('is empty when nothing is active', () => {
     expect(describeFilter(NO_FILTER, roster)).toEqual([]);
   });
+  it('describes excludes', () => {
+    expect(
+      describeFilter({ ...NO_FILTER, excludeTypes: ['dining'], excludeWho: ['b', 'zz'] }, roster),
+    ).toEqual([
+      'Excluding types: Dining',
+      expect.stringMatching(/^Excluding participants: .*, Former participant$/),
+    ]);
+  });
   it('describes every criterion in words', () => {
     expect(
       describeFilter(

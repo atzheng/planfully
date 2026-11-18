@@ -60,6 +60,8 @@ export function describeFilter(filter: Filter, roster: readonly RosterMember[]):
   const out: string[] = [];
   if (filter.q.trim()) out.push(`Search: "${filter.q.trim()}"`);
   if (filter.types.length) out.push(`Types: ${filter.types.map(cap).join(', ')}`);
+  if (filter.excludeTypes?.length)
+    out.push(`Excluding types: ${filter.excludeTypes.map(cap).join(', ')}`);
   if (filter.from && filter.to) out.push(`Dates: ${filter.from} to ${filter.to}`);
   else if (filter.from) out.push(`From: ${filter.from}`);
   else if (filter.to) out.push(`Until: ${filter.to}`);
@@ -68,6 +70,12 @@ export function describeFilter(filter: Filter, roster: readonly RosterMember[]):
       (id) => roster.find((r) => r.id === id)?.name ?? 'Former participant',
     );
     out.push(`Participants: ${names.join(', ')}`);
+  }
+  if (filter.excludeWho?.length) {
+    const names = filter.excludeWho.map(
+      (id) => roster.find((r) => r.id === id)?.name ?? 'Former participant',
+    );
+    out.push(`Excluding participants: ${names.join(', ')}`);
   }
   if (filter.cancelled) out.push('Including cancelled events');
   return out;

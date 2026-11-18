@@ -177,7 +177,25 @@ describe('useFilter', () => {
       to: undefined,
       who: ['a', 'b'],
       cancelled: true,
+      excludeTypes: [],
+      excludeWho: [],
     });
+  });
+
+  test('reads - prefixed values as excludes, with the legacy transit mapping on both signs', () => {
+    const { result } = renderHook(() => useFilter(), {
+      wrapper: wrap('/t/x?type=lodging,-dining,-flight,-bogus&who=a,-b'),
+    });
+    expect(result.current.types).toEqual(['lodging']);
+    expect(result.current.excludeTypes).toEqual(['dining', 'transit']);
+    expect(result.current.who).toEqual(['a']);
+    expect(result.current.excludeWho).toEqual(['b']);
+  });
+
+  test('a value in both lists stays include only', () => {
+    const { result } = renderHook(() => useFilter(), { wrapper: wrap('/t/x?type=dining,-dining') });
+    expect(result.current.types).toEqual(['dining']);
+    expect(result.current.excludeTypes).toEqual([]);
   });
 });
 
@@ -193,6 +211,69 @@ function FilterBar({ phone = false, search = true }: { phone?: boolean; search?:
 }
 const openPanel = () => fireEvent.click(screen.getByRole('button', { name: /^Filters/ }));
 
+describe('filterEvents excludes', () => {
+  const run = (f: Partial<Filter>) => ids(filterEvents(EVENTS, F(f)));
+  test('exclude-only type filter keeps everything else', () => {
+    expect(run({ excludeTypes: ['dining'] })).toEqual(['museum', 'hotel', 'later', 'idea']);
+  });
+  test('include and exclude types combine', () => {
+    expect(run({ types: ['lodging', 'dining'], excludeTypes: ['dining'] })).toEqual(['hotel']);
+  });
+  test('excluded person: only events whose participants are all excluded are dropped', () => {
+    // dinner is shared with a; museum and idea are Everyone events
+    expect(run({ excludeWho: ['b'] })).toEqual(['museum', 'hotel', 'dinner', 'idea']);
+    expect(run({ excludeWho: ['a', 'b'] })).toEqual(['museum', 'idea']);
+  });
+  test('include who and exclude type mix', () => {
+    expect(run({ who: ['b'], excludeTypes: ['dining'] })).toEqual(['museum', 'later', 'idea']);
+  });
+  test('exclude who with include who', () => {
+    expect(run({ who: ['a'], excludeWho: ['a'] })).toEqual(['museum', 'dinner', 'idea']);
+  });
+});
+
+describe('tri-state chips', () => {
+  const Wrapped = () => (
+    <>
+      <FilterBar search={false} />
+      <Loc />
+    </>
+  );
+  test('click cycles none -> include -> exclude -> none, URL follows', () => {
+    render(
+      <MemoryRouter initialEntries={['/t/x']}>
+        <Wrapped />
+      </MemoryRouter>,
+    );
+    openPanel();
+    const chip = () => screen.getByRole('button', { name: /^Dining:/ });
+    expect(chip().getAttribute('aria-label')).toBe('Dining: not filtered. Activate to include');
+    fireEvent.click(chip());
+    expect(chip().getAttribute('aria-label')).toBe('Dining: included. Activate to exclude');
+    expect(screen.getByTestId('loc').textContent).toBe('?type=dining');
+    fireEvent.click(chip());
+    expect(chip().getAttribute('aria-label')).toBe('Dining: excluded. Activate to clear');
+    expect(screen.getByTestId('loc').textContent).toBe('?type=-dining');
+    expect(screen.getByText(/of 6 events/).textContent).toBe('4 of 6 events');
+    expect(screen.getByRole('button', { name: 'Filters, 1 active' })).toBeTruthy();
+    fireEvent.click(chip());
+    expect(screen.getByTestId('loc').textContent).toBe('');
+  });
+
+  test('who chips cycle too, and Clear all removes excludes', () => {
+    render(
+      <MemoryRouter initialEntries={['/t/x?who=-b&type=-dining']}>
+        <Wrapped />
+      </MemoryRouter>,
+    );
+    openPanel();
+    expect(screen.getByRole('button', { name: 'Filters, 2 active' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^Bob: excluded/ })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Clear all' }));
+    expect(screen.getByTestId('loc').textContent).toBe('');
+  });
+});
+
 describe('filter controls', () => {
   test('count changes as filters change and survives via URL; clear-all resets; hash kept', () => {
     render(
@@ -204,7 +285,7 @@ describe('filter controls', () => {
     expect(screen.queryByText(/of 6 events/)).toBeNull();
     openPanel();
     expect(screen.getByText(/of 6 events/).textContent).toBe('5 of 6 events');
-    fireEvent.click(screen.getByRole('button', { name: 'Lodging' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Lodging:/ }));
     expect(screen.getByText(/of 6 events/).textContent).toBe('1 of 6 events');
     fireEvent.change(screen.getByLabelText('Search events'), { target: { value: 'zzz' } });
     expect(screen.getByText(/of 6 events/).textContent).toBe('0 of 6 events');
@@ -224,7 +305,7 @@ describe('filter controls', () => {
       </MemoryRouter>,
     );
     openPanel();
-    fireEvent.click(screen.getByRole('button', { name: 'Ann' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Ann:/ }));
     expect(screen.getByText(/of 6 events/).textContent).toBe('4 of 6 events');
     fireEvent.click(screen.getByLabelText('Show cancelled'));
     expect(screen.getByText(/of 6 events/).textContent).toBe('5 of 6 events');
@@ -239,9 +320,9 @@ describe('filter controls', () => {
     expect(screen.getByRole('button', { name: 'Filters, 1 active' })).toBeTruthy();
     openPanel();
     expect(screen.getByText(/of 6 events/).textContent).toBe('1 of 6 events');
-    expect(screen.getByRole('button', { name: 'Dining' }).getAttribute('aria-pressed')).toBe(
-      'true',
-    );
+    expect(
+      screen.getByRole('button', { name: 'Dining: included. Activate to exclude' }),
+    ).toBeTruthy();
   });
 
   test('phone: the filters icon opens a bottom sheet with Done', () => {
@@ -271,6 +352,9 @@ describe('filterSummary', () => {
     expect(filterSummary(F({ from: '2026-05-02', who: ['zz'] }), roster)).toBe(
       'zz, from 2026-05-02',
     );
+    expect(
+      filterSummary(F({ types: ['lodging'], excludeTypes: ['dining'], excludeWho: ['a'] }), roster),
+    ).toBe('Lodging, not Dining, not Alex');
   });
 });
 
