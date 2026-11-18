@@ -342,8 +342,14 @@
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
+:global(:root[data-theme='dark']) .block {
+  --bg-block: hsl(var(--h) 30% 24%);
+  --fg-block: hsl(var(--h) 60% 90%);
+  border-color: hsl(var(--h) 30% 40%);
+  border-left-color: hsl(var(--h) 60% 60%);
+}
 @media (prefers-color-scheme: dark) {
-  .block {
+  :global(:root:not([data-theme='light'])) .block {
     --bg-block: hsl(var(--h) 30% 24%);
     --fg-block: hsl(var(--h) 60% 90%);
     border-color: hsl(var(--h) 30% 40%);
