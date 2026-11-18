@@ -5,6 +5,8 @@ import { useTrip } from '../trip/store';
 import { Button } from '../ui/Button';
 import {
   EMAIL_IFRAME_SANDBOX,
+  HEADER_PEEK_BYTES,
+  MAX_EMAIL_BYTES,
   buildSrcdoc,
   contentBytes,
   extractHeaders,
@@ -14,15 +16,20 @@ import {
   type ParsedAttachment,
   type ParsedEmail,
 } from './emailModel';
-import { opensInline } from './format';
+import { canOpenInline, formatSize } from './format';
+import { parseEmail } from './parseEmail';
 import styles from './EmailViewer.module.css';
 
-type Load = { state: 'loading' } | { state: 'error' } | { state: 'ready'; email: ParsedEmail };
+type Load =
+  | { state: 'loading' }
+  | { state: 'error' }
+  | { state: 'toolarge'; size: number; email: ParsedEmail }
+  | { state: 'ready'; email: ParsedEmail };
 
-function openOrDownload(a: ParsedAttachment) {
+async function openOrDownload(a: ParsedAttachment) {
   const blob = new Blob([contentBytes(a.content) as BlobPart], { type: a.mimeType });
   const url = URL.createObjectURL(blob);
-  if (opensInline(a.mimeType)) {
+  if (await canOpenInline(blob, a.mimeType)) {
     window.open(url, '_blank');
   } else {
     const link = document.createElement('a');
@@ -69,23 +76,39 @@ export function EmailViewer({
   useEffect(() => {
     if (!keys) return;
     let live = true;
+    let cancel = () => {};
     (async () => {
       try {
         const blob = await fetchAttachment(attachment, { tripId, ...keys });
-        // postal-mime is only needed here: keep it out of the main bundle.
-        const { default: PostalMime } = await import('postal-mime');
-        const email = (await PostalMime.parse(await blob.arrayBuffer())) as unknown as ParsedEmail;
-        if (live) setLoad({ state: 'ready', email });
+        // Too big to parse safely in a tab: show what the first chunk says and offer the download.
+        const tooLarge = blob.size > MAX_EMAIL_BYTES;
+        const data = await blob.slice(0, tooLarge ? HEADER_PEEK_BYTES : blob.size).arrayBuffer();
+        // Parsed off the main thread; postal-mime stays out of the main bundle.
+        const parse = parseEmail(data);
+        cancel = parse.cancel;
+        const email = await parse.promise;
+        if (live) {
+          setLoad(
+            tooLarge
+              ? {
+                  state: 'toolarge',
+                  size: blob.size,
+                  email: { ...email, html: undefined, text: undefined, attachments: [] },
+                }
+              : { state: 'ready', email },
+          );
+        }
       } catch {
         if (live) setLoad({ state: 'error' });
       }
     })();
     return () => {
       live = false;
+      cancel();
     };
   }, [attachment, tripId, keys]);
 
-  const email = load.state === 'ready' ? load.email : null;
+  const email = load.state === 'ready' || load.state === 'toolarge' ? load.email : null;
   const srcdoc = useMemo(
     () => (email?.html ? buildSrcdoc(email.html, email.attachments, { remoteImages: remote }) : ''),
     [email, remote],
@@ -103,6 +126,11 @@ export function EmailViewer({
       {load.state === 'error' && (
         <p role="alert" className={styles.error}>
           Could not open this email.
+        </p>
+      )}
+      {load.state === 'toolarge' && (
+        <p role="status" className={styles.notice}>
+          This email is too large to view here ({formatSize(load.size)}). Use Download .eml.
         </p>
       )}
       {email && headers && (

@@ -7,18 +7,23 @@ import {
   hasRemoteImages,
   isEmailAttachment,
   linkify,
+  MAX_INLINE_IMAGE_BYTES,
+  MAX_INLINE_TOTAL_BYTES,
   listedAttachments,
   rewriteCid,
   type ParsedAttachment,
   type ParsedEmail,
 } from './emailModel';
 
+const PNG_BYTES = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
+const PNG_B64 = btoa(String.fromCharCode(...PNG_BYTES));
+
 const png: ParsedAttachment = {
   filename: 'logo.png',
   mimeType: 'image/png',
   disposition: 'inline',
   contentId: '<logo@x>',
-  content: new Uint8Array([1, 2, 3]),
+  content: PNG_BYTES,
 };
 const pdf: ParsedAttachment = {
   filename: 'conf.pdf',
@@ -62,8 +67,32 @@ describe('rewriteCid', () => {
       '<img src="cid:LOGO@x"><div style="background:url(cid:logo@x)"></div><img src="cid:other">',
       [png],
     );
-    expect(out.match(/data:image\/png;base64,AQID/g)).toHaveLength(2);
+    expect(out.split(`data:image/png;base64,${PNG_B64}`).length - 1).toBe(2);
     expect(out).toContain('cid:other');
+  });
+  test('leaves oversized, over-budget and signature-mismatched images as cid:', () => {
+    const big = new Uint8Array(MAX_INLINE_IMAGE_BYTES + 1);
+    big.set(PNG_BYTES);
+    expect(rewriteCid('<img src="cid:logo@x">', [{ ...png, content: big }])).toBe(
+      '<img src="cid:logo@x">',
+    );
+    const fake = { ...png, content: new Uint8Array([1, 2, 3]) };
+    expect(rewriteCid('<img src="cid:logo@x">', [fake])).toBe('<img src="cid:logo@x">');
+  });
+  test('stops inlining once the total budget is spent', () => {
+    const chunk = new Uint8Array(MAX_INLINE_IMAGE_BYTES);
+    chunk.set(PNG_BYTES);
+    const parts = Array.from({ length: 200 }, (_, i) => ({
+      ...png,
+      contentId: `<i${i}>`,
+      content: chunk,
+    }));
+    const html = parts.map((_, i) => `<img src="cid:i${i}">`).join('');
+    const out = rewriteCid(html, parts);
+    expect(out.split('data:image/png').length - 1).toBe(
+      Math.floor(MAX_INLINE_TOTAL_BYTES / MAX_INLINE_IMAGE_BYTES),
+    );
+    expect(out).toContain('cid:i199');
   });
   test('ignores non-raster inline parts', () => {
     const svg = { ...png, mimeType: 'image/svg+xml' };
@@ -84,7 +113,7 @@ describe('buildSrcdoc', () => {
     expect(doc.indexOf('<head>')).toBeLessThan(doc.indexOf('Content-Security-Policy'));
     expect(doc.indexOf('Content-Security-Policy')).toBeLessThan(doc.indexOf('<body'));
     expect(doc).not.toContain('<script');
-    expect(doc).toContain('data:image/png;base64,AQID');
+    expect(doc).toContain(`data:image/png;base64,${PNG_B64}`);
   });
   test('remote images allowed only when asked', () => {
     expect(buildSrcdoc(html, [], { remoteImages: true })).toMatch(/img-src data: blob: https:/);

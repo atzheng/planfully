@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { formatDuration, formatLocalTime, mapsUrl, opensInline, participantNames } from './format';
+import {
+  formatDuration,
+  formatLocalTime,
+  mapsUrl,
+  matchesMagic,
+  opensInline,
+  participantNames,
+} from './format';
 
 describe('format', () => {
   it('formats in the event zone with abbreviation', () => {
@@ -31,5 +38,20 @@ describe('format', () => {
     expect(opensInline('application/pdf')).toBe(true);
     expect(opensInline('text/html')).toBe(false);
     expect(opensInline('image/svg+xml')).toBe(false);
+  });
+  it('magic bytes must match the claimed type', () => {
+    const b = (...n: number[]) => new Uint8Array(n);
+    expect(matchesMagic('application/pdf', new TextEncoder().encode('%PDF-1.7\n'))).toBe(true);
+    expect(matchesMagic('application/pdf', new TextEncoder().encode('junk\n%PDF-1.4'))).toBe(true);
+    expect(matchesMagic('application/pdf', new TextEncoder().encode('<html><script>'))).toBe(false);
+    expect(matchesMagic('application/pdf', new TextEncoder().encode('%PDF'))).toBe(false);
+    expect(matchesMagic('image/png', b(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a))).toBe(true);
+    expect(matchesMagic('image/png', b(0xff, 0xd8, 0xff))).toBe(false);
+    expect(matchesMagic('image/jpeg', b(0xff, 0xd8, 0xff, 0xe0))).toBe(true);
+    expect(matchesMagic('image/gif', new TextEncoder().encode('GIF89a'))).toBe(true);
+    expect(matchesMagic('image/gif', new TextEncoder().encode('GIF80a'))).toBe(false);
+    expect(matchesMagic('IMAGE/WEBP', new TextEncoder().encode('RIFF\0\0\0\0WEBP'))).toBe(true);
+    expect(matchesMagic('image/webp', new TextEncoder().encode('RIFF\0\0\0\0WAVE'))).toBe(false);
+    expect(matchesMagic('text/html', new TextEncoder().encode('<html>'))).toBe(false);
   });
 });

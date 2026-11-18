@@ -61,6 +61,49 @@ const INLINE_MIMES = new Set([
 ]);
 export const opensInline = (mime: string) => INLINE_MIMES.has(mime.toLowerCase());
 
+const startsWith = (b: Uint8Array, sig: number[], at = 0) =>
+  b.length >= at + sig.length && sig.every((v, i) => b[at + i] === v);
+
+/** Bytes needed by `matchesMagic`. */
+export const MAGIC_BYTES = 12;
+
+/**
+ * Defence in depth before opening a blob inline: does the content start with the signature of the
+ * claimed type? False means download instead. Types without a signature check return false.
+ */
+export function matchesMagic(mime: string, head: Uint8Array): boolean {
+  switch (mime.toLowerCase()) {
+    case 'application/pdf': {
+      // Readers tolerate a few junk bytes before the header; allow up to 1 KB like the PDF spec.
+      const sig = [0x25, 0x50, 0x44, 0x46, 0x2d]; // %PDF-
+      for (let i = 0; i + sig.length <= Math.min(head.length, 1024); i++) {
+        if (startsWith(head, sig, i)) return true;
+      }
+      return false;
+    }
+    case 'image/png':
+      return startsWith(head, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    case 'image/jpeg':
+      return startsWith(head, [0xff, 0xd8, 0xff]);
+    case 'image/gif':
+      return startsWith(head, [0x47, 0x49, 0x46, 0x38]) && (head[4] === 0x37 || head[4] === 0x39);
+    case 'image/webp':
+      return (
+        startsWith(head, [0x52, 0x49, 0x46, 0x46]) && startsWith(head, [0x57, 0x45, 0x42, 0x50], 8)
+      );
+    default:
+      return false;
+  }
+}
+
+/** Whether a blob may be opened inline: allowlisted type AND matching signature. */
+export async function canOpenInline(blob: Blob, mime: string): Promise<boolean> {
+  if (!opensInline(mime)) return false;
+  // PDF check scans up to 1 KB, so read a bit more than MAGIC_BYTES.
+  const head = new Uint8Array(await blob.slice(0, 1024).arrayBuffer());
+  return matchesMagic(mime, head);
+}
+
 /** The original-email attachment stored by the Worker (.eml, message/rfc822). */
 export function isEmailAttachment(a: { mime: string; filename: string }): boolean {
   return a.mime.toLowerCase() === 'message/rfc822' || /\.eml$/i.test(a.filename);
