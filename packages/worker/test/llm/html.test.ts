@@ -72,18 +72,30 @@ describe('htmlToText', () => {
   });
 
   describe('linear time on adversarial input', () => {
-    const cases: [string, string][] = [
-      ['unclosed script', '<script>'.repeat(1e5)],
-      ['nested hidden divs', '<div style="display:none">'.repeat(1e5)],
-      ['unterminated style attribute', '<td style="'.repeat(2e4)],
-      ['unterminated tags', '<a '.repeat(2e5)],
-      ['lone angle brackets', '<'.repeat(5e5)],
+    // Wall-clock limits flake under parallel load, so assert scaling instead: the same
+    // pattern at 8x the size must cost well under the 64x a quadratic parser would.
+    const cases: [string, string, number][] = [
+      ['unclosed script', '<script>', 1e4],
+      ['nested hidden divs', '<div style="display:none">', 1e4],
+      ['unterminated style attribute', '<td style="', 2e3],
+      ['unterminated tags', '<a ', 2e4],
+      ['lone angle brackets', '<', 5e4],
     ];
-    for (const [name, input] of cases) {
-      test(`${name} finishes in < 200 ms`, () => {
+    const best = (input: string) => {
+      let min = Infinity;
+      for (let i = 0; i < 3; i++) {
         const t = performance.now();
         htmlToText(input);
-        expect(performance.now() - t).toBeLessThan(200);
+        min = Math.min(min, performance.now() - t);
+      }
+      return min;
+    };
+    for (const [name, unit, n] of cases) {
+      test(`${name} scales linearly`, () => {
+        const small = best(unit.repeat(n));
+        const large = best(unit.repeat(n * 8));
+        // Linear is ~8x; quadratic is ~64x. The floor keeps sub-millisecond noise from counting.
+        expect(large).toBeLessThan(Math.max(small, 2) * 32);
       });
     }
   });
