@@ -196,7 +196,7 @@ export function WeatherStrip() {
           className={styles.windLine}
         />
         {s.buckets.map((b) => {
-          const w = rainW(b.precipSum);
+          const w = rainW(b.precipPeak ?? b.precipSum);
           if (w === 0) return null;
           const by = y(b.fromMs);
           return (

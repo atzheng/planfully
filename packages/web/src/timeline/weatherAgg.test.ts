@@ -9,6 +9,7 @@ import {
   hitAt,
   inGap,
   noForecastBands,
+  scaleMax,
   stepFor,
   thinBuckets,
 } from './weatherAgg';
@@ -195,6 +196,13 @@ describe('thinBuckets (condensed time)', () => {
       expect(describeHit(hit, 'hour', 'UTC', { temp: 'C', wind: 'kmh' })).toContain(' to ');
     }
     expect(hitAt(strip.segments, T0 + 2.5 * H)).toMatchObject({ kind: 'bucket' });
+  });
+  it('condensing does not change the rain scale ceiling', () => {
+    const linear = buildStrip(input, 'hour', 'UTC');
+    const condensed = buildStrip(input, 'hour', 'UTC', [gap], toY);
+    expect(condensed.segments[0]?.buckets.some((b) => b.merged)).toBe(true);
+    expect(condensed.extents.precipMax).toBe(linear.extents.precipMax);
+    expect(scaleMax(condensed.extents, 'hour')).toEqual(scaleMax(linear.extents, 'hour'));
   });
   it('inGap is strict', () => {
     expect(inGap(gap.fromMs, [gap])).toBe(false);

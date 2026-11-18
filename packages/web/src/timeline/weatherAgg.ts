@@ -29,6 +29,8 @@ export type Bucket = {
   n: number;
   /** Set when several buckets were folded into one inside a collapsed gap (condensed time). */
   merged?: true;
+  /** Merged buckets only: the largest rain total of any bucket folded in (what the rain scale and bar use). */
+  precipPeak?: number;
 };
 
 export function bucketStart(ms: number, step: Step, zone: string): number {
@@ -147,6 +149,7 @@ export function thinBuckets(
         windMax: Math.max(prev.windMax, b.windMax),
         precipSum: prev.precipSum + b.precipSum,
         n,
+        precipPeak: Math.max(prev.precipPeak ?? prev.precipSum, b.precipPeak ?? b.precipSum),
         merged: true,
       };
     } else out.push(b);
@@ -236,7 +239,7 @@ export function buildStrip(
       ex.tempMin = Math.min(ex.tempMin, b.tempMin);
       ex.tempMax = Math.max(ex.tempMax, b.tempMax);
       ex.windMax = Math.max(ex.windMax, step === 'day' ? b.windMax : b.windAvg);
-      ex.precipMax = Math.max(ex.precipMax, b.precipSum);
+      ex.precipMax = Math.max(ex.precipMax, b.precipPeak ?? b.precipSum);
     }
   if (ex.tempMin > ex.tempMax) {
     ex.tempMin = 0;
