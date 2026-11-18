@@ -7,8 +7,12 @@ import {
   toBase64Url,
 } from '@planfully/shared';
 import { ApiError, createTrip, type RosterMember } from '../lib/api';
-import { ThemeToggle } from '../theme/ThemeToggle';
-import { Button } from '../ui/Button';
+import { TriangleAlert } from 'lucide-react';
+import { SiteHeader } from '../pages/SiteHeader';
+import page from '../pages/pages.module.css';
+import { Field } from '../ui/Field';
+import { Input, Textarea } from '../ui/Input';
+import { Button, buttonClass } from '../ui/Button';
 import styles from './CreateTrip.module.css';
 
 const MAX_ROSTER = 50;
@@ -122,45 +126,56 @@ export function CreateTrip() {
 
   if (created) {
     return (
-      <main className={styles.page}>
-        <h1>Trip created</h1>
-        <div className={styles.warning} role="alert">
-          <strong>This link is the only key to your trip.</strong> It is not stored anywhere and
-          cannot be recovered. Save it now (password manager, notes) and share it only with people
-          who should see the trip.
-        </div>
-        <section className={styles.field}>
-          <span className={styles.label}>Trip link</span>
-          <div className={styles.copyRow}>
-            <code className={styles.value} data-testid="trip-url">
-              {created.url}
-            </code>
-            <Button primary onClick={() => copy('url', created.url)}>
-              {copied === 'url' ? 'Copied' : 'Copy link'}
-            </Button>
+      <>
+        <SiteHeader />
+        <main className={page.cardPage}>
+          <div className={page.card}>
+            <h1 className={styles.title}>Trip created</h1>
+            <div className={styles.warning} role="alert">
+              <TriangleAlert size={18} aria-hidden="true" className={styles.warningIcon} />
+              <div>
+                <strong>This link is the only key to your trip.</strong> It is not stored anywhere
+                and cannot be recovered. Save it now (password manager, notes) and share it only
+                with people who should see the trip.
+              </div>
+            </div>
+            <section className={styles.field}>
+              <span className={styles.label}>Trip link</span>
+              <div className={styles.copyRow}>
+                <code className={styles.value} data-testid="trip-url">
+                  {created.url}
+                </code>
+                <Button variant="primary" onClick={() => copy('url', created.url)}>
+                  {copied === 'url' ? 'Copied' : 'Copy link'}
+                </Button>
+              </div>
+            </section>
+            <section className={styles.field}>
+              <span className={styles.label}>Forward bookings to</span>
+              <div className={styles.copyRow}>
+                <code className={styles.value}>{created.email}</code>
+                <Button onClick={() => copy('email', created.email)}>
+                  {copied === 'email' ? 'Copied' : 'Copy address'}
+                </Button>
+              </div>
+              <span className={styles.hint}>
+                For receipts only, use <code>{created.receipts}</code>.
+              </span>
+            </section>
+            {error && (
+              <p className={styles.error} role="alert">
+                {error}
+              </p>
+            )}
+            <a
+              className={buttonClass({ variant: 'secondary', className: styles.open })}
+              href={created.url}
+            >
+              Open trip
+            </a>
           </div>
-        </section>
-        <section className={styles.field}>
-          <span className={styles.label}>Forward bookings to</span>
-          <div className={styles.copyRow}>
-            <code className={styles.value}>{created.email}</code>
-            <Button onClick={() => copy('email', created.email)}>
-              {copied === 'email' ? 'Copied' : 'Copy address'}
-            </Button>
-          </div>
-          <span className={styles.hint}>
-            For receipts only, use <code>{created.receipts}</code>.
-          </span>
-        </section>
-        {error && (
-          <p className={styles.error} role="alert">
-            {error}
-          </p>
-        )}
-        <a className={styles.link} href={created.url}>
-          Open trip
-        </a>
-      </main>
+        </main>
+      </>
     );
   }
 
@@ -168,95 +183,103 @@ export function CreateTrip() {
     setMembers((ms) => ms.map((m) => (m.key === key ? { ...m, ...patch } : m)));
 
   return (
-    <main className={styles.page}>
-      <div style={{ float: 'right' }}>
-        <ThemeToggle />
-      </div>
-      <h1>New trip</h1>
-      <form className={styles.form} onSubmit={submit}>
-        <label className={styles.field}>
-          <span className={styles.label}>Trip name</span>
-          <input
-            className={styles.input}
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            autoComplete="off"
-          />
-        </label>
-        <fieldset className={styles.fieldset}>
-          <legend className={styles.label}>Travellers</legend>
-          <span className={styles.hint}>
-            Aliases are other names that appear on bookings, separated by commas.
-          </span>
-          {members.map((m, i) => (
-            <div className={styles.member} key={m.key}>
-              <input
-                className={styles.input}
-                aria-label={`Traveller ${i + 1} name`}
-                placeholder="Name"
-                value={m.name}
-                onChange={(e) => setMember(m.key, { name: e.target.value })}
+    <>
+      <SiteHeader />
+      <main className={page.cardPage}>
+        <form className={page.card} onSubmit={submit}>
+          <div>
+            <h1 className={styles.title}>New trip</h1>
+            <p className={styles.sub}>
+              You get a private link that holds the key to the trip, plus an email address for
+              forwarding bookings.
+            </p>
+          </div>
+          <Field label="Trip name">
+            {(p) => (
+              <Input
+                {...p}
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                autoComplete="off"
               />
-              <input
-                className={styles.input}
-                aria-label={`Traveller ${i + 1} aliases`}
-                placeholder="Aliases (optional)"
-                value={m.aliases}
-                onChange={(e) => setMember(m.key, { aliases: e.target.value })}
-              />
+            )}
+          </Field>
+          <fieldset className={styles.fieldset}>
+            <legend className={styles.label}>Travellers</legend>
+            <span className={styles.hint}>
+              Aliases are other names that appear on bookings, separated by commas.
+            </span>
+            {members.map((m, i) => (
+              <div className={styles.member} key={m.key}>
+                <Input
+                  aria-label={`Traveller ${i + 1} name`}
+                  placeholder="Name"
+                  value={m.name}
+                  onChange={(e) => setMember(m.key, { name: e.target.value })}
+                />
+                <Input
+                  aria-label={`Traveller ${i + 1} aliases`}
+                  placeholder="Aliases (optional)"
+                  value={m.aliases}
+                  onChange={(e) => setMember(m.key, { aliases: e.target.value })}
+                />
+                <Button
+                  variant="ghost"
+                  aria-label={`Remove traveller ${i + 1}`}
+                  onClick={() => setMembers((ms) => ms.filter((x) => x.key !== m.key))}
+                >
+                  Remove
+                </Button>
+              </div>
+            ))}
+            <div>
               <Button
-                aria-label={`Remove traveller ${i + 1}`}
-                onClick={() => setMembers((ms) => ms.filter((x) => x.key !== m.key))}
+                size="sm"
+                disabled={members.length >= MAX_ROSTER}
+                onClick={() => {
+                  setMembers((ms) => [...ms, { key: nextKey, name: '', aliases: '' }]);
+                  setNextKey(nextKey + 1);
+                }}
               >
-                Remove
+                Add traveller
               </Button>
             </div>
-          ))}
-          <div>
-            <Button
-              disabled={members.length >= MAX_ROSTER}
-              onClick={() => {
-                setMembers((ms) => [...ms, { key: nextKey, name: '', aliases: '' }]);
-                setNextKey(nextKey + 1);
-              }}
-            >
-              Add traveller
-            </Button>
-          </div>
-        </fieldset>
-        <label className={styles.field}>
-          <span className={styles.label}>Allowed senders</span>
-          <textarea
-            className={styles.textarea}
-            rows={3}
-            value={senders}
-            onChange={(e) => setSenders(e.target.value)}
-            placeholder="you@example.com"
-          />
-          <span className={styles.hint}>
-            Email addresses allowed to forward bookings, one per line or comma separated.
-          </span>
-        </label>
-        <label className={styles.field}>
-          <span className={styles.label}>Admin secret</span>
-          <input
-            className={styles.input}
-            type="password"
-            value={adminSecret}
-            onChange={(e) => setAdminSecret(e.target.value)}
-            autoComplete="off"
-          />
-          <span className={styles.hint}>Sent once to create the trip. Never stored.</span>
-        </label>
-        {error && (
-          <p className={styles.error} role="alert">
-            {error}
-          </p>
-        )}
-        <Button primary type="submit" disabled={busy}>
-          {busy ? 'Creating…' : 'Create trip'}
-        </Button>
-      </form>
-    </main>
+          </fieldset>
+          <Field
+            label="Allowed senders"
+            hint="Email addresses allowed to forward bookings, one per line or comma separated."
+          >
+            {(p) => (
+              <Textarea
+                {...p}
+                rows={3}
+                value={senders}
+                onChange={(e) => setSenders(e.target.value)}
+                placeholder="you@example.com"
+              />
+            )}
+          </Field>
+          <Field label="Admin secret" hint="Sent once to create the trip. Never stored.">
+            {(p) => (
+              <Input
+                {...p}
+                type="password"
+                value={adminSecret}
+                onChange={(e) => setAdminSecret(e.target.value)}
+                autoComplete="off"
+              />
+            )}
+          </Field>
+          {error && (
+            <p className={styles.error} role="alert">
+              {error}
+            </p>
+          )}
+          <Button variant="primary" type="submit" disabled={busy} className={styles.submit}>
+            {busy ? 'Creating…' : 'Create trip'}
+          </Button>
+        </form>
+      </main>
+    </>
   );
 }
