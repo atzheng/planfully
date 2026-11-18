@@ -83,21 +83,16 @@ const ZONE_ABBR: Record<string, AbbrRow> = {
   'Africa/Johannesburg': ['SAST', 120],
   'Africa/Lagos': ['WAT', 60],
   'Africa/Nairobi': ['EAT', 180],
-  'Asia/Jerusalem': ['IST', 120, 'IDT'],
   'Asia/Dubai': ['GST', 240],
   'Asia/Karachi': ['PKT', 300],
   'Asia/Kolkata': ['IST', 330],
   'Asia/Calcutta': ['IST', 330],
-  'Asia/Dhaka': ['BST', 360],
   'Asia/Bangkok': ['ICT', 420],
   'Asia/Ho_Chi_Minh': ['ICT', 420],
   'Asia/Jakarta': ['WIB', 420],
   'Asia/Singapore': ['SGT', 480],
   'Asia/Kuala_Lumpur': ['MYT', 480],
   'Asia/Manila': ['PHT', 480],
-  'Asia/Hong_Kong': ['HKT', 480],
-  'Asia/Shanghai': ['CST', 480],
-  'Asia/Taipei': ['CST', 480],
   'Australia/Perth': ['AWST', 480],
   'Asia/Tokyo': ['JST', 540],
   'Asia/Seoul': ['KST', 540],
@@ -164,7 +159,11 @@ export function zoneAbbreviation(tz: string, ms: number): string {
 
 /** `zoneAbbreviation` for a local time in its own zone. */
 export function localTimeAbbreviation(t: LocalTime): string {
-  return zoneAbbreviation(t.tz, toInstant(t));
+  try {
+    return zoneAbbreviation(t.tz, toInstant(t));
+  } catch {
+    return t.tz;
+  }
 }
 
 /** Absolute interval of a scheduled event; null when unscheduled. `end` defaults to `start`. */

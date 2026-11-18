@@ -44,6 +44,16 @@ describe('zoneAbbreviation', () => {
   it('works from a local time', () => {
     expect(localTimeAbbreviation({ local: '2026-07-15T09:00', tz: 'Europe/Lisbon' })).toBe('WEST');
   });
+  it('does not throw for invalid input and skips ambiguous abbreviations', () => {
+    expect(localTimeAbbreviation({ local: '2026-07-15T09:00', tz: 'Not/AZone' })).toBe('Not/AZone');
+    expect(localTimeAbbreviation({ local: 'garbage', tz: 'Europe/Paris' })).toBe('Europe/Paris');
+    const ms = at('2026-07-01T00:00:00Z');
+    expect(zoneAbbreviation('Asia/Shanghai', ms)).toBe('UTC+8');
+    expect(zoneAbbreviation('Asia/Hong_Kong', ms)).toBe('UTC+8');
+    expect(zoneAbbreviation('Asia/Taipei', ms)).toBe('UTC+8');
+    expect(zoneAbbreviation('Asia/Dhaka', ms)).toBe('UTC+6');
+    expect(zoneAbbreviation('Asia/Jerusalem', ms)).toBe('UTC+3');
+  });
   it('formats offsets', () => {
     expect(utcOffsetLabel(-570)).toBe('UTC-9:30');
     expect(utcOffsetLabel(120)).toBe('UTC+2');
