@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { numberCodec, useQueryState } from '../lib/queryState';
 import type { Codec } from '../lib/queryState';
+import { condensedPx } from './condense';
 import { DEFAULT_PX_PER_HOUR, MAX_PX_PER_HOUR, MIN_PX_PER_HOUR } from './scale';
+import type { Gap } from './scale';
 
 const HOUR_MS = 3_600_000;
 
@@ -26,9 +28,14 @@ export const DEFAULT_VISIBLE_DAYS = 5;
  * Default zoom for a trip spanning [fromMs, toMs] in a viewport `viewportPx` tall (below the axis
  * heading): fit the first DEFAULT_VISIBLE_DAYS days, or the whole trip when it is shorter.
  */
-export function defaultPxPerHour(fromMs: number, toMs: number, viewportPx: number): number {
+export function defaultPxPerHour(
+  fromMs: number,
+  toMs: number,
+  viewportPx: number,
+  gaps: readonly Gap[] = [],
+): number {
   const capMs = fromMs + DEFAULT_VISIBLE_DAYS * 24 * HOUR_MS;
-  return fitPx(fromMs, Math.min(toMs, capMs), viewportPx);
+  return fitPx(fromMs, Math.min(toMs, capMs), viewportPx, gaps);
 }
 
 // The measured default is shared by `useZoom` (Timeline) and `usePxPerHour` (everyone else), so they
@@ -119,11 +126,30 @@ export function attachGestureZoom(
   };
 }
 
-/** pxPerHour that fits [fromMs, toMs] into `viewportPx`. */
-export function fitPx(fromMs: number, toMs: number, viewportPx: number): number {
-  const hours = (toMs - fromMs) / HOUR_MS;
-  if (!(hours > 0) || !(viewportPx > 0)) return DEFAULT_PX_PER_HOUR;
-  return clampPx(viewportPx / hours);
+/**
+ * pxPerHour that fits [fromMs, toMs] into `viewportPx`. With condensed `gaps`, the collapsed part has
+ * a height capped at GAP_PX, so the height is no longer proportional to the zoom; it is solved by
+ * bisection (the height is increasing in px/h).
+ */
+export function fitPx(
+  fromMs: number,
+  toMs: number,
+  viewportPx: number,
+  gaps: readonly Gap[] = [],
+): number {
+  if (!(toMs > fromMs) || !(viewportPx > 0)) return DEFAULT_PX_PER_HOUR;
+  if (gaps.length === 0) return clampPx(viewportPx / ((toMs - fromMs) / HOUR_MS));
+  const heightAt = (px: number) => condensedPx(gaps, fromMs, toMs, px);
+  if (heightAt(MIN_PX_PER_HOUR) >= viewportPx) return MIN_PX_PER_HOUR;
+  if (heightAt(MAX_PX_PER_HOUR) <= viewportPx) return MAX_PX_PER_HOUR;
+  let lo = MIN_PX_PER_HOUR;
+  let hi = MAX_PX_PER_HOUR;
+  for (let i = 0; i < 60; i++) {
+    const mid = (lo + hi) / 2;
+    if (heightAt(mid) < viewportPx) lo = mid;
+    else hi = mid;
+  }
+  return clampPx((lo + hi) / 2);
 }
 
 /** scrollTop that puts `ms` at `y` px below the top of the scroller. */
