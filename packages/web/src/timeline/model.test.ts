@@ -5,6 +5,8 @@ import {
   anchorMsAt,
   scrollTopForAnchor,
   dayHeading,
+  MODE_ICON,
+  TYPE_ICON,
   eventIcon,
   eventKindLabel,
   localStartLabel,
@@ -88,10 +90,10 @@ test('validZone', () => {
 
 describe('transit mode', () => {
   test('mode drives the icon and label; unset or other falls back to the type', () => {
-    expect(eventIcon({ type: 'transit', mode: 'flight' })).toBe('✈');
-    expect(eventIcon({ type: 'transit', mode: 'train' })).toBe('🚆');
-    expect(eventIcon({ type: 'transit' })).toBe('🧭');
-    expect(eventIcon({ type: 'dining', mode: 'flight' })).toBe('🍽');
+    expect(eventIcon({ type: 'transit', mode: 'flight' })).toBe(MODE_ICON.flight);
+    expect(eventIcon({ type: 'transit', mode: 'train' })).toBe(MODE_ICON.train);
+    expect(eventIcon({ type: 'transit' })).toBe(TYPE_ICON.transit);
+    expect(eventIcon({ type: 'dining', mode: 'flight' })).toBe(TYPE_ICON.dining);
     expect(eventKindLabel({ type: 'transit', mode: 'car' })).toBe('car');
     expect(eventKindLabel({ type: 'transit', mode: 'other' })).toBe('transit');
     expect(eventKindLabel({ type: 'lodging' })).toBe('lodging');

@@ -1,0 +1,85 @@
+/* Per-event-type colours (zbj.2). Hues mirror TYPE_HUE in timeline/model.ts; typeColors.test.ts checks hues and contrast.
+   Inside any element with data-type="<type>" use var(--type-bg), var(--type-fg), var(--type-bar). */
+:root {
+  --type-transit-bg: hsl(205 55% 94%);
+  --type-transit-fg: hsl(205 60% 22%);
+  --type-transit-bar: hsl(205 50% 40%);
+  --type-lodging-bg: hsl(150 55% 94%);
+  --type-lodging-fg: hsl(150 60% 22%);
+  --type-lodging-bar: hsl(150 50% 40%);
+  --type-dining-bg: hsl(20 55% 94%);
+  --type-dining-fg: hsl(20 60% 22%);
+  --type-dining-bar: hsl(20 50% 40%);
+  --type-activity-bg: hsl(320 55% 94%);
+  --type-activity-fg: hsl(320 60% 22%);
+  --type-activity-bar: hsl(320 50% 40%);
+  --type-attraction-bg: hsl(45 55% 94%);
+  --type-attraction-fg: hsl(45 60% 22%);
+  --type-attraction-bar: hsl(45 50% 40%);
+  --type-receipt-bg: hsl(95 55% 94%);
+  --type-receipt-fg: hsl(95 60% 22%);
+  --type-receipt-bar: hsl(95 50% 40%);
+  --type-other-bg: hsl(240 10% 94%);
+  --type-other-fg: hsl(240 12% 22%);
+  --type-other-bar: hsl(240 10% 40%);
+}
+
+:root[data-theme='dark'] {
+  --type-transit-bg: hsl(205 24% 19%);
+  --type-transit-fg: hsl(205 65% 88%);
+  --type-transit-bar: hsl(205 58% 62%);
+  --type-lodging-bg: hsl(150 24% 19%);
+  --type-lodging-fg: hsl(150 65% 88%);
+  --type-lodging-bar: hsl(150 58% 62%);
+  --type-dining-bg: hsl(20 24% 19%);
+  --type-dining-fg: hsl(20 65% 88%);
+  --type-dining-bar: hsl(20 58% 62%);
+  --type-activity-bg: hsl(320 24% 19%);
+  --type-activity-fg: hsl(320 65% 88%);
+  --type-activity-bar: hsl(320 58% 62%);
+  --type-attraction-bg: hsl(45 24% 19%);
+  --type-attraction-fg: hsl(45 65% 88%);
+  --type-attraction-bar: hsl(45 58% 62%);
+  --type-receipt-bg: hsl(95 24% 19%);
+  --type-receipt-fg: hsl(95 65% 88%);
+  --type-receipt-bar: hsl(95 58% 62%);
+  --type-other-bg: hsl(240 8% 19%);
+  --type-other-fg: hsl(240 12% 88%);
+  --type-other-bar: hsl(240 10% 62%);
+}
+
+[data-type='transit'] {
+  --type-bg: var(--type-transit-bg);
+  --type-fg: var(--type-transit-fg);
+  --type-bar: var(--type-transit-bar);
+}
+[data-type='lodging'] {
+  --type-bg: var(--type-lodging-bg);
+  --type-fg: var(--type-lodging-fg);
+  --type-bar: var(--type-lodging-bar);
+}
+[data-type='dining'] {
+  --type-bg: var(--type-dining-bg);
+  --type-fg: var(--type-dining-fg);
+  --type-bar: var(--type-dining-bar);
+}
+[data-type='activity'] {
+  --type-bg: var(--type-activity-bg);
+  --type-fg: var(--type-activity-fg);
+  --type-bar: var(--type-activity-bar);
+}
+[data-type='attraction'] {
+  --type-bg: var(--type-attraction-bg);
+  --type-fg: var(--type-attraction-fg);
+  --type-bar: var(--type-attraction-bar);
+}
+[data-type='receipt'] {
+  --type-bg: var(--type-receipt-bg);
+  --type-fg: var(--type-receipt-fg);
+  --type-bar: var(--type-receipt-bar);
+}
+[data-type='other'] {
+  --type-bg: var(--type-other-bg);
+  --type-fg: var(--type-other-fg);
+  --type-bar: var(--type-other-bar);
+}

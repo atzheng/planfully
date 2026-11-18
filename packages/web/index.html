@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="light dark" />
-    <meta name="theme-color" content="#f7f7f5" />
+    <meta name="theme-color" content="#f7f8fa" />
     <script>
       /* Sets data-theme before first paint. Mirrors src/theme/theme.ts. */
       (function () {
@@ -16,9 +16,7 @@
           var d =
             s === 'dark' || (s !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
           document.documentElement.setAttribute('data-theme', d ? 'dark' : 'light');
-          document
-            .querySelector('meta[name="theme-color"]')
-            .setAttribute('content', d ? '#141415' : '#f7f7f5');
+          /* theme-color is set from --bg by applyTheme() once the stylesheet is loaded. */
         } catch (e) {}
       })();
     </script>

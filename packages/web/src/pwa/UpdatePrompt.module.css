@@ -17,7 +17,7 @@
   border-radius: var(--radius-md);
   box-shadow: var(--shadow);
   font-family: var(--font);
-  font-size: var(--text-sm);
+  font-size: var(--text-md);
 }
 
 .prompt span {

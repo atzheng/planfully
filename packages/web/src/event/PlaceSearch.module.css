@@ -35,10 +35,10 @@
 }
 .addr {
   color: var(--text-muted);
-  font-size: var(--text-sm);
+  font-size: var(--text-md);
 }
 .note {
   margin: var(--space-1) 0 0;
   color: var(--text-muted);
-  font-size: var(--text-sm);
+  font-size: var(--text-md);
 }

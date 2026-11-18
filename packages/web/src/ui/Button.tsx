@@ -1,11 +1,60 @@
-import type { ButtonHTMLAttributes } from 'react';
+import { forwardRef, type ButtonHTMLAttributes } from 'react';
 import styles from './ui.module.css';
 
-export function Button({
-  primary,
-  className,
-  ...rest
-}: ButtonHTMLAttributes<HTMLButtonElement> & { primary?: boolean }) {
-  const cls = [styles.button, primary ? styles.primary : '', className ?? ''].join(' ').trim();
-  return <button type="button" className={cls} {...rest} />;
+export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
+export type ButtonSize = 'sm' | 'md';
+
+type Base = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'aria-label'> & {
+  variant?: ButtonVariant;
+  size?: ButtonSize;
+  /** Legacy shorthand for variant="primary". */
+  primary?: boolean;
+};
+/** Icon-only and fab buttons have no text, so the accessible name is required by type. */
+export type ButtonProps =
+  | (Base & { iconOnly?: false; fab?: false; 'aria-label'?: string })
+  | (Base & { iconOnly: true; fab?: boolean; 'aria-label': string })
+  /** Floating action button: round, raised, fixed bottom-right (override position with className). */
+  | (Base & { fab: true; iconOnly?: boolean; 'aria-label': string });
+
+const VARIANT_CLASS: Record<ButtonVariant, string> = {
+  primary: styles.primary ?? '',
+  secondary: styles.secondary ?? '',
+  ghost: styles.ghost ?? '',
+  danger: styles.danger ?? '',
+};
+
+export function buttonClass(opts: {
+  variant?: ButtonVariant;
+  size?: ButtonSize;
+  iconOnly?: boolean;
+  fab?: boolean;
+  className?: string;
+}): string {
+  return [
+    styles.button,
+    VARIANT_CLASS[opts.fab ? 'primary' : (opts.variant ?? 'secondary')],
+    opts.size === 'sm' ? styles.sm : '',
+    opts.iconOnly ? styles.iconOnly : '',
+    opts.fab ? styles.fab : '',
+    opts.className ?? '',
+  ]
+    .filter(Boolean)
+    .join(' ');
 }
+
+export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
+  { variant, size, primary, fab, iconOnly, className, type = 'button', ...rest },
+  ref,
+) {
+  const v = variant ?? (primary ? 'primary' : 'secondary');
+  const icon = iconOnly || fab;
+  return (
+    <button
+      ref={ref}
+      type={type}
+      className={buttonClass({ variant: v, size, iconOnly: icon, fab, className })}
+      {...rest}
+    />
+  );
+});

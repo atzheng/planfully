@@ -59,7 +59,7 @@
   padding: 0 var(--space-3);
   background: var(--surface-2);
   border-bottom: 1px solid var(--border);
-  font-size: var(--text-sm);
+  font-size: var(--text-md);
   font-weight: 600;
 }
 .canvas {
@@ -113,7 +113,7 @@
   gap: var(--space-1);
   padding: 0 var(--space-2);
   border-left: 1px solid var(--border);
-  font-size: var(--text-sm);
+  font-size: var(--text-md);
   font-weight: 600;
   text-transform: capitalize;
 }
@@ -189,8 +189,6 @@
   font-weight: 600;
 }
 .block {
-  --bg-block: hsl(var(--h) 70% 90%);
-  --fg-block: hsl(var(--h) 60% 20%);
   position: absolute;
   display: flex;
   gap: var(--space-1);
@@ -198,13 +196,13 @@
   padding: 2px 6px;
   margin: 0;
   overflow: clip;
-  border: 1px solid hsl(var(--h) 50% 60%);
-  border-left: 4px solid hsl(var(--h) 60% 45%);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--type-bar);
   border-radius: var(--radius-sm);
-  background: var(--bg-block);
-  color: var(--fg-block);
+  background: var(--type-bg);
+  color: var(--type-fg);
   font: inherit;
-  font-size: var(--text-sm);
+  font-size: var(--text-md);
   line-height: 1.2;
   text-align: left;
   cursor: pointer;
@@ -313,7 +311,7 @@
 }
 .unscheduled h2 {
   margin: 0 0 var(--space-2);
-  font-size: var(--text-md);
+  font-size: var(--text-lg);
 }
 .unscheduled ul {
   margin: 0;
@@ -342,21 +340,6 @@
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
-:global(:root[data-theme='dark']) .block {
-  --bg-block: hsl(var(--h) 30% 24%);
-  --fg-block: hsl(var(--h) 60% 90%);
-  border-color: hsl(var(--h) 30% 40%);
-  border-left-color: hsl(var(--h) 60% 60%);
-}
-@media (prefers-color-scheme: dark) {
-  :global(:root:not([data-theme='light'])) .block {
-    --bg-block: hsl(var(--h) 30% 24%);
-    --fg-block: hsl(var(--h) 60% 90%);
-    border-color: hsl(var(--h) 30% 40%);
-    border-left-color: hsl(var(--h) 60% 60%);
-  }
-}
-
 .modeOn {
   background: var(--accent);
   color: var(--surface);
@@ -379,7 +362,7 @@
   background: var(--surface-2);
   color: var(--text);
   font: inherit;
-  font-size: var(--text-sm);
+  font-size: var(--text-md);
   cursor: pointer;
 }
 .chipOpen {
@@ -425,7 +408,7 @@
   background: transparent;
   color: var(--text);
   font: inherit;
-  font-size: var(--text-sm);
+  font-size: var(--text-md);
   text-align: left;
   cursor: pointer;
 }

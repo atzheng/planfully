@@ -39,7 +39,7 @@
   border-radius: var(--radius-pill);
   background: var(--surface);
   color: var(--text-muted);
-  font-size: var(--text-sm);
+  font-size: var(--text-md);
   box-shadow: var(--shadow);
 }
 /* Blue with a white ring and dark hairline: readable on both light and dark map schemes. */

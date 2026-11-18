@@ -44,7 +44,7 @@
 .group legend {
   padding: 0 var(--space-1);
   color: var(--text-muted);
-  font-size: var(--text-sm);
+  font-size: var(--text-md);
 }
 .pair {
   display: grid;
@@ -58,7 +58,7 @@
 }
 .error {
   color: var(--danger);
-  font-size: var(--text-sm);
+  font-size: var(--text-md);
 }
 .hint {
   color: var(--text-muted);

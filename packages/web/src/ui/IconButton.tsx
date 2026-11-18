@@ -1,22 +1,28 @@
-import type { ButtonHTMLAttributes } from 'react';
-import styles from './ui.module.css';
+import { forwardRef, type ButtonHTMLAttributes } from 'react';
+import { buttonClass, type ButtonSize, type ButtonVariant } from './Button';
 
-/** Icon-only button; `label` is required for accessibility. */
-export function IconButton({
-  label,
-  className,
-  children,
-  ...rest
-}: Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'aria-label'> & { label: string }) {
+/** Icon-only button (ghost by default); `label` is the required accessible name and tooltip. */
+export const IconButton = forwardRef<
+  HTMLButtonElement,
+  Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'aria-label'> & {
+    label: string;
+    variant?: ButtonVariant;
+    size?: ButtonSize;
+  }
+>(function IconButton(
+  { label, variant = 'ghost', size, className, children, type = 'button', ...rest },
+  ref,
+) {
   return (
     <button
-      type="button"
+      ref={ref}
+      type={type}
       aria-label={label}
       title={label}
-      className={[styles.icon, className ?? ''].join(' ').trim()}
+      className={buttonClass({ variant, size, iconOnly: true, className })}
       {...rest}
     >
       {children}
     </button>
   );
-}
+});
