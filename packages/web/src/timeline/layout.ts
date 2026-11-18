@@ -54,10 +54,10 @@ export const MAX_COLUMNS = 5;
 /** Events at least this long (and all lodging) render as a side rail instead of taking an overlap column. */
 export const RAIL_MIN_MS = 24 * 3600_000;
 /** Width (and hit area) of a rail; the lowest slot of overlapping rails is fully exposed. */
-export const RAIL_PX = 24;
+export const RAIL_PX = 36;
 /** Overlapping rails cascade: each slot is offset this far from the previous one, so each keeps >= this strip. */
-export const RAIL_STEP_PX = 12;
-/** Most cascaded rail slots at a lane edge (budget 24 + 3 * 12 = 60px); more overlapping rails share the last slot. */
+export const RAIL_STEP_PX = 16;
+/** Most cascaded rail slots at a lane edge (budget 36 + 3 * 16 = 84px); more overlapping rails share the last slot. */
 export const MAX_RAILS = 4;
 
 /** Horizontal space a lane edge reserves for `slots` cascaded rails (0 for none). */

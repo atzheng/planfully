@@ -552,14 +552,14 @@
   position: absolute;
   z-index: 1;
   display: block;
-  padding: 0 3px;
+  padding: 0;
   margin: 0;
   border: 0;
   background: transparent;
   color: var(--type-fg);
   font: inherit;
-  font-size: var(--text-xs, 0.75rem);
-  line-height: 1.2;
+  font-size: var(--text-sm, 13px);
+  line-height: 1.3;
   cursor: pointer;
 }
 /* Short or zero-length rails keep a 24px tall hit area. */
@@ -581,8 +581,8 @@
   overflow: clip;
   border: 1px solid var(--border);
   border-right: 0;
-  border-left: 3px solid var(--type-bar);
-  border-radius: 2px;
+  border-left: 4px solid var(--type-bar);
+  border-radius: 3px;
   background: color-mix(in srgb, var(--type-bg) 62%, var(--surface));
 }
 .rail:hover .railFace {
@@ -614,9 +614,9 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   max-height: 70vh;
-  padding-top: 3px;
+  padding: 8px 0 4px;
   overflow: hidden;
 }
 .railName {
@@ -625,5 +625,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   max-height: 60vh;
+  line-height: 1.3;
   font-weight: var(--weight-semibold);
 }
