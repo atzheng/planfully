@@ -66,7 +66,8 @@ const HAN_RANGES = [
   [0x3400, 0x4dbf],
   [0x4e00, 0x9fff],
   [0xf900, 0xfaff],
-  [0xff00, 0xffef],
+  [0xff00, 0xff9f],
+  [0xffdd, 0xffef],
 ] as const;
 
 const HANGUL_RANGES = [
@@ -74,6 +75,7 @@ const HANGUL_RANGES = [
   [0x3130, 0x318f],
   [0xa960, 0xa97f],
   [0xac00, 0xd7ff],
+  [0xffa0, 0xffdc],
 ] as const;
 const HEBREW_RANGES = [
   [0x590, 0x5ff],
@@ -87,6 +89,13 @@ const ARABIC_RANGES = [
   [0xfe70, 0xfeff],
 ] as const;
 
+const SYRIAC_RANGES = [
+  [0x700, 0x74f],
+  [0x860, 0x86f],
+] as const;
+const THAANA_RANGES = [[0x780, 0x7bf]] as const;
+const NKO_RANGES = [[0x7c0, 0x7ff]] as const;
+
 const coversLatinExt = (cp: number) =>
   inRanges(cp, LATIN_EXT_RANGES) || inRanges(cp, GREEK_CYR_RANGES);
 
@@ -97,7 +106,7 @@ export function classifyChar(cp: number): Script {
   if (inRanges(cp, KANA_RANGES)) return 'kana';
   if (inRanges(cp, HANGUL_RANGES)) return 'hangul';
   if (inRanges(cp, HAN_RANGES)) return 'han';
-  if (inRanges(cp, HEBREW_RANGES) || inRanges(cp, ARABIC_RANGES)) return 'rtl';
+  if (rtlKind(cp)) return 'rtl';
   return 'unsupported';
 }
 
@@ -156,16 +165,30 @@ const NOTO_SC: FontChoice = {
  * Characters the chosen font lacks print as '?'. Null: the built-in font is enough.
  * Arabic/Hebrew are masked by maskRtl before this is called, so 'rtl' alone needs no font.
  */
-export function chooseFont(scripts: ReadonlySet<Script>): FontChoice | null {
+export function chooseFont(
+  scripts: ReadonlySet<Script>,
+  /** the document has kana somewhere: Han-only text then uses the Japanese forms too */
+  docHasKana = false,
+): FontChoice | null {
   if (scripts.has('kana')) return NOTO_JP;
   if (scripts.has('hangul')) return NOTO_KR;
-  if (scripts.has('han')) return NOTO_SC;
+  if (scripts.has('han')) return docHasKana ? NOTO_JP : NOTO_SC;
   if (scripts.has('thai')) return NOTO_THAI;
   if (scripts.has('latin-ext') || scripts.has('unsupported')) return NOTO_SANS;
   return null;
 }
 
-export type RtlScript = 'Arabic' | 'Hebrew';
+export type RtlScript = 'Arabic' | 'Hebrew' | 'Syriac' | 'Thaana' | "N'Ko";
+
+/** Right-to-left scripts the PDF cannot draw (need shaping and bidi), by name. */
+function rtlKind(cp: number): RtlScript | null {
+  if (inRanges(cp, HEBREW_RANGES)) return 'Hebrew';
+  if (inRanges(cp, ARABIC_RANGES)) return 'Arabic';
+  if (inRanges(cp, SYRIAC_RANGES)) return 'Syriac';
+  if (inRanges(cp, THAANA_RANGES)) return 'Thaana';
+  if (inRanges(cp, NKO_RANGES)) return "N'Ko";
+  return null;
+}
 
 /**
  * Arabic and Hebrew need shaping and bidi reordering, which jsPDF lacks (see the PR notes of
@@ -174,8 +197,7 @@ export type RtlScript = 'Arabic' | 'Hebrew';
  * Returns the masked text and which scripts were replaced.
  */
 export function maskRtl(s: string): { text: string; found: RtlScript[] } {
-  const kind = (cp: number): RtlScript | null =>
-    inRanges(cp, HEBREW_RANGES) ? 'Hebrew' : inRanges(cp, ARABIC_RANGES) ? 'Arabic' : null;
+  const kind = rtlKind;
   const found = new Set<RtlScript>();
   let out = '';
   let run: RtlScript | null = null;

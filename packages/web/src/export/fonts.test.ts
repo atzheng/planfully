@@ -23,6 +23,7 @@ describe('detectScripts', () => {
     ['Chinese', '北京饭店', ['han']],
     ['Korean', '서울 한국어', ['hangul']],
     ['Korean jamo', 'ㅋㅋ', ['hangul']],
+    ['halfwidth Hangul', '\uFFA1\uFFC2', ['hangul']],
     ['fullwidth punctuation', '１２３、', ['han']],
     ['Thai', 'กรุงเทพ', ['thai']],
     ['Arabic', 'القاهرة', ['rtl']],
@@ -45,6 +46,10 @@ describe('chooseFont', () => {
     expect(chooseFont(new Set(['kana', 'han', 'thai']))?.family).toBe('NotoSansJP');
     expect(chooseFont(new Set(['han', 'thai']))?.family).toBe('NotoSansSC');
     expect(chooseFont(new Set(['unsupported']))?.family).toBe('NotoSans');
+  });
+  it('uses the Japanese font for Han-only text when the document has kana', () => {
+    expect(chooseFont(new Set(['han']), true)?.family).toBe('NotoSansJP');
+    expect(chooseFont(new Set(['han']), false)?.family).toBe('NotoSansSC');
   });
   it('picks the Korean font for Hangul, and kana still wins', () => {
     expect(chooseFont(new Set(['hangul']))?.family).toBe('NotoSansKR');
@@ -69,6 +74,11 @@ describe('maskRtl', () => {
       text: '[Hebrew text], Israel',
       found: ['Hebrew'],
     });
+  });
+  it("masks Syriac, Thaana and N'Ko too", () => {
+    expect(maskRtl('ܐܒܓ')).toEqual({ text: '[Syriac text]', found: ['Syriac'] });
+    expect(maskRtl('ހށނ x').text).toBe('[Thaana text] x');
+    expect(maskRtl('ߊߋߌ').found).toEqual(["N'Ko"]);
   });
   it('reports both scripts', () => {
     expect(maskRtl('שלום مرحبا').found).toEqual(['Arabic', 'Hebrew']);
@@ -138,6 +148,15 @@ describe('renderPdf font loading', () => {
       'NotoSansJP-Regular.ttf',
     ]);
     expect(pdf).toContain('NotoSansJP');
+  });
+
+  it('uses the Japanese font for kanji-only cells in a Japanese itinerary', async () => {
+    const loadFont = vi.fn(loadReal);
+    const it = buildItinerary([event('東京'), event('駅前の辻')], [], NO_FILTER, {
+      tripName: 'Trip',
+    });
+    await renderPdf(it, { loadFont, save: () => undefined });
+    expect(loadFont.mock.calls.map((c) => c[0])).toEqual(['NotoSansJP-Regular.ttf']);
   });
 
   it('uses the Simplified Chinese font for Han text without kana', async () => {

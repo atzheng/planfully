@@ -262,12 +262,14 @@ export async function planFonts(texts: readonly string[]): Promise<{
   const found = new Set<RtlScript>();
   const byFamily = new Map<string, FontChoice>();
   const choiceOf = new Map<string, FontChoice | null>();
+  // A Japanese itinerary has kanji-only cells too: they must use the Japanese glyph forms.
+  const docHasKana = texts.some((t) => detectScripts(maskRtl(t).text).has('kana'));
   for (const raw of texts) {
     if (masked.has(raw)) continue;
     const m = maskRtl(raw);
     m.found.forEach((f) => found.add(f));
     masked.set(raw, m.text);
-    const choice = chooseFont(detectScripts(m.text));
+    const choice = chooseFont(detectScripts(m.text), docHasKana);
     choiceOf.set(raw, choice);
     if (choice) byFamily.set(choice.family, choice);
   }
@@ -278,7 +280,7 @@ export async function planFonts(texts: readonly string[]): Promise<{
     unsupported: [...found].sort(),
     prepare: (raw) => {
       const m = masked.get(raw) ?? maskRtl(raw).text;
-      const choice = choiceOf.get(raw) ?? chooseFont(detectScripts(m));
+      const choice = choiceOf.get(raw) ?? chooseFont(detectScripts(m), docHasKana);
       const covers = choice ? (coverage.get(choice.family) ?? null) : null;
       return { text: sanitize(m, covers), family: choice?.family ?? 'helvetica' };
     },
