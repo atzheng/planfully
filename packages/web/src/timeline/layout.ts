@@ -26,6 +26,15 @@ export type Block = {
   span: number;
   /** Cascade level (0..MAX_DEPTH) among time-overlapping blocks sharing this column; inset by depth * DEPTH_STEP_PX. */
   depth: number;
+  /** True for a side-rail block (lodging, or any event of >= RAIL_MIN_MS): outside column allocation. */
+  rail: boolean;
+  /** Rail blocks: cascade slot from the lane's right edge (0 = outermost); right offset is slot * RAIL_STEP_PX. 0 otherwise. */
+  railSlot: number;
+  /**
+   * Non-rail blocks: rail slots reserved at the lane's right edge (0..MAX_RAILS): the maximum over the block's
+   * overlap cluster, so right edges line up. Width stops short by `railBudgetPx(railInset)`. 0 with no rail.
+   */
+  railInset: number;
 };
 export type Layout = { lanes: Lane[]; blocks: Block[]; unscheduled: Event[] };
 
@@ -42,6 +51,20 @@ export const LINE_BLOCK_MIN_PX = 16;
 /** Most columns an overlap cluster may use; further blocks share columns (stack) instead of narrowing. */
 export const MAX_COLUMNS = 5;
 
+/** Events at least this long (and all lodging) render as a side rail instead of taking an overlap column. */
+export const RAIL_MIN_MS = 24 * 3600_000;
+/** Width (and hit area) of a rail; the lowest slot of overlapping rails is fully exposed. */
+export const RAIL_PX = 24;
+/** Overlapping rails cascade: each slot is offset this far from the previous one, so each keeps >= this strip. */
+export const RAIL_STEP_PX = 12;
+/** Most cascaded rail slots at a lane edge (budget 24 + 3 * 12 = 60px); more overlapping rails share the last slot. */
+export const MAX_RAILS = 4;
+
+/** Horizontal space a lane edge reserves for `slots` cascaded rails (0 for none). */
+export function railBudgetPx(slots: number): number {
+  return slots <= 0 ? 0 : RAIL_PX + (slots - 1) * RAIL_STEP_PX;
+}
+
 /** Narrowest a column may get before the cluster stops adding columns and cascades instead. */
 export const MIN_COLUMN_PX = 90;
 /** Horizontal inset per cascade level, so each stacked block keeps an exposed strip this wide. */
@@ -52,9 +75,9 @@ export const DEPTH_STEP_PX = 16;
  */
 export const MAX_DEPTH = 4;
 
-/** Column cap for a lane `laneWidthPx` wide: floor(width / 90) clamped to 1..MAX_COLUMNS. */
-export function maxColumnsForWidth(laneWidthPx: number): number {
-  const n = Math.floor(laneWidthPx / MIN_COLUMN_PX);
+/** Column cap for a lane `laneWidthPx` wide with `railPx` reserved for rails: floor((width - railPx) / 90) clamped to 1..MAX_COLUMNS. */
+export function maxColumnsForWidth(laneWidthPx: number, railPx = 0): number {
+  const n = Math.floor((laneWidthPx - railPx) / MIN_COLUMN_PX);
   return Math.min(MAX_COLUMNS, Math.max(1, Number.isFinite(n) ? n : MAX_COLUMNS));
 }
 
@@ -75,6 +98,14 @@ export function blockTier(heightPx: number, fullMinPx: number): BlockTier {
 
 /** Lane for participant ids that are not in the roster. Only present when some event needs it. */
 export const OTHER_LANE_KEY = '_other';
+
+/** Lodging and 24h+ events leave the column allocation for the lane-edge rail (not in type lanes, which isolate them already). */
+export function isRailEvent(e: Event, mode: LaneMode): boolean {
+  if (mode === 'type') return false;
+  const iv = eventInterval(e);
+  if (!iv) return false;
+  return e.type === 'lodging' || iv.end - iv.start >= RAIL_MIN_MS;
+}
 
 function laneKeys(e: Event, spec: LaneSpec, rosterIds: Set<string>): string[] {
   switch (spec.mode) {
@@ -128,11 +159,15 @@ export function layoutEvents(
   scale: TimeScale,
   spec: LaneSpec,
   maxColumns = MAX_COLUMNS,
+  laneWidthPx?: number,
 ): Layout {
   const minHeight = minBlockHeight(scale.pxPerHour);
   const unscheduled: Event[] = [];
   const rosterIds = new Set(spec.roster.map((m) => m.id));
-  const byLane = new Map<string, { eventId: string; top: number; height: number }[]>();
+  const byLane = new Map<
+    string,
+    { eventId: string; top: number; height: number; rail: boolean }[]
+  >();
   const present = new Set<string>();
 
   for (const e of events) {
@@ -143,11 +178,12 @@ export function layoutEvents(
     }
     const top = scale.toY(iv.start);
     const height = Math.max(minHeight, scale.toY(iv.end) - top);
+    const rail = isRailEvent(e, spec.mode);
     for (const key of laneKeys(e, spec, rosterIds)) {
       present.add(key);
       let list = byLane.get(key);
       if (!list) byLane.set(key, (list = []));
-      list.push({ eventId: e.id, top, height });
+      list.push({ eventId: e.id, top, height, rail });
     }
   }
 
@@ -174,7 +210,42 @@ export function layoutEvents(
 
   const blocks: Block[] = [];
   for (const lane of lanes) {
-    const items = (byLane.get(lane.key) ?? []).sort((a, b) => a.top - b.top || b.height - a.height);
+    const all = (byLane.get(lane.key) ?? []).sort((a, b) => a.top - b.top || b.height - a.height);
+    const items = all.filter((i) => !i.rail);
+    // Rails: first free slot from the lane edge (interval colouring), capped at MAX_RAILS.
+    const rails: Block[] = [];
+    const slotEnds: number[] = [];
+    for (const it of all) {
+      if (!it.rail) continue;
+      let slot = slotEnds.findIndex((end) => end <= it.top);
+      if (slot === -1) slot = slotEnds.length < MAX_RAILS ? slotEnds.length : MAX_RAILS - 1;
+      slotEnds[slot] = Math.max(slotEnds[slot] ?? -Infinity, it.top + it.height);
+      rails.push({
+        eventId: it.eventId,
+        laneKey: lane.key,
+        top: it.top,
+        height: it.height,
+        column: 0,
+        columns: 1,
+        span: 1,
+        depth: 0,
+        rail: true,
+        railSlot: slot,
+        railInset: 0,
+      });
+    }
+    // Column cap for this lane, leaving room for the widest rail cascade the lane has.
+    const laneMax =
+      laneWidthPx === undefined
+        ? maxColumns
+        : Math.min(maxColumns, maxColumnsForWidth(laneWidthPx, railBudgetPx(slotEnds.length)));
+    const insetFor = (top: number, height: number): number => {
+      let n = 0;
+      for (const r of rails) {
+        if (r.top < top + height && r.top + r.height > top) n = Math.max(n, r.railSlot + 1);
+      }
+      return n;
+    };
     let cluster: Block[] = [];
     let clusterEnd = -Infinity;
     let colEnds: number[] = [];
@@ -183,6 +254,9 @@ export function layoutEvents(
     const flush = () => {
       for (const b of cluster) b.columns = colEnds.length;
       expandSpans(cluster);
+      let inset = 0;
+      for (const b of cluster) inset = Math.max(inset, insetFor(b.top, b.height));
+      for (const b of cluster) b.railInset = inset;
       blocks.push(...cluster);
       cluster = [];
       colEnds = [];
@@ -198,7 +272,7 @@ export function layoutEvents(
       if (it.top >= clusterEnd) flush();
       let col = colEnds.findIndex((end) => end <= it.top);
       if (col === -1) {
-        if (colEnds.length < maxColumns) col = colEnds.length;
+        if (colEnds.length < laneMax) col = colEnds.length;
         else {
           // Column cap reached: stack onto the column where the cascade is shallowest (none is dropped).
           let best = 0;
@@ -221,9 +295,13 @@ export function layoutEvents(
         columns: 1,
         span: 1,
         depth,
+        rail: false,
+        railSlot: 0,
+        railInset: 0,
       });
     }
     flush();
+    blocks.push(...rails);
   }
   return { lanes, blocks, unscheduled };
 }
@@ -250,4 +328,38 @@ export function withoutEmptyLanes(layout: Layout, mode: LaneMode): Layout {
   if (mode === 'none') return layout;
   const used = new Set(layout.blocks.map((b) => b.laneKey));
   return { ...layout, lanes: layout.lanes.filter((l) => used.has(l.key)) };
+}
+
+/**
+ * Horizontal geometry of a non-rail block in a lane `laneWidthPx` wide. Columns divide the lane minus the
+ * rail reserve (`railPx`), so a cluster's right edges line up. In px: `left = (lane - railPx) * colFrom +
+ * leftInset`, `width = (lane - railPx) * colSpan - widthInset`. The cascade inset (depth) is clamped so the
+ * block keeps at least DEPTH_STEP_PX of width and never vanishes. `left` / `width` are the same as CSS.
+ * Rails position with `right = railSlot * RAIL_STEP_PX` and width RAIL_PX instead.
+ */
+export function blockGeometry(
+  b: Pick<Block, 'column' | 'columns' | 'span' | 'depth' | 'railInset'>,
+  laneWidthPx: number,
+): {
+  left: string;
+  width: string;
+  x0: number;
+  x1: number;
+  /** Cascade depth after clamping to the available width. */
+  depth: number;
+} {
+  const railPx = railBudgetPx(b.railInset);
+  const from = b.column / b.columns;
+  const span = b.span / b.columns;
+  const avail = (laneWidthPx - railPx) * span;
+  const room = Math.floor((avail - 2 - DEPTH_STEP_PX) / DEPTH_STEP_PX);
+  const depth = Math.max(0, Math.min(b.depth, room));
+  const inset = 1 + depth * DEPTH_STEP_PX;
+  return {
+    left: `calc((100% - ${railPx}px) * ${from} + ${inset}px)`,
+    width: `calc((100% - ${railPx}px) * ${span} - ${1 + inset}px)`,
+    x0: (laneWidthPx - railPx) * from + inset,
+    x1: (laneWidthPx - railPx) * (from + span) - 1,
+    depth,
+  };
 }
