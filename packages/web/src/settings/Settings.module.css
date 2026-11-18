@@ -15,11 +15,11 @@
 }
 .h1 {
   margin: 0;
-  font-size: var(--text-xl);
+  font-size: var(--text-2xl);
 }
 .h2 {
   margin: 0;
-  font-size: var(--text-lg);
+  font-size: var(--text-xl);
 }
 .section {
   display: flex;
@@ -32,7 +32,7 @@
   min-width: 0;
 }
 .label {
-  font-size: var(--text-sm);
+  font-size: var(--text-md);
   font-weight: 600;
 }
 .hint,
@@ -43,11 +43,11 @@
   overflow-wrap: anywhere;
 }
 .note {
-  font-size: var(--text-sm);
+  font-size: var(--text-md);
 }
 .error {
   margin: 0;
-  font-size: var(--text-sm);
+  font-size: var(--text-md);
   color: var(--danger);
 }
 .copyRow {
@@ -64,7 +64,7 @@
 }
 .code {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: var(--text-sm);
+  font-size: var(--text-md);
   overflow-wrap: anywhere;
 }
 .list {
@@ -117,7 +117,7 @@
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
-  font-size: var(--text-sm);
+  font-size: var(--text-md);
 }
 .confirm > span {
   flex-basis: 100%;

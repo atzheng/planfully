@@ -4,7 +4,8 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useAddEvent } from '../event/AddEvent';
 import { stringCodec, useQueryState } from '../lib/queryState';
 import { useFilteredEvents } from '../filters/filter';
-import { TYPE_HUE, eventIcon } from '../timeline/model';
+import { TYPE_HUE } from '../timeline/model';
+import { EventIcon } from '../ui/EventIcon';
 import { boundsKey, buildMapModel, locatedEvents, type MapModel } from './markers';
 import { LocateControl } from './LocateControl';
 import { mapColorScheme } from '../theme/theme';
@@ -307,7 +308,7 @@ function ClusteredMarkers({ model, onOpen }: { model: MapModel; onOpen: (id: str
               style={{ background: c.background, borderColor: c.border }}
               aria-hidden="true"
             >
-              {eventIcon(m)}
+              <EventIcon event={m} size={14} />
             </div>
           </AdvancedMarker>
         );
@@ -340,7 +341,7 @@ function LocatedList({
             return (
               <li key={e.id}>
                 <button type="button" className={styles.item} onClick={() => setOpen(e.id)}>
-                  <span aria-hidden="true">{eventIcon(e)}</span>
+                  <EventIcon event={e} />
                   <span className={styles.itemText}>
                     <span className={styles.itemName}>{e.name}</span>
                     {place && <span className={styles.itemPlace}>{place}</span>}

@@ -2,6 +2,21 @@
 import { DateTime, IANAZone } from 'luxon';
 import { eventInterval } from '@planfully/shared';
 import type { Event, EventType, TransitMode } from '@planfully/shared';
+import {
+  BedDouble,
+  Bus,
+  Car,
+  Circle,
+  Landmark,
+  Plane,
+  Receipt,
+  Route,
+  Ship,
+  Ticket,
+  TrainFront,
+  Utensils,
+  type LucideIcon,
+} from 'lucide-react';
 
 const HOUR_MS = 3_600_000;
 
@@ -54,28 +69,29 @@ export function localStartLabel(e: Pick<Event, 'start'>): string {
   return m?.[1] ?? '';
 }
 
-export const TYPE_ICON: Record<EventType, string> = {
-  transit: '🧭',
-  lodging: '🛏',
-  dining: '🍽',
-  activity: '🎟',
-  attraction: '🏛',
-  receipt: '🧾',
-  other: '•',
+/** Line icon per event type (lucide). Render with `<EventIcon>` from ui/EventIcon. */
+export const TYPE_ICON: Record<EventType, LucideIcon> = {
+  transit: Route,
+  lodging: BedDouble,
+  dining: Utensils,
+  activity: Ticket,
+  attraction: Landmark,
+  receipt: Receipt,
+  other: Circle,
 };
 
 /** Icon per transit mode; the mode picks the icon of a transit event (TYPE_ICON.transit when unset). */
-export const MODE_ICON: Record<TransitMode, string> = {
-  flight: '✈',
-  train: '🚆',
-  bus: '🚌',
-  ferry: '⛴',
-  car: '🚗',
-  other: '🧭',
+export const MODE_ICON: Record<TransitMode, LucideIcon> = {
+  flight: Plane,
+  train: TrainFront,
+  bus: Bus,
+  ferry: Ship,
+  car: Car,
+  other: Route,
 };
 
 /** Icon of an event: by mode for transit, by type otherwise. */
-export function eventIcon(e: Pick<Event, 'type' | 'mode'>): string {
+export function eventIcon(e: Pick<Event, 'type' | 'mode'>): LucideIcon {
   return e.type === 'transit' && e.mode ? MODE_ICON[e.mode] : TYPE_ICON[e.type];
 }
 
@@ -84,14 +100,14 @@ export function eventKindLabel(e: Pick<Event, 'type' | 'mode'>): string {
   return e.type === 'transit' && e.mode && e.mode !== 'other' ? e.mode : e.type;
 }
 
-/** Hue (0-360) per type; CSS turns it into light and dark block colours. */
+/** Hue (0-360) per type. typeColors.css holds the light and dark tokens built from these hues (a test keeps them in step); map pins use the hue directly. */
 export const TYPE_HUE: Record<EventType, number> = {
-  transit: 215,
-  lodging: 145,
-  dining: 15,
-  activity: 330,
-  attraction: 50,
-  receipt: 90,
+  transit: 205,
+  lodging: 150,
+  dining: 20,
+  activity: 320,
+  attraction: 45,
+  receipt: 95,
   other: 240,
 };
 

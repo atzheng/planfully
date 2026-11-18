@@ -3,8 +3,6 @@ export type ResolvedTheme = 'light' | 'dark';
 
 export const THEME_KEY = 'planfully.theme';
 export const THEME_SETTINGS: readonly ThemeSetting[] = ['system', 'light', 'dark'];
-/** Status-bar colours; keep in sync with --bg in theme.css and the inline script in index.html. */
-export const THEME_COLORS: Record<ResolvedTheme, string> = { light: '#f7f7f5', dark: '#141415' };
 
 export function isThemeSetting(v: unknown): v is ThemeSetting {
   return v === 'system' || v === 'light' || v === 'dark';
@@ -49,11 +47,11 @@ export function systemPrefersDark(): boolean {
   return typeof matchMedia === 'function' && matchMedia(DARK_QUERY).matches;
 }
 
-/** Sets data-theme on <html> (always the resolved value) and the status-bar colour. */
+/** Sets data-theme on <html> (always the resolved value) and the status-bar colour, read from --bg. */
 export function applyTheme(resolved: ResolvedTheme): void {
   if (typeof document === 'undefined') return;
-  document.documentElement.setAttribute('data-theme', resolved);
-  document
-    .querySelector('meta[name="theme-color"]')
-    ?.setAttribute('content', THEME_COLORS[resolved]);
+  const root = document.documentElement;
+  root.setAttribute('data-theme', resolved);
+  const bg = getComputedStyle(root).getPropertyValue('--bg').trim();
+  if (bg) document.querySelector('meta[name="theme-color"]')?.setAttribute('content', bg);
 }

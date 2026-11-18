@@ -1,25 +1,10 @@
 .strip {
-  --wx-temp: #b43c06;
-  --wx-wind: #4a5a6a;
-  --wx-rain: #1f5fbf;
   --wx-halo: var(--surface);
   position: absolute;
   inset: 0;
   overflow: hidden;
   font-size: 10px;
   line-height: 1.1;
-}
-:global(:root[data-theme='dark']) .strip {
-  --wx-temp: #ff9a5c;
-  --wx-wind: #b4bdc7;
-  --wx-rain: #6ea8ff;
-}
-@media (prefers-color-scheme: dark) {
-  :global(:root:not([data-theme='light'])) .strip {
-    --wx-temp: #ff9a5c;
-    --wx-wind: #b4bdc7;
-    --wx-rain: #6ea8ff;
-  }
 }
 .svg {
   position: absolute;
@@ -119,21 +104,6 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  --wx-temp: #b43c06;
-  --wx-wind: #4a5a6a;
-  --wx-rain: #1f5fbf;
-}
-:global(:root[data-theme='dark']) .legend li {
-  --wx-temp: #ff9a5c;
-  --wx-wind: #b4bdc7;
-  --wx-rain: #6ea8ff;
-}
-@media (prefers-color-scheme: dark) {
-  :global(:root:not([data-theme='light'])) .legend li {
-    --wx-temp: #ff9a5c;
-    --wx-wind: #b4bdc7;
-    --wx-rain: #6ea8ff;
-  }
 }
 
 .sr {

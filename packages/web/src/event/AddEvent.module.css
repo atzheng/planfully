@@ -6,12 +6,12 @@
 .title {
   flex: 1;
   margin: 0;
-  font-size: var(--text-lg);
+  font-size: var(--text-xl);
 }
 .error {
   margin-top: var(--space-2);
   color: var(--danger);
-  font-size: var(--text-sm);
+  font-size: var(--text-md);
 }
 .linkButton {
   min-height: var(--tap);

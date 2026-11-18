@@ -12,19 +12,11 @@ import {
 import { useRegisterCentre } from '../event/AddEvent';
 import { useTrip } from '../trip/store';
 import { bucketLabel, compactBuckets, isCompact } from './compact';
+import { EventIcon } from '../ui/EventIcon';
 import type { Bucket } from './compact';
 import { initialScrollMs, LANE_MODES, layoutEvents, withoutEmptyLanes } from './layout';
 import type { Layout, LaneMode } from './layout';
-import {
-  dayHeading,
-  localStartLabel,
-  roundRangeToHours,
-  timelineRange,
-  TYPE_HUE,
-  TYPE_ICON,
-  eventIcon,
-  validZone,
-} from './model';
+import { dayHeading, localStartLabel, roundRangeToHours, timelineRange, validZone } from './model';
 import { anchorMsAt, scrollTopForAnchor } from './model';
 import {
   makeScale,
@@ -96,13 +88,12 @@ const Blocks = memo(function Blocks({
               height: b.height,
               left: `calc(${(b.column / b.columns) * 100}% + 1px)`,
               width: `calc(${100 / b.columns}% - 2px)`,
-              ['--h' as string]: TYPE_HUE[e.type],
             }}
             onClick={() => onOpen(e.id)}
           >
             <span className={styles.blockLabel}>
               <span className={styles.blockIcon} aria-hidden="true">
-                {eventIcon(e)}
+                <EventIcon event={e} />
               </span>
               <span className={styles.blockText}>
                 <span className={styles.blockName}>{e.name}</span>
@@ -195,7 +186,9 @@ const Chips = memo(function Chips({
             >
               <span className={styles.chipCount}>{b.eventIds.length}</span>
               <span className={styles.chipIcons} aria-hidden="true">
-                {b.types.slice(0, MAX_CHIP_ICONS).map((t) => TYPE_ICON[t])}
+                {b.types.slice(0, MAX_CHIP_ICONS).map((t) => (
+                  <EventIcon key={t} type={t} size={14} />
+                ))}
                 {b.types.length > MAX_CHIP_ICONS ? '…' : ''}
               </span>
             </button>
@@ -222,7 +215,7 @@ const Chips = memo(function Chips({
                           onOpen(id);
                         }}
                       >
-                        <span aria-hidden="true">{eventIcon(e)}</span>
+                        <EventIcon event={e} />
                         <span className={styles.chipItemName}>{e.name}</span>
                         {time && <span className={styles.blockTime}>{time}</span>}
                         {e.status === 'cancelled' && (
@@ -627,9 +620,7 @@ export function Timeline({ gutter: gutterProp }: { gutter?: ReactNode } = {}) {
                               data-lane={l.key}
                               title={l.label}
                             >
-                              {laneMode === 'type' && (
-                                <span aria-hidden="true">{TYPE_ICON[l.key as EventType]}</span>
-                              )}
+                              {laneMode === 'type' && <EventIcon type={l.key as EventType} />}
                               <span className={styles.laneName}>{l.label}</span>
                             </div>
                           ))}
@@ -697,7 +688,7 @@ export function Timeline({ gutter: gutterProp }: { gutter?: ReactNode } = {}) {
                           data-testid="unscheduled-item"
                           onClick={() => setOpenId(e.id)}
                         >
-                          <span aria-hidden="true">{eventIcon(e)}</span> {e.name}
+                          <EventIcon event={e} /> {e.name}
                           {e.needsReview && (
                             <span className={styles.review} role="img" aria-label="Needs review">
                               !
