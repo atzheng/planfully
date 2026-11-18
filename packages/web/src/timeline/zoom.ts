@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { numberCodec, useQueryState } from '../lib/queryState';
 import type { Codec } from '../lib/queryState';
 import { DEFAULT_PX_PER_HOUR, MAX_PX_PER_HOUR, MIN_PX_PER_HOUR } from './scale';
@@ -16,7 +16,35 @@ export const clampPx = (px: number): number =>
 /** The URL stores zoom as log2(pxPerHour), so equal steps feel equal. */
 export const pxToZoom = (px: number): number => Math.round(Math.log2(clampPx(px)) * 1000) / 1000;
 export const zoomToPx = (z: number): number => clampPx(2 ** z);
+
 export const DEFAULT_ZOOM = pxToZoom(DEFAULT_PX_PER_HOUR);
+
+/** Without an explicit zoom in the URL the view opens showing this many days (or the whole trip). */
+export const DEFAULT_VISIBLE_DAYS = 5;
+
+/**
+ * Default zoom for a trip spanning [fromMs, toMs] in a viewport `viewportPx` tall (below the axis
+ * heading): fit the first DEFAULT_VISIBLE_DAYS days, or the whole trip when it is shorter.
+ */
+export function defaultPxPerHour(fromMs: number, toMs: number, viewportPx: number): number {
+  const capMs = fromMs + DEFAULT_VISIBLE_DAYS * 24 * HOUR_MS;
+  return fitPx(fromMs, Math.min(toMs, capMs), viewportPx);
+}
+
+// The measured default is shared by `useZoom` (Timeline) and `usePxPerHour` (everyone else), so they
+// agree before the URL carries any zoom. Timeline provides it from a layout effect (before paint).
+let measuredDefault: number | null = null;
+const defaultListeners = new Set<() => void>();
+export function setMeasuredDefaultPx(px: number | null): void {
+  if (measuredDefault === px) return;
+  measuredDefault = px;
+  defaultListeners.forEach((l) => l());
+}
+const subscribeDefault = (l: () => void) => {
+  defaultListeners.add(l);
+  return () => void defaultListeners.delete(l);
+};
+const getMeasuredDefault = () => measuredDefault;
 
 export const zoomCodec: Codec<number> = {
   parse: (raw) => {
@@ -24,6 +52,12 @@ export const zoomCodec: Codec<number> = {
     return n === undefined ? undefined : pxToZoom(zoomToPx(n));
   },
   serialize: (z) => String(pxToZoom(zoomToPx(z))),
+};
+
+/** Like zoomCodec, but `null` means "no zoom in the URL" (the default is then measured). */
+const optionalZoomCodec: Codec<number | null> = {
+  parse: (raw) => zoomCodec.parse(raw),
+  serialize: (z) => (z === null ? '' : zoomCodec.serialize(z)),
 };
 
 /** Factor per +/- button press. */
@@ -108,9 +142,17 @@ const URL_DEBOUNCE_MS = 250;
  * Live zoom state backed by query key `zoom`. `setPx` updates immediately (every frame of a gesture)
  * and writes the URL (replace) once the gesture pauses.
  */
-export function useZoom(): { pxPerHour: number; setPx(px: number): void } {
-  const [urlZ, setUrlZ] = useQueryState('zoom', zoomCodec, DEFAULT_ZOOM, { replace: true });
-  const [px, setPxState] = useState(() => zoomToPx(urlZ));
+export function useZoom(): {
+  pxPerHour: number;
+  setPx(px: number): void;
+  /** True while there is neither a zoom in the URL nor a measured default yet. */
+  needsDefault: boolean;
+} {
+  const [urlZ, setUrlZ] = useQueryState('zoom', optionalZoomCodec, null, { replace: true });
+  const measured = useSyncExternalStore(subscribeDefault, getMeasuredDefault);
+  // Set by the user (gesture, +/-, Fit); until then the URL, or the measured default, decides.
+  const [userPx, setPxState] = useState<number | null>(null);
+  const px = userPx ?? (urlZ !== null ? zoomToPx(urlZ) : (measured ?? DEFAULT_PX_PER_HOUR));
   const written = useRef(urlZ);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingPx = useRef<number | null>(null);
@@ -125,7 +167,7 @@ export function useZoom(): { pxPerHour: number; setPx(px: number): void } {
       timer.current = null;
       pendingPx.current = null;
       written.current = urlZ;
-      setPxState(zoomToPx(urlZ));
+      setPxState(null);
     }
   }, [urlZ]);
 
@@ -155,11 +197,12 @@ export function useZoom(): { pxPerHour: number; setPx(px: number): void } {
     },
     [],
   );
-  return { pxPerHour: px, setPx };
+  return { pxPerHour: px, setPx, needsDefault: urlZ === null && measured === null };
 }
 
 /** The URL's zoom as pxPerHour, for components that only read it. Timeline itself uses `useZoom`. */
 export function usePxPerHour(): number {
-  const [z] = useQueryState('zoom', zoomCodec, DEFAULT_ZOOM, { replace: true });
-  return zoomToPx(z);
+  const [z] = useQueryState('zoom', optionalZoomCodec, null, { replace: true });
+  const measured = useSyncExternalStore(subscribeDefault, getMeasuredDefault);
+  return z !== null ? zoomToPx(z) : (measured ?? DEFAULT_PX_PER_HOUR);
 }

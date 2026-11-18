@@ -33,7 +33,9 @@ import type { Tick, TimeScale, VisibleRange } from './scale';
 import {
   attachGestureZoom,
   buttonPx,
+  defaultPxPerHour,
   fitPx,
+  setMeasuredDefaultPx,
   pinchPx,
   scrollTopForPointer,
   SECONDARY_TEXT_MIN_PX,
@@ -206,7 +208,7 @@ export function Timeline({ gutter: gutterProp }: { gutter?: ReactNode } = {}) {
   const { include: who, exclude: whoOut } = useWhoSelection();
   const [laneMode] = useQueryState('lanes', laneModeCodec, 'none');
   const [wxOn] = useQueryState('wx', booleanCodec, false);
-  const { pxPerHour, setPx } = useZoom();
+  const { pxPerHour, setPx, needsDefault } = useZoom();
   const gutter = wxOn ? <WeatherStrip /> : gutterProp;
   const gutterPx = wxOn ? WEATHER_GUTTER_PX : 64;
 
@@ -319,14 +321,24 @@ export function Timeline({ gutter: gutterProp }: { gutter?: ReactNode } = {}) {
     setHeadingMs(Math.floor(h / 60_000) * 60_000);
   }, [scale, range, topPx]);
 
+  // No zoom in the URL: once the scroller is measured, pick the default (5 days or the whole trip)
+  // before first paint; useZoom and usePxPerHour both switch to it in the same commit. A trip change
+  // remounts Timeline, which clears the measurement.
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    if (!needsDefault || !range || !el) return;
+    setMeasuredDefaultPx(defaultPxPerHour(range.fromMs, range.toMs, el.clientHeight - topPx));
+  }, [needsDefault, range, topPx]);
+  useEffect(() => () => setMeasuredDefaultPx(null), []);
+
   // Open at today (or the trip's first day), once, when the axis first exists.
   const scrolled = useRef(false);
   useLayoutEffect(() => {
-    if (scrolled.current || !range) return;
+    if (scrolled.current || !range || needsDefault) return;
     scrolled.current = true;
     scrollToMs(initialScrollMs(events, Date.now()), 'auto');
     anchorMs.current = anchorMsAt(scale, scroller.current?.scrollTop ?? 0, topPx);
-  }, [range, events, scrollToMs, scale, topPx]);
+  }, [range, events, scrollToMs, scale, topPx, needsDefault]);
   // Keep the time at the top of the viewport at the same screen y when the scale changes (filters, zoom).
   const lastAnchoredScale = useRef(scale);
   const lastTopPx = useRef(topPx);
