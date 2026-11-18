@@ -89,6 +89,15 @@
   /* Room below the last row for the Add button (52px + 16px margin) and the home indicator. */
   padding-bottom: calc(52px + 2 * var(--space-4) + env(safe-area-inset-bottom));
 }
+/* Desktop: the +/- pair stacks above the Add button, so clear the whole stack (it covers the rail). */
+@media (min-width: 720px) {
+  .scroller {
+    padding-bottom: calc(
+      52px + var(--space-4) + 2 * var(--space-3) + 2 * var(--control-md) + 2px + var(--space-4) +
+        env(safe-area-inset-bottom)
+    );
+  }
+}
 .headingWrap {
   position: sticky;
   top: 0;
