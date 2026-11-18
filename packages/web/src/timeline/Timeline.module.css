@@ -11,14 +11,6 @@
   flex-wrap: wrap;
   gap: var(--space-2) var(--space-3);
 }
-.zone {
-  color: var(--text-muted);
-  font-size: var(--text-sm);
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 .today {
   min-height: var(--tap);
   padding: 0 var(--space-4);

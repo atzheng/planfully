@@ -5,6 +5,7 @@ import {
   cityName,
   offsetLabel,
   referenceMs,
+  sameZone,
   searchZones,
   zoneOptions,
   zoneSummary,
@@ -79,7 +80,9 @@ export function TimeZonePicker({
     close(true);
   };
   const summary = zoneSummary(zone, atMs);
-  const inList = options.some((o) => (o.isBrowser ? zone === browserZone : o.value === zone));
+  const inList = options.some((o) =>
+    o.isBrowser ? sameZone(zone, browserZone) : sameZone(o.value, zone),
+  );
 
   return (
     <div className={styles.root} ref={root}>
@@ -107,7 +110,7 @@ export function TimeZonePicker({
           {!searching ? (
             <ul className={styles.list}>
               {options.map((o) => {
-                const active = o.isBrowser ? zone === browserZone : o.value === zone;
+                const active = o.isBrowser ? sameZone(zone, browserZone) : sameZone(o.value, zone);
                 return (
                   <li key={o.value || 'browser'}>
                     <button
@@ -169,7 +172,7 @@ export function TimeZonePicker({
                       type="button"
                       className={styles.item}
                       data-testid="tz-result"
-                      onClick={() => pick(z === browserZone ? '' : z)}
+                      onClick={() => pick(sameZone(z, browserZone) ? '' : z)}
                     >
                       <span className={styles.itemName}>{cityName(z)}</span>
                       <span className={styles.itemMeta}>

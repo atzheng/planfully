@@ -36,9 +36,54 @@ const FALLBACK_ZONES = [
   'Pacific/Auckland',
 ];
 
+/** Legacy IANA names (as returned by Intl.supportedValuesOf) to their modern equivalents. */
+const MODERN: Record<string, string> = {
+  'Asia/Calcutta': 'Asia/Kolkata',
+  'Europe/Kiev': 'Europe/Kyiv',
+  'Asia/Katmandu': 'Asia/Kathmandu',
+  'Asia/Saigon': 'Asia/Ho_Chi_Minh',
+  'America/Godthab': 'America/Nuuk',
+  'Asia/Rangoon': 'Asia/Yangon',
+  'Asia/Dacca': 'Asia/Dhaka',
+  'Asia/Thimbu': 'Asia/Thimphu',
+  'Atlantic/Faeroe': 'Atlantic/Faroe',
+  'Pacific/Truk': 'Pacific/Chuuk',
+  'Pacific/Ponape': 'Pacific/Pohnpei',
+  'America/Buenos_Aires': 'America/Argentina/Buenos_Aires',
+  'Etc/UTC': 'UTC',
+  'Etc/GMT': 'UTC',
+  'Etc/UCT': 'UTC',
+  'Etc/Zulu': 'UTC',
+  'Etc/Universal': 'UTC',
+  GMT: 'UTC',
+  UCT: 'UTC',
+  Zulu: 'UTC',
+  Universal: 'UTC',
+};
+const LEGACY_OF = new Map<string, string[]>();
+for (const [legacy, modern] of Object.entries(MODERN)) {
+  LEGACY_OF.set(modern, [...(LEGACY_OF.get(modern) ?? []), legacy]);
+}
+
+/** Canonical form of an IANA zone for comparison (US/Eastern -> America/New_York); null if invalid. */
+export function canonicalZone(zone: string): string | null {
+  try {
+    const z = new Intl.DateTimeFormat('en', { timeZone: zone }).resolvedOptions().timeZone;
+    return MODERN[z] ?? z;
+  } catch {
+    return null;
+  }
+}
+
+/** True when both are valid and name the same zone. */
+export function sameZone(a: string, b: string): boolean {
+  const ca = canonicalZone(a);
+  return ca !== null && ca === canonicalZone(b);
+}
+
 /** City part of an IANA name: 'America/Argentina/Buenos_Aires' -> 'Buenos Aires'. */
 export function cityName(zone: string): string {
-  const last = zone.split('/').pop() ?? zone;
+  const last = (MODERN[zone] ?? zone).split('/').pop() ?? zone;
   return last.replace(/_/g, ' ');
 }
 
@@ -92,9 +137,11 @@ export function zoneOptions(
   atMs: number = referenceMs(events, Date.now()),
 ): ZoneOption[] {
   const counts = new Map<string, number>();
+  const browserCanon = canonicalZone(browserZone);
   for (const e of events) {
     for (const t of [e.start, e.end]) {
-      if (t?.tz && t.tz !== browserZone) counts.set(t.tz, (counts.get(t.tz) ?? 0) + 1);
+      const c = t?.tz ? canonicalZone(t.tz) : null;
+      if (c && c !== browserCanon) counts.set(c, (counts.get(c) ?? 0) + 1);
     }
   }
   const used = [...counts.entries()]
@@ -126,10 +173,11 @@ export function searchZones(query: string, zones: readonly string[], limit = 50)
   const words = norm(query).split(' ').filter(Boolean);
   if (words.length === 0) return [];
   const hits = zones.filter((z) => {
-    const n = norm(z.replace(/\//g, ' '));
+    const names = [z, MODERN[z] ?? z, ...(LEGACY_OF.get(z) ?? [])];
+    const n = names.map((x) => norm(x.replace(/\//g, ' '))).join(' ');
     return words.every((w) => n.includes(w));
   });
-  const rank = (z: string) => (norm(cityName(z)).startsWith(words[0] ?? '') ? 0 : 1);
+  const rank = (z: string) => (norm(cityName(MODERN[z] ?? z)).startsWith(words[0] ?? '') ? 0 : 1);
   return hits
     .map((z, i) => ({ z, i }))
     .sort((a, b) => rank(a.z) - rank(b.z) || a.i - b.i)
