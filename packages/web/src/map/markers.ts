@@ -58,17 +58,33 @@ function spread(markers: Marker[]): Marker[] {
   return out;
 }
 
+/**
+ * Smallest box around the points. Longitude is the smallest enclosing arc, so points at 178 and
+ * -178 give west 178, east -178 (east < west means the box crosses the antimeridian, which Google's
+ * LatLngBounds literal understands).
+ */
 export function boundsOf(points: readonly LatLng[]): Bounds | null {
   if (points.length === 0) return null;
   let north = -90;
   let south = 90;
-  let east = -180;
-  let west = 180;
   for (const p of points) {
     north = Math.max(north, p.lat);
     south = Math.min(south, p.lat);
-    east = Math.max(east, p.lng);
-    west = Math.min(west, p.lng);
+  }
+  const lngs = points.map((p) => p.lng).sort((x, y) => x - y);
+  const first = lngs[0] ?? 0;
+  const last = lngs[lngs.length - 1] ?? 0;
+  // Largest empty gap between neighbours (including the wrap from last back to first).
+  let gap = first + 360 - last;
+  let west = first;
+  let east = last;
+  for (let i = 1; i < lngs.length; i++) {
+    const g = (lngs[i] ?? 0) - (lngs[i - 1] ?? 0);
+    if (g > gap) {
+      gap = g;
+      west = lngs[i] ?? 0;
+      east = lngs[i - 1] ?? 0;
+    }
   }
   return { north, south, east, west };
 }

@@ -42,13 +42,23 @@ export function MapView({ children }: { children?: ReactNode }) {
   const apiKey = env.VITE_GOOGLE_MAPS_KEY?.trim();
   const events = useFilteredEvents();
   const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    if (!apiKey) return;
+    // Maps calls this global on key / referrer failures; onError does not cover them.
+    const w = window as unknown as { gm_authFailure?: () => void };
+    const prev = w.gm_authFailure;
+    w.gm_authFailure = () => setFailed(true);
+    return () => {
+      w.gm_authFailure = prev;
+    };
+  }, [apiKey]);
   const [, setOpen] = useQueryState('e', stringCodec, '');
 
   if (!apiKey) return <LocatedList events={events} notice="Map key not configured" />;
   return (
     <div className={styles.wrap}>
       {failed ? (
-        <LocatedList events={events} notice="The map could not be loaded" />
+        <LocatedList events={events} notice="Map couldn't load" />
       ) : (
         <APIProvider apiKey={apiKey} onError={() => setFailed(true)}>
           <MapCanvas events={events} onOpen={setOpen}>
@@ -117,7 +127,10 @@ function FitBounds({ model }: { model: MapModel }) {
       map.setOptions({ maxZoom: null });
       l.remove();
     });
-    return () => l.remove();
+    return () => {
+      l.remove();
+      map.setOptions({ maxZoom: null });
+    };
   }, [map, key]);
   return null;
 }

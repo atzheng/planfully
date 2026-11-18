@@ -87,6 +87,21 @@ describe('helpers', () => {
     expect(boundsKey(null)).toBe('');
   });
 
+  test('boundsOf antimeridian and wide spans', () => {
+    const at = (...lngs: number[]) => lngs.map((lng) => ({ lat: 0, lng }));
+    // crossing pair: arc of 4 degrees, east < west
+    expect(boundsOf(at(178, -178))).toMatchObject({ west: 178, east: -178 });
+    expect(boundsOf(at(-178, 178))).toMatchObject({ west: 178, east: -178 });
+    // non-crossing pair
+    expect(boundsOf(at(10, 20))).toMatchObject({ west: 10, east: 20 });
+    // single point
+    expect(boundsOf(at(5))).toMatchObject({ west: 5, east: 5 });
+    // legitimately wide (200 degrees) without crossing
+    expect(boundsOf(at(-100, 0, 100))).toMatchObject({ west: -100, east: 100 });
+    // crossing with a point on each side plus one near the line
+    expect(boundsOf(at(170, 179, -175))).toMatchObject({ west: 170, east: -175 });
+  });
+
   test('locatedEvents', () => {
     const es = [
       mk('a', { location: { lat: 1, lng: 2 } }),

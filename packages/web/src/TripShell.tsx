@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react';
 import { Link, useLocation, useParams } from 'react-router';
 import { AddReceiptButton } from './event/UploadButtons';
 import { ExportMenu } from './export/ExportMenu';
@@ -5,11 +6,13 @@ import { EventSheet } from './event/EventSheet';
 import { FilterBar } from './filters/FilterBar';
 import { getTripQueue } from './offline/queue';
 import { enumCodec, stringCodec, useQueryState } from './lib/queryState';
-import { MapView } from './map/MapView';
 import { Timeline } from './timeline/Timeline';
 import { useTrip, useTripStore } from './trip/store';
 import { Chip } from './ui/Chip';
 import styles from './TripShell.module.css';
+
+// Maps code is only fetched when the map view opens.
+const MapView = lazy(() => import('./map/MapView').then((m) => ({ default: m.MapView })));
 
 const VIEWS = ['timeline', 'map'] as const;
 const viewCodec = enumCodec(VIEWS);
@@ -98,7 +101,13 @@ export function TripShell() {
                 {skipped} {skipped === 1 ? 'item' : 'items'} couldn&apos;t be read
               </p>
             )}
-            {view === 'map' ? <MapView /> : <Timeline />}
+            {view === 'map' ? (
+              <Suspense fallback={<p role="status">Loading map...</p>}>
+                <MapView />
+              </Suspense>
+            ) : (
+              <Timeline />
+            )}
           </>
         )}
       </main>
