@@ -28,11 +28,11 @@ export type Block = {
   depth: number;
   /** True for a side-rail block (lodging, or any event of >= RAIL_MIN_MS): outside column allocation. */
   rail: boolean;
-  /** Rail blocks: slot from the lane's right edge (0 = outermost); slot * RAIL_PX is the right offset. 0 otherwise. */
+  /** Rail blocks: cascade slot from the lane's right edge (0 = outermost); right offset is slot * RAIL_STEP_PX. 0 otherwise. */
   railSlot: number;
   /**
-   * Non-rail blocks: rail slots reserved at the lane's right edge (0..MAX_RAILS) because a rail overlaps this
-   * block in time; the block's width stops short of them. 0 elsewhere, so the full lane width is used.
+   * Non-rail blocks: rail slots reserved at the lane's right edge (0..MAX_RAILS): the maximum over the block's
+   * overlap cluster, so right edges line up. Width stops short by `railBudgetPx(railInset)`. 0 with no rail.
    */
   railInset: number;
 };
@@ -53,10 +53,17 @@ export const MAX_COLUMNS = 5;
 
 /** Events at least this long (and all lodging) render as a side rail instead of taking an overlap column. */
 export const RAIL_MIN_MS = 24 * 3600_000;
-/** Width (and hit area) of one rail slot. */
+/** Width (and hit area) of a rail; the lowest slot of overlapping rails is fully exposed. */
 export const RAIL_PX = 24;
-/** Most rail slots at a lane edge; further overlapping rails share the innermost slot. */
-export const MAX_RAILS = 2;
+/** Overlapping rails cascade: each slot is offset this far from the previous one, so each keeps >= this strip. */
+export const RAIL_STEP_PX = 12;
+/** Most cascaded rail slots at a lane edge (budget 24 + 3 * 12 = 60px); more overlapping rails share the last slot. */
+export const MAX_RAILS = 4;
+
+/** Horizontal space a lane edge reserves for `slots` cascaded rails (0 for none). */
+export function railBudgetPx(slots: number): number {
+  return slots <= 0 ? 0 : RAIL_PX + (slots - 1) * RAIL_STEP_PX;
+}
 
 /** Narrowest a column may get before the cluster stops adding columns and cascades instead. */
 export const MIN_COLUMN_PX = 90;
@@ -68,9 +75,9 @@ export const DEPTH_STEP_PX = 16;
  */
 export const MAX_DEPTH = 4;
 
-/** Column cap for a lane `laneWidthPx` wide: floor(width / 90) clamped to 1..MAX_COLUMNS. */
-export function maxColumnsForWidth(laneWidthPx: number): number {
-  const n = Math.floor(laneWidthPx / MIN_COLUMN_PX);
+/** Column cap for a lane `laneWidthPx` wide with `railPx` reserved for rails: floor((width - railPx) / 90) clamped to 1..MAX_COLUMNS. */
+export function maxColumnsForWidth(laneWidthPx: number, railPx = 0): number {
+  const n = Math.floor((laneWidthPx - railPx) / MIN_COLUMN_PX);
   return Math.min(MAX_COLUMNS, Math.max(1, Number.isFinite(n) ? n : MAX_COLUMNS));
 }
 
@@ -152,6 +159,7 @@ export function layoutEvents(
   scale: TimeScale,
   spec: LaneSpec,
   maxColumns = MAX_COLUMNS,
+  laneWidthPx?: number,
 ): Layout {
   const minHeight = minBlockHeight(scale.pxPerHour);
   const unscheduled: Event[] = [];
@@ -226,6 +234,11 @@ export function layoutEvents(
         railInset: 0,
       });
     }
+    // Column cap for this lane, leaving room for the widest rail cascade the lane has.
+    const laneMax =
+      laneWidthPx === undefined
+        ? maxColumns
+        : Math.min(maxColumns, maxColumnsForWidth(laneWidthPx, railBudgetPx(slotEnds.length)));
     const insetFor = (top: number, height: number): number => {
       let n = 0;
       for (const r of rails) {
@@ -241,7 +254,9 @@ export function layoutEvents(
     const flush = () => {
       for (const b of cluster) b.columns = colEnds.length;
       expandSpans(cluster);
-      for (const b of cluster) b.railInset = insetFor(b.top, b.height);
+      let inset = 0;
+      for (const b of cluster) inset = Math.max(inset, insetFor(b.top, b.height));
+      for (const b of cluster) b.railInset = inset;
       blocks.push(...cluster);
       cluster = [];
       colEnds = [];
@@ -257,7 +272,7 @@ export function layoutEvents(
       if (it.top >= clusterEnd) flush();
       let col = colEnds.findIndex((end) => end <= it.top);
       if (col === -1) {
-        if (colEnds.length < maxColumns) col = colEnds.length;
+        if (colEnds.length < laneMax) col = colEnds.length;
         else {
           // Column cap reached: stack onto the column where the cascade is shallowest (none is dropped).
           let best = 0;
@@ -313,4 +328,38 @@ export function withoutEmptyLanes(layout: Layout, mode: LaneMode): Layout {
   if (mode === 'none') return layout;
   const used = new Set(layout.blocks.map((b) => b.laneKey));
   return { ...layout, lanes: layout.lanes.filter((l) => used.has(l.key)) };
+}
+
+/**
+ * Horizontal geometry of a non-rail block in a lane `laneWidthPx` wide. Columns divide the lane minus the
+ * rail reserve (`railPx`), so a cluster's right edges line up. In px: `left = (lane - railPx) * colFrom +
+ * leftInset`, `width = (lane - railPx) * colSpan - widthInset`. The cascade inset (depth) is clamped so the
+ * block keeps at least DEPTH_STEP_PX of width and never vanishes. `left` / `width` are the same as CSS.
+ * Rails position with `right = railSlot * RAIL_STEP_PX` and width RAIL_PX instead.
+ */
+export function blockGeometry(
+  b: Pick<Block, 'column' | 'columns' | 'span' | 'depth' | 'railInset'>,
+  laneWidthPx: number,
+): {
+  left: string;
+  width: string;
+  x0: number;
+  x1: number;
+  /** Cascade depth after clamping to the available width. */
+  depth: number;
+} {
+  const railPx = railBudgetPx(b.railInset);
+  const from = b.column / b.columns;
+  const span = b.span / b.columns;
+  const avail = (laneWidthPx - railPx) * span;
+  const room = Math.floor((avail - 2 - DEPTH_STEP_PX) / DEPTH_STEP_PX);
+  const depth = Math.max(0, Math.min(b.depth, room));
+  const inset = 1 + depth * DEPTH_STEP_PX;
+  return {
+    left: `calc((100% - ${railPx}px) * ${from} + ${inset}px)`,
+    width: `calc((100% - ${railPx}px) * ${span} - ${1 + inset}px)`,
+    x0: (laneWidthPx - railPx) * from + inset,
+    x1: (laneWidthPx - railPx) * (from + span) - 1,
+    depth,
+  };
 }

@@ -8,11 +8,13 @@ import { useTrip } from '../trip/store';
 import { EventIcon } from '../ui/EventIcon';
 import {
   blockTier,
-  DEPTH_STEP_PX,
   initialScrollMs,
   layoutEvents,
   maxColumnsForWidth,
   RAIL_PX,
+  RAIL_STEP_PX,
+  MAX_RAILS,
+  blockGeometry,
   withoutEmptyLanes,
 } from './layout';
 import type { Layout } from './layout';
@@ -68,11 +70,13 @@ const Blocks = memo(function Blocks({
   blocks,
   byId,
   selectedId,
+  laneWidth,
   onOpen,
 }: {
   blocks: Layout['blocks'];
   byId: Map<string, Event>;
   selectedId: string;
+  laneWidth: number;
   onOpen: (id: string) => void;
 }) {
   return (
@@ -104,7 +108,8 @@ const Blocks = memo(function Blocks({
               style={{
                 top: b.top,
                 height: b.height,
-                right: b.railSlot * RAIL_PX,
+                right: b.railSlot * RAIL_STEP_PX,
+                zIndex: 1 + MAX_RAILS - b.railSlot,
                 width: RAIL_PX,
               }}
               onClick={() => onOpen(e.id)}
@@ -120,6 +125,7 @@ const Blocks = memo(function Blocks({
             </button>
           );
         }
+        const geo = blockGeometry(b, laneWidth);
         return (
           <button
             key={`${b.laneKey}:${b.eventId}`}
@@ -139,8 +145,8 @@ const Blocks = memo(function Blocks({
             style={{
               top: b.top,
               height: b.height,
-              left: `calc(${(b.column / b.columns) * 100}% + ${1 + b.depth * DEPTH_STEP_PX}px)`,
-              width: `calc(${(b.span / b.columns) * 100}% - ${2 + b.depth * DEPTH_STEP_PX}px - ${b.railInset * RAIL_PX}px)`,
+              left: geo.left,
+              width: geo.width,
             }}
             onClick={() => onOpen(e.id)}
           >
@@ -285,6 +291,7 @@ export function Timeline({ gutter: gutterProp }: { gutter?: ReactNode } = {}) {
           scale,
           { mode: laneMode, roster, only: who, exclude: whoOut },
           maxColumnsForWidth(laneWidth),
+          laneWidth,
         ),
         laneMode,
       ),
@@ -588,6 +595,7 @@ export function Timeline({ gutter: gutterProp }: { gutter?: ReactNode } = {}) {
                               blocks={blocksByLane.get(l.key) ?? NO_BLOCKS}
                               byId={byId}
                               selectedId={openId}
+                              laneWidth={laneWidth}
                               onOpen={setOpenId}
                             />
                           </div>

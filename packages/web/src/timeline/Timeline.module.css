@@ -516,7 +516,16 @@
   font-size: var(--text-xs, 0.75rem);
   line-height: 1.2;
   cursor: pointer;
-  overflow: clip;
+}
+/* Short or zero-length rails keep a 24px tall hit area. */
+.rail::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: max(100%, 24px);
+  transform: translateY(-50%);
 }
 .railFace {
   display: block;
@@ -537,12 +546,9 @@
   background: color-mix(in srgb, var(--type-bg) 85%, var(--surface));
 }
 .rail:focus-visible {
-  z-index: 3;
+  z-index: 10 !important;
   outline: 2px solid var(--accent);
   outline-offset: 1px;
-}
-.rail.selected {
-  z-index: 2;
 }
 .rail.selected .railFace {
   border-color: var(--accent);
