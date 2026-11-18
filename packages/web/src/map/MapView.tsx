@@ -1,13 +1,15 @@
-import { MarkerClusterer } from '@googlemaps/markerclusterer';
+import { MarkerClusterer, type Renderer } from '@googlemaps/markerclusterer';
 import { AdvancedMarker, APIProvider, Map, useMap } from '@vis.gl/react-google-maps';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useAddEvent } from '../event/AddEvent';
 import { stringCodec, useQueryState } from '../lib/queryState';
 import { useFilteredEvents } from '../filters/filter';
-import { TYPE_HUE } from '../timeline/model';
+import { MapPinOff } from 'lucide-react';
+import { Badge } from '../ui/Badge';
 import { EventIcon } from '../ui/EventIcon';
 import { boundsKey, buildMapModel, locatedEvents, type MapModel } from './markers';
 import { LocateControl } from './LocateControl';
+import { cssVar } from './cssVar';
 import { mapColorScheme } from '../theme/theme';
 import { useTheme } from '../theme/useTheme';
 import styles from './MapView.module.css';
@@ -20,10 +22,21 @@ const FIT_MAX_ZOOM = 15;
 type Env = { VITE_GOOGLE_MAPS_KEY?: string; VITE_GOOGLE_MAP_ID?: string };
 const env = import.meta.env as Env;
 
-const pinColors = (type: keyof typeof TYPE_HUE) => ({
-  background: `hsl(${TYPE_HUE[type]} 60% 45%)`,
-  border: `hsl(${TYPE_HUE[type]} 60% 25%)`,
-});
+/** Cluster marker: an accent disc with a surface ring and the count; size steps up with the count. */
+export const clusterRenderer: Renderer = {
+  render({ count, position }) {
+    const el = document.createElement('div');
+    el.className = styles.cluster ?? '';
+    el.dataset.size = count >= 100 ? 'lg' : count >= 10 ? 'md' : 'sm';
+    el.textContent = String(count);
+    el.setAttribute('aria-label', `${count} events`);
+    return new google.maps.marker.AdvancedMarkerElement({
+      position,
+      content: el,
+      zIndex: 1000 + count,
+    });
+  },
+};
 
 function usePrefersDark(): boolean {
   return useTheme().resolved === 'dark';
@@ -92,6 +105,7 @@ function MapCanvas({
         fullscreenControl={false}
         style={{ width: '100%', height: '100%' }}
       >
+        <ControlPlacement />
         <FitBounds model={model} />
         <Paths model={model} />
         <ClusteredMarkers model={model} onOpen={onOpen} />
@@ -100,12 +114,23 @@ function MapCanvas({
         {children}
       </Map>
       {model.markers.length === 0 && (
-        <p className={styles.empty} role="status">
+        <Badge className={styles.empty} role="status">
           No located events to show
-        </p>
+        </Badge>
       )}
     </div>
   );
+}
+
+/** Moves Google's zoom buttons (fine pointers only) to the top left, clear of the bottom-right FAB. */
+function ControlPlacement() {
+  const map = useMap();
+  useEffect(() => {
+    map?.setOptions({
+      zoomControlOptions: { position: google.maps.ControlPosition.LEFT_TOP },
+    });
+  }, [map]);
+  return null;
 }
 
 /** Refits when the bounds of the filtered set change, not on every render. */
@@ -234,15 +259,18 @@ function Paths({ model }: { model: MapModel }) {
   const map = useMap();
   useEffect(() => {
     if (!map) return;
+    // Re-runs with the map, which remounts on a theme change, so the colour is always current.
+    const strokeColor = cssVar('--accent', '#2f5fe0');
     const lines = model.paths.map(
       (p) =>
         new google.maps.Polyline({
           map,
           path: [p.from, p.to],
           geodesic: true,
-          strokeColor: pinColors(p.type).background,
-          strokeOpacity: 0.85,
-          strokeWeight: 3,
+          clickable: false,
+          strokeColor,
+          strokeOpacity: 0.5,
+          strokeWeight: 2.5,
         }),
     );
     return () => lines.forEach((l) => l.setMap(null));
@@ -254,12 +282,13 @@ type MarkerEl = google.maps.marker.AdvancedMarkerElement;
 
 function ClusteredMarkers({ model, onOpen }: { model: MapModel; onOpen: (id: string) => void }) {
   const map = useMap();
+  const [selected] = useQueryState('e', stringCodec, '');
   const [els, setEls] = useState<Record<string, MarkerEl>>({});
   const clusterer = useRef<MarkerClusterer | null>(null);
 
   useEffect(() => {
     if (!map) return;
-    clusterer.current ??= new MarkerClusterer({ map });
+    clusterer.current ??= new MarkerClusterer({ map, renderer: clusterRenderer });
     return () => {
       clusterer.current?.clearMarkers();
       clusterer.current?.onRemove();
@@ -294,18 +323,20 @@ function ClusteredMarkers({ model, onOpen }: { model: MapModel; onOpen: (id: str
     <>
       {model.markers.map((m) => {
         const key = `${m.eventId}:${m.role}`;
-        const c = pinColors(m.type);
+        const isSelected = m.eventId === selected;
         return (
           <AdvancedMarker
             key={key}
             ref={setRef(key)}
             position={{ lat: m.lat, lng: m.lng }}
             title={m.label}
+            zIndex={isSelected ? 900 : undefined}
             onClick={() => onOpen(m.eventId)}
           >
             <div
               className={styles.pin}
-              style={{ background: c.background, borderColor: c.border }}
+              data-type={m.type}
+              data-selected={isSelected || undefined}
               aria-hidden="true"
             >
               <EventIcon event={m} size={14} />
@@ -330,6 +361,7 @@ function LocatedList({
   return (
     <div className={styles.fallback}>
       <p role="status" className={styles.notice}>
+        <MapPinOff size={16} aria-hidden="true" />
         {notice}
       </p>
       {located.length === 0 ? (
@@ -341,7 +373,9 @@ function LocatedList({
             return (
               <li key={e.id}>
                 <button type="button" className={styles.item} onClick={() => setOpen(e.id)}>
-                  <EventIcon event={e} />
+                  <span className={styles.itemIcon} data-type={e.type}>
+                    <EventIcon event={e} />
+                  </span>
                   <span className={styles.itemText}>
                     <span className={styles.itemName}>{e.name}</span>
                     {place && <span className={styles.itemPlace}>{place}</span>}
