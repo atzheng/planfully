@@ -1,11 +1,5 @@
 import { expect, test } from 'vitest';
-import {
-  BACKGROUND_EVENT_MS,
-  condensedSpan,
-  findGaps,
-  formatGap,
-  GAP_MARGIN_MS,
-} from './condense';
+import { BACKGROUND_EVENT_MS, condensedSpan, findGaps, formatGap, GAP_MARGIN_MS } from './condense';
 import { fitPx } from './zoom';
 import { GAP_PX, makeScale, MIN_PX_PER_HOUR, ticks } from './scale';
 import type { Gap } from './scale';
@@ -53,7 +47,7 @@ test('a gap is drawn GAP_PX tall and shifts everything after it up', () => {
   expect(s.toY(11 * H)).toBeCloseTo(20 + GAP_PX / 2);
   expect(s.gaps).toEqual([{ fromMs: 2 * H, toMs: 20 * H, fromY: 20, toY: 20 + GAP_PX }]);
   expect(s.pxPerHourAt(H)).toBe(10);
-  expect(s.pxPerHourAt(5 * H)).toBeCloseTo((GAP_PX / 18));
+  expect(s.pxPerHourAt(5 * H)).toBeCloseTo(GAP_PX / 18);
   expect(s.pxPerHourAt(25 * H)).toBe(10);
   // Zoom only stretches the busy part.
   const z = makeScale(0, 20, [{ fromMs: 2 * H, toMs: 20 * H }]);
