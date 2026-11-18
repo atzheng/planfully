@@ -203,12 +203,13 @@ export function Timeline({ gutter: gutterProp }: { gutter?: ReactNode } = {}) {
   const totalEvents = useTrip((s) => s.events.length);
   const roster = useTrip((s) => s.meta?.roster) ?? NO_ROSTER;
   const allEvents = useTrip((s) => s.events);
+  const tripId = useTrip((s) => s.tripId);
   const [tzRaw, setTzRaw] = useQueryState('tz', stringCodec, '');
   const [openId, setOpenId] = useQueryState('e', stringCodec, '');
   const { include: who, exclude: whoOut } = useWhoSelection();
   const [laneMode] = useQueryState('lanes', laneModeCodec, 'none');
   const [wxOn] = useQueryState('wx', booleanCodec, false);
-  const { pxPerHour, setPx, needsDefault } = useZoom();
+  const { pxPerHour, setPx, needsDefault, autoFit } = useZoom(tripId);
   const gutter = wxOn ? <WeatherStrip /> : gutterProp;
   const gutterPx = wxOn ? WEATHER_GUTTER_PX : 64;
 
@@ -321,15 +322,19 @@ export function Timeline({ gutter: gutterProp }: { gutter?: ReactNode } = {}) {
     setHeadingMs(Math.floor(h / 60_000) * 60_000);
   }, [scale, range, topPx]);
 
-  // No zoom in the URL: once the scroller is measured, pick the default (5 days or the whole trip)
-  // before first paint; useZoom and usePxPerHour both switch to it in the same commit. A trip change
-  // remounts Timeline, which clears the measurement.
+  // No zoom in the URL: once the scroller has a real size, pick the default (5 days or the whole trip)
+  // before first paint; useZoom and usePxPerHour both switch to it in the same commit. It is refitted
+  // when the trip range changes (events arriving) until the user zooms, but not on resize or rotation.
+  const [hasSize, setHasSize] = useState(false);
+  const rangeFrom = range?.fromMs;
+  const rangeTo = range?.toMs;
   useLayoutEffect(() => {
     const el = scroller.current;
-    if (!needsDefault || !range || !el) return;
-    setMeasuredDefaultPx(defaultPxPerHour(range.fromMs, range.toMs, el.clientHeight - topPx));
-  }, [needsDefault, range, topPx]);
-  useEffect(() => () => setMeasuredDefaultPx(null), []);
+    if (!autoFit || rangeFrom === undefined || rangeTo === undefined || !el) return;
+    const viewport = el.clientHeight - topPx;
+    if (!(viewport > 0)) return;
+    setMeasuredDefaultPx(tripId, defaultPxPerHour(rangeFrom, rangeTo, viewport));
+  }, [autoFit, rangeFrom, rangeTo, topPx, tripId, hasSize]);
 
   // Open at today (or the trip's first day), once, when the axis first exists.
   const scrolled = useRef(false);
@@ -360,6 +365,7 @@ export function Timeline({ gutter: gutterProp }: { gutter?: ReactNode } = {}) {
     if (!el || typeof ResizeObserver === 'undefined') return;
     const ro = new ResizeObserver(() => {
       measure();
+      setHasSize(el.clientHeight > 0);
       setViewW(el.clientWidth);
     });
     ro.observe(el);
