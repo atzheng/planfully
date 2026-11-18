@@ -88,7 +88,8 @@ export function EventForm({
           ...prev,
           [`${k}Name`]: t,
           // Coordinates from a picked place no longer match once the name is edited.
-          [`${k}Geo`]: prev[`${k}Geo`]?.placeId ? null : prev[`${k}Geo`],
+          [`${k}Geo`]: prev[`${k}Picked`] ? null : prev[`${k}Geo`],
+          [`${k}Picked`]: false,
         }))
       }
       onPick={(p) =>
@@ -97,6 +98,7 @@ export function EventForm({
           [`${k}Name`]: p.name ?? '',
           [`${k}Address`]: p.address ?? '',
           [`${k}Geo`]: geoOf(p),
+          [`${k}Picked`]: geoOf(p) !== null,
         }))
       }
     />
@@ -106,7 +108,8 @@ export function EventForm({
     setV((prev) => ({
       ...prev,
       [`${k}Address`]: t,
-      [`${k}Geo`]: prev[`${k}Geo`]?.placeId ? null : prev[`${k}Geo`],
+      [`${k}Geo`]: prev[`${k}Picked`] ? null : prev[`${k}Geo`],
+      [`${k}Picked`]: false,
     }));
 
   const submit = async (e: { preventDefault(): void }) => {

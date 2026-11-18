@@ -5,7 +5,6 @@ import { useAddEvent } from '../event/AddEvent';
 import { stringCodec, useQueryState } from '../lib/queryState';
 import { useFilteredEvents } from '../filters/filter';
 import { TYPE_HUE, TYPE_ICON } from '../timeline/model';
-import { latLngAtPixel } from './pointAt';
 import { boundsKey, buildMapModel, locatedEvents, type MapModel } from './markers';
 import styles from './MapView.module.css';
 
@@ -141,7 +140,18 @@ function FitBounds({ model }: { model: MapModel }) {
 const LONG_PRESS_MS = 500;
 const LONG_PRESS_SLOP_PX = 10;
 
-/** Right-click, or a long press on touch, starts a new event at that point. */
+/**
+ * Right-click, or a long press on touch, on the map surface starts a new event at that point.
+ * Uses the Maps API's own events for the position, and ignores any that started on a marker,
+ * cluster, control or info window so those keep their own behaviour (and context menus).
+ */
+const NOT_SURFACE = 'gmp-advanced-marker, [role="button"], button, a, .gmnoprint, .gm-style-iw';
+function onBareMap(e: google.maps.MapMouseEvent): boolean {
+  const dom = e.domEvent as Event | undefined;
+  const path = dom?.composedPath?.() ?? [];
+  return !path.some((n) => n instanceof Element && n.matches(NOT_SURFACE));
+}
+
 function AddAtPoint() {
   const map = useMap();
   const add = useAddEvent();
@@ -150,56 +160,76 @@ function AddAtPoint() {
   useEffect(() => {
     const div = map?.getDiv();
     if (!map || !div) return;
-    const at = (e: MouseEvent | PointerEvent) => {
-      const center = map.getCenter();
-      const zoom = map.getZoom();
-      if (!center || zoom === undefined) return;
-      const r = div.getBoundingClientRect();
-      const p = latLngAtPixel(
-        { lat: center.lat(), lng: center.lng() },
-        zoom,
-        { width: r.width, height: r.height },
-        e.clientX - r.left,
-        e.clientY - r.top,
-      );
-      addRef.current?.openAtPoint(p.lat, p.lng);
+    const open = (ll: google.maps.LatLng | null | undefined) => {
+      if (ll) addRef.current?.openAtPoint(ll.lat(), ll.lng());
     };
     let timer: ReturnType<typeof setTimeout> | undefined;
-    let start: { x: number; y: number } | null = null;
+    let origin: { x: number; y: number } | null = null;
+    let lastType = 'mouse';
+    const down = new Set<number>();
+    /** Set when a second finger joins: no press starts again until every pointer is up. */
+    let blocked = false;
     const cancel = () => {
       clearTimeout(timer);
-      start = null;
+      origin = null;
     };
+    // Pointer bookkeeping only (no preventDefault): which pointers are down, and where.
     const onDown = (e: PointerEvent) => {
-      if (e.pointerType === 'mouse') return;
-      if (start) return cancel(); // a second finger is a pinch, not a press
-      start = { x: e.clientX, y: e.clientY };
-      timer = setTimeout(() => {
-        start = null;
-        at(e);
-      }, LONG_PRESS_MS);
+      down.add(e.pointerId);
+      lastType = e.pointerType;
+      if (down.size > 1) {
+        blocked = true;
+        cancel();
+      } else if (e.isPrimary) {
+        origin = { x: e.clientX, y: e.clientY };
+      }
     };
     const onMove = (e: PointerEvent) => {
-      if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) > LONG_PRESS_SLOP_PX) {
+      if (
+        origin &&
+        e.isPrimary &&
+        Math.hypot(e.clientX - origin.x, e.clientY - origin.y) > LONG_PRESS_SLOP_PX
+      ) {
         cancel();
       }
     };
-    const onContext = (e: MouseEvent) => {
-      e.preventDefault();
-      at(e);
+    const onUp = (e: PointerEvent) => {
+      down.delete(e.pointerId);
+      if (down.size === 0) blocked = false;
+      cancel();
     };
-    div.addEventListener('pointerdown', onDown);
-    div.addEventListener('pointermove', onMove);
-    div.addEventListener('pointerup', cancel);
-    div.addEventListener('pointercancel', cancel);
-    div.addEventListener('contextmenu', onContext);
+    div.addEventListener('pointerdown', onDown, true);
+    div.addEventListener('pointermove', onMove, true);
+    div.addEventListener('pointerup', onUp, true);
+    div.addEventListener('pointercancel', onUp, true);
+
+    const listeners = [
+      map.addListener('contextmenu', (e: google.maps.MapMouseEvent) => {
+        if (!onBareMap(e)) return;
+        // A touch long press can raise this too; the provider opens only once.
+        (e.domEvent as Event | undefined)?.preventDefault?.();
+        open(e.latLng);
+      }),
+      map.addListener('mousedown', (e: google.maps.MapMouseEvent) => {
+        if (lastType === 'mouse' || blocked || down.size !== 1 || !onBareMap(e)) return;
+        clearTimeout(timer);
+        const ll = e.latLng;
+        timer = setTimeout(() => {
+          origin = null;
+          open(ll);
+        }, LONG_PRESS_MS);
+      }),
+      map.addListener('mouseup', cancel),
+      map.addListener('dragstart', cancel),
+      map.addListener('zoom_changed', cancel),
+    ];
     return () => {
       cancel();
-      div.removeEventListener('pointerdown', onDown);
-      div.removeEventListener('pointermove', onMove);
-      div.removeEventListener('pointerup', cancel);
-      div.removeEventListener('pointercancel', cancel);
-      div.removeEventListener('contextmenu', onContext);
+      listeners.forEach((l) => l.remove());
+      div.removeEventListener('pointerdown', onDown, true);
+      div.removeEventListener('pointermove', onMove, true);
+      div.removeEventListener('pointerup', onUp, true);
+      div.removeEventListener('pointercancel', onUp, true);
     };
   }, [map]);
   return null;

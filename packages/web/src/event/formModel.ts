@@ -33,6 +33,9 @@ export type FormValues = {
   /** Coordinates and place id of the location, set by place search or a map point. */
   locationGeo: Geo | null;
   endLocationGeo: Geo | null;
+  /** Coordinates came from a place (search result or an existing place): editing its text drops them. */
+  locationPicked: boolean;
+  endLocationPicked: boolean;
   participants: string[];
   status: Event['status'];
   notes: string;
@@ -47,6 +50,11 @@ export function geoOf(l: Location | undefined): Geo | null {
   if (l.lng !== undefined) g.lng = l.lng;
   if (l.placeId !== undefined) g.placeId = l.placeId;
   return g;
+}
+
+/** A located place with text, as opposed to a bare map point. */
+export function isPlace(l: Location | undefined): boolean {
+  return Boolean(geoOf(l) && (l?.name || l?.address));
 }
 
 export type FormErrors = Partial<Record<keyof FormValues | 'form', string>>;
@@ -93,6 +101,8 @@ export function initialValues(initial: Partial<Event> = {}, fallbackTz?: string)
     endLocationAddress: initial.endLocation?.address ?? '',
     locationGeo: geoOf(initial.location),
     endLocationGeo: geoOf(initial.endLocation),
+    locationPicked: isPlace(initial.location),
+    endLocationPicked: isPlace(initial.endLocation),
     participants: initial.participants ?? [],
     status: initial.status ?? 'confirmed',
     notes: initial.notes ?? '',
