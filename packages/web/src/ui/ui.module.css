@@ -211,6 +211,21 @@
   cursor: pointer;
 }
 
+/* 16px on phones and touch screens so iOS does not zoom on focus (the module classes outrank theme.css's element rule). */
+@media (max-width: 719px), (pointer: coarse) {
+  .input,
+  .select,
+  .textarea {
+    font-size: 16px;
+  }
+}
+@media (pointer: coarse) {
+  .input,
+  .select {
+    min-height: var(--tap);
+  }
+}
+
 /* ---- Field ---- */
 .field {
   display: flex;
@@ -340,6 +355,18 @@
 }
 
 /* ---- Sheet ---- */
+.handle {
+  width: 36px;
+  height: 4px;
+  margin: calc(-1 * var(--space-2)) auto var(--space-3);
+  border-radius: var(--radius-pill);
+  background: var(--border-strong);
+}
+@media (min-width: 720px) {
+  .handle {
+    display: none;
+  }
+}
 .backdrop {
   position: fixed;
   inset: 0;

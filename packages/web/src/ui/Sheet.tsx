@@ -57,6 +57,7 @@ export function Sheet({
         className={[styles.sheet, side ? styles.side : ''].join(' ').trim()}
         onClick={(e) => e.stopPropagation()}
       >
+        <div className={styles.handle} aria-hidden="true" />
         {children}
       </div>
     </div>

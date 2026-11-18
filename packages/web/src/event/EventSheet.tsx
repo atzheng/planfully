@@ -1,11 +1,14 @@
 import { Suspense, lazy, useCallback, useEffect, useState, type ReactNode } from 'react';
-import type { Attachment, Event, Location } from '@planfully/shared';
+import type { Attachment, Event, Location, RosterMember } from '@planfully/shared';
+import { Check, Copy, ExternalLink, FileText, Mail, MapPin, Pencil, Trash2 } from 'lucide-react';
 import { stringCodec, useQueryState } from '../lib/queryState';
 import { useBlobCached } from '../offline/useBlobCached';
 import { fetchAttachment } from '../trip/attachments';
 import { useTripActions } from '../trip/actions';
 import { useTrip, useTripStore } from '../trip/store';
 import { Button } from '../ui/Button';
+import { Badge } from '../ui/Badge';
+import { EventIcon } from '../ui/EventIcon';
 import { IconButton } from '../ui/IconButton';
 import { Sheet } from '../ui/Sheet';
 import {
@@ -16,17 +19,17 @@ import {
   mapsUrl,
   canOpenInline,
   opensInline,
-  participantNames,
 } from './format';
-import { eventKindLabel } from '../timeline/model';
+import { initials, kindLabel } from './labels';
+import { SheetHeader } from './SheetHeader';
 import { diffFields } from './formModel';
 import { EventForm } from './EventForm';
 import { AttachButton } from './UploadButtons';
 import styles from './EventSheet.module.css';
 
-function Field({ label, children }: { label: string; children: ReactNode }) {
+function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div>
+    <div className={styles.row}>
       <dt>{label}</dt>
       <dd>{children}</dd>
     </div>
@@ -37,18 +40,51 @@ function hasPlace(l: Location): boolean {
   return Boolean(l.name || l.address || (l.lat !== undefined && l.lng !== undefined));
 }
 
-function LocationField({ label, loc }: { label: string; loc: Location }) {
+function LocationRow({ label, loc }: { label: string; loc: Location }) {
   const url = mapsUrl(loc);
   return (
-    <Field label={label}>
-      {loc.name && <div>{loc.name}</div>}
-      {loc.address && <div>{loc.address}</div>}
+    <Row label={label}>
+      {loc.name && <div className={styles.strong}>{loc.name}</div>}
+      {loc.address && <div className={styles.muted}>{loc.address}</div>}
       {url && (
         <a className={styles.link} href={url} target="_blank" rel="noopener noreferrer">
+          <MapPin size={13} aria-hidden="true" />
           Open in Google Maps
+          <ExternalLink size={11} aria-hidden="true" />
         </a>
       )}
-    </Field>
+    </Row>
+  );
+}
+
+function People({ ids, roster }: { ids: string[]; roster: readonly RosterMember[] }) {
+  if (ids.length === 0) return <span>Everyone</span>;
+  const people: string[] = [];
+  let former = 0;
+  for (const id of new Set(ids)) {
+    const name = roster.find((r) => r.id === id)?.name;
+    if (name) people.push(name);
+    else former++;
+  }
+  return (
+    <ul className={styles.people}>
+      {people.map((n) => (
+        <li key={n} className={styles.person}>
+          <span className={styles.avatar} aria-hidden="true">
+            {initials(n)}
+          </span>
+          {n}
+        </li>
+      ))}
+      {former > 0 && (
+        <li className={styles.person}>
+          <span className={styles.avatar} aria-hidden="true">
+            ?
+          </span>
+          {former === 1 ? 'Former participant' : `${former} former participants`}
+        </li>
+      )}
+    </ul>
   );
 }
 
@@ -108,28 +144,14 @@ function AttachmentRow({
   const isEmail = isEmailAttachment(a);
 
   return (
-    <li>
-      {isEmail ? (
-        <>
-          <button
-            type="button"
-            className={styles.linkButton}
-            onClick={() => onViewEmail(a)}
-            data-testid="view-email"
-          >
-            View email
-          </button>{' '}
-          <button
-            type="button"
-            className={styles.linkButton}
-            onClick={() => void run(true)}
-            disabled={state === 'loading'}
-          >
-            Download .eml
-          </button>{' '}
-        </>
-      ) : (
-        <>
+    <li className={styles.file}>
+      <span className={styles.fileIcon} aria-hidden="true">
+        {isEmail ? <Mail size={16} /> : <FileText size={16} />}
+      </span>
+      <div className={styles.fileBody}>
+        {isEmail ? (
+          <div className={styles.fileName}>{a.filename}</div>
+        ) : (
           <button
             type="button"
             className={styles.linkButton}
@@ -137,20 +159,39 @@ function AttachmentRow({
             disabled={state === 'loading'}
           >
             {a.filename}
-          </button>{' '}
-        </>
-      )}
-      <span className={styles.meta}>
-        {isEmail && `${a.filename} · `}
-        {formatSize(a.size)}
-        {offline && ' · Available offline'}
-        {state === 'loading' && ' · Opening...'}
-      </span>
-      {state === 'error' && (
-        <div role="alert" className={styles.error}>
-          Could not open this file.
+          </button>
+        )}
+        <div className={styles.meta}>
+          {formatSize(a.size)}
+          {offline && ' · Available offline'}
+          {state === 'loading' && ' · Opening...'}
         </div>
-      )}
+        {isEmail && (
+          <div className={styles.fileActions}>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => onViewEmail(a)}
+              data-testid="view-email"
+            >
+              View email
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => void run(true)}
+              disabled={state === 'loading'}
+            >
+              Download .eml
+            </Button>
+          </div>
+        )}
+        {state === 'error' && (
+          <div role="alert" className={styles.error}>
+            Could not open this file.
+          </div>
+        )}
+      </div>
     </li>
   );
 }
@@ -199,23 +240,33 @@ function Actions({
   onDelete: () => void;
 }) {
   const [confirming, setConfirming] = useState(false);
-  const del = onDelete;
   if (confirming) {
     return (
       <>
-        <span>Delete this event?</span>
-        <Button onClick={del} className={styles.danger}>
+        <span className={styles.confirmText}>Delete this event?</span>
+        <Button variant="danger" size="sm" onClick={onDelete}>
           Delete
         </Button>
-        <Button onClick={() => setConfirming(false)}>Keep</Button>
+        <Button variant="ghost" size="sm" onClick={() => setConfirming(false)}>
+          Keep
+        </Button>
       </>
     );
   }
   return (
     <>
-      <Button onClick={onEdit}>Edit</Button>
+      <Button variant="ghost" size="sm" onClick={onEdit}>
+        <Pencil size={14} aria-hidden="true" />
+        Edit
+      </Button>
       <AttachButton event={event} />
-      <Button onClick={() => setConfirming(true)} className={styles.danger}>
+      <Button
+        variant="ghost"
+        size="sm"
+        className={styles.deleteButton}
+        onClick={() => setConfirming(true)}
+      >
+        <Trash2 size={14} aria-hidden="true" />
         Delete
       </Button>
     </>
@@ -258,57 +309,77 @@ function Details({
 
   return (
     <>
-      <div className={styles.badges}>
-        <span className={styles.badge}>{eventKindLabel(event)}</span>
-        {event.status === 'cancelled' && (
-          <span className={`${styles.badge} ${styles.warn}`}>Cancelled</span>
-        )}
-        {event.needsReview && (
-          <span className={`${styles.badge} ${styles.warn}`}>Needs review</span>
-        )}
-      </div>
       <dl className={styles.fields}>
-        {event.start && <Field label="Start">{formatLocalTime(event.start)}</Field>}
-        {event.end && <Field label="End">{formatLocalTime(event.end)}</Field>}
-        {duration && <Field label="Duration">{duration}</Field>}
-        {event.confirmation && (
-          <Field label="Confirmation">
-            <span className={styles.row}>
-              <code>{event.confirmation}</code>
-              <Button onClick={copy}>
-                {copied === 'ok' ? 'Copied' : copied === 'failed' ? 'Copy failed' : 'Copy'}
-              </Button>
-            </span>
-          </Field>
+        {(event.start || event.end) && (
+          <Row label="When">
+            <div className={styles.times}>
+              {event.start && <div>{formatLocalTime(event.start)}</div>}
+              {event.end && (
+                <div>
+                  {event.start && <span aria-hidden="true">to </span>}
+                  {formatLocalTime(event.end)}
+                </div>
+              )}
+              {duration && <div className={styles.muted}>{duration}</div>}
+            </div>
+          </Row>
         )}
         {event.location && hasPlace(event.location) && (
-          <LocationField label="Location" loc={event.location} />
+          <LocationRow label="Where" loc={event.location} />
         )}
         {event.endLocation && hasPlace(event.endLocation) && (
-          <LocationField label="Arrives at" loc={event.endLocation} />
+          <LocationRow label="Arrives at" loc={event.endLocation} />
         )}
-        <Field label="Participants">{participantNames(event, roster)}</Field>
-        {event.notes && <Field label="Notes">{event.notes}</Field>}
+        {event.confirmation && (
+          <Row label="Confirmation">
+            <span className={styles.confirmation}>
+              <code>{event.confirmation}</code>
+              <IconButton
+                label={
+                  copied === 'ok'
+                    ? 'Copied'
+                    : copied === 'failed'
+                      ? 'Copy failed'
+                      : 'Copy confirmation'
+                }
+                size="sm"
+                onClick={copy}
+              >
+                {copied === 'ok' ? (
+                  <Check size={14} aria-hidden="true" />
+                ) : (
+                  <Copy size={14} aria-hidden="true" />
+                )}
+              </IconButton>
+              <span role="status" className={styles.srOnly}>
+                {copied === 'ok' ? 'Copied' : copied === 'failed' ? 'Copy failed' : ''}
+              </span>
+            </span>
+          </Row>
+        )}
+        <Row label="Who">
+          <People ids={event.participants} roster={roster} />
+        </Row>
+        {event.notes && <Row label="Notes">{event.notes}</Row>}
         {files.length > 0 && (
-          <Field label="Attachments">
+          <Row label="Attachments">
             <ul className={styles.attachments}>
               {files.map((a) => (
                 <AttachmentRow key={a.id} a={a} onViewEmail={onViewEmail} />
               ))}
             </ul>
-          </Field>
+          </Row>
         )}
         {emails.length > 0 && (
-          <Field label="Original email">
+          <Row label="Original email">
             <ul className={styles.attachments}>
               {emails.map((a) => (
                 <AttachmentRow key={a.id} a={a} onViewEmail={onViewEmail} />
               ))}
             </ul>
-          </Field>
+          </Row>
         )}
       </dl>
-      {/* Actions row: planfully-ecw.2 adds Edit and Delete, planfully-ecw.4 adds Attach. */}
       <div className={styles.actions} data-slot="event-actions">
         <Actions event={event} onEdit={onEdit} onDelete={onDelete} />
       </div>
@@ -333,12 +404,21 @@ function OpenSheet({ id, setId }: { id: string; setId: (v: string) => void }) {
 
   return (
     <Sheet open onClose={close} label={event?.name ?? 'Event not found'} side>
-      <div className={styles.header}>
-        <h2 className={styles.title}>{event ? event.name : 'Event not found'}</h2>
-        <IconButton label="Close" onClick={close}>
-          ×
-        </IconButton>
-      </div>
+      <SheetHeader
+        icon={event ? <EventIcon event={event} size={18} /> : undefined}
+        type={event?.type}
+        title={event ? event.name : 'Event not found'}
+        subtitle={event && !editing && !viewing ? kindLabel(event) : undefined}
+        badges={
+          event && !editing && !viewing ? (
+            <>
+              {event.status === 'cancelled' && <Badge tone="danger">Cancelled</Badge>}
+              {event.needsReview && <Badge tone="warning">Needs review</Badge>}
+            </>
+          ) : undefined
+        }
+        onClose={close}
+      />
       <WriteStatus />
       {!event ? (
         <p>This event may have been deleted.</p>

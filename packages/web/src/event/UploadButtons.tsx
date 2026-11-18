@@ -1,6 +1,7 @@
 // Direct uploads (planfully-ecw.4): attach files to an event, or create receipt events from files.
 
 import { useRef, useState } from 'react';
+import { Paperclip } from 'lucide-react';
 import { fromInstant, type Attachment, type Event } from '@planfully/shared';
 import { ApiError } from '../lib/api';
 import { getTripQueue } from '../offline/queue';
@@ -134,7 +135,8 @@ export function AttachButton({ event }: { event: Event }) {
         data-testid="attach-input"
         onChange={(e) => void onFiles(e.target.files)}
       />
-      <Button onClick={() => input.current?.click()} disabled={busy}>
+      <Button variant="ghost" size="sm" onClick={() => input.current?.click()} disabled={busy}>
+        <Paperclip size={14} aria-hidden="true" />
         Attach
       </Button>
       <Status progress={progress} error={error} />
