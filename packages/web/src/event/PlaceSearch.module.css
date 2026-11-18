@@ -2,20 +2,14 @@
   position: relative;
   min-width: 0;
 }
-/* Styled like a Menu panel: raised, hairline border, rounded rows. */
+/* Inline in the form flow (pushes the next field down instead of covering it). Raised, hairline border, rounded rows. */
 .list {
-  position: absolute;
-  z-index: 20;
-  top: 100%;
-  left: 0;
-  right: 0;
   margin: var(--space-1) 0 0;
   padding: var(--space-1);
   list-style: none;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-md);
   background: var(--raised);
-  box-shadow: var(--shadow-sm);
   max-height: 14rem;
   overflow-y: auto;
 }
