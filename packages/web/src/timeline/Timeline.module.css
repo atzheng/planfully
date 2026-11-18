@@ -524,3 +524,81 @@
 .bar.cancelled {
   opacity: 0.5;
 }
+
+/* Side rail (planfully-91v): lodging and 24h+ events sit at the lane's right edge, outside the column
+   allocation. The button is the 24px hit area; the face is the visible type-coloured strip. */
+.rail {
+  position: absolute;
+  z-index: 1;
+  display: block;
+  padding: 0 3px;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  color: var(--type-fg);
+  font: inherit;
+  font-size: var(--text-xs, 0.75rem);
+  line-height: 1.2;
+  cursor: pointer;
+}
+/* Short or zero-length rails keep a 24px tall hit area. */
+.rail::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: max(100%, 24px);
+  transform: translateY(-50%);
+}
+.railFace {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  min-height: 6px;
+  overflow: clip;
+  border: 1px solid var(--border);
+  border-right: 0;
+  border-left: 3px solid var(--type-bar);
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--type-bg) 62%, var(--surface));
+}
+.rail:hover .railFace {
+  border-color: var(--border-strong);
+  border-left-color: var(--type-bar);
+  background: color-mix(in srgb, var(--type-bg) 85%, var(--surface));
+}
+.rail:focus-visible {
+  z-index: 10 !important;
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.rail.selected .railFace {
+  border-color: var(--accent);
+  border-left-color: var(--type-bar);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.rail.cancelled {
+  opacity: 0.55;
+}
+/* Sticky so a multi-day rail keeps its label in view while scrolled. */
+.railLabel {
+  position: sticky;
+  top: calc(var(--top-px, 28px) + 4px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  max-height: 70vh;
+  padding-top: 3px;
+  overflow: hidden;
+}
+.railName {
+  writing-mode: vertical-rl;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-height: 60vh;
+  font-weight: var(--weight-semibold);
+}
