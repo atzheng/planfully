@@ -1,0 +1,115 @@
+.root {
+  position: relative;
+  min-width: 0;
+}
+.trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: 100%;
+  min-height: var(--tap);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+.trigger:focus-visible,
+.item:focus-visible,
+.back:focus-visible,
+.input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.summary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pop {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + var(--space-1));
+  left: 0;
+  width: min(320px, calc(100vw - 2 * var(--space-4)));
+  max-height: min(60vh, 420px);
+  overflow-y: auto;
+  padding: var(--space-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: var(--tap);
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  align-items: center;
+}
+.item:hover {
+  background: var(--surface-2);
+}
+.active {
+  font-weight: 600;
+  color: var(--accent);
+}
+.itemName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.itemMeta {
+  flex: none;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-weight: 400;
+}
+.search {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.input {
+  min-height: var(--tap);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+.none {
+  padding: var(--space-3);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+.back {
+  min-height: var(--tap);
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}

@@ -43,6 +43,7 @@ import {
   useZoom,
   wheelPx,
 } from './zoom';
+import { TimeZonePicker } from './TimeZonePicker';
 import { WEATHER_GUTTER_PX, WeatherLegend, WeatherStrip } from './WeatherStrip';
 import styles from './Timeline.module.css';
 
@@ -272,7 +273,8 @@ export function Timeline({ gutter: gutterProp }: { gutter?: ReactNode } = {}) {
   const events = useFilteredEvents();
   const totalEvents = useTrip((s) => s.events.length);
   const roster = useTrip((s) => s.meta?.roster) ?? NO_ROSTER;
-  const [tzRaw] = useQueryState('tz', stringCodec, '');
+  const allEvents = useTrip((s) => s.events);
+  const [tzRaw, setTzRaw] = useQueryState('tz', stringCodec, '');
   const [, setOpenId] = useQueryState('e', stringCodec, '');
   const [who] = useQueryState('who', stringListCodec, NO_WHO);
   const [laneMode, setLaneMode] = useQueryState('lanes', laneModeCodec, 'none');
@@ -497,7 +499,12 @@ export function Timeline({ gutter: gutterProp }: { gutter?: ReactNode } = {}) {
   return (
     <section className={styles.timeline} aria-label="Timeline">
       <div className={styles.toolbar}>
-        <span className={styles.zone}>Times in {zone}</span>
+        <TimeZonePicker
+          zone={zone}
+          browserZone={browserZone()}
+          events={allEvents}
+          onChange={setTzRaw}
+        />
         <div className={styles.zoomBar} role="group" aria-label="Zoom">
           <button
             type="button"
