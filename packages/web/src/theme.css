@@ -64,6 +64,24 @@
   --shadow-md: 0 2px 4px rgb(15 23 42 / 0.06), 0 12px 32px rgb(15 23 42 / 0.16);
   --shadow: var(--shadow-md);
 
+  /* Participant badge palette (planfully-u5w): picked by roster order; the letters are always shown. */
+  --person-1-bg: #dbe6ff;
+  --person-1-fg: #1f43a8;
+  --person-2-bg: #d3f0e0;
+  --person-2-fg: #14633a;
+  --person-3-bg: #fde3c8;
+  --person-3-fg: #8a4a0b;
+  --person-4-bg: #f1d9f5;
+  --person-4-fg: #7a2a85;
+  --person-5-bg: #fbd9d9;
+  --person-5-fg: #9a2323;
+  --person-6-bg: #d2eff2;
+  --person-6-fg: #0e6670;
+  --person-7-bg: #ece6c0;
+  --person-7-fg: #6b5a0a;
+  --person-8-bg: #e2e2f6;
+  --person-8-fg: #3d3d8f;
+
   /* 4-pt spacing */
   --space-0: 2px;
   --space-1: 4px;
@@ -137,6 +155,23 @@
   --warning-subtle: #35290f;
   --success: #4cc38a;
   --success-subtle: #12301f;
+
+  --person-1-bg: #1f2f5c;
+  --person-1-fg: #a9c1ff;
+  --person-2-bg: #143a28;
+  --person-2-fg: #7fd9aa;
+  --person-3-bg: #40290f;
+  --person-3-fg: #f0b27a;
+  --person-4-bg: #3f1f45;
+  --person-4-fg: #e0a6ea;
+  --person-5-bg: #441e1e;
+  --person-5-fg: #f2a0a0;
+  --person-6-bg: #11393f;
+  --person-6-fg: #86d4dc;
+  --person-7-bg: #39330a;
+  --person-7-fg: #dccb6e;
+  --person-8-bg: #2a2a52;
+  --person-8-fg: #b9b9f0;
 
   --wx-temp: #ff9a5c;
   --wx-wind: #b4bdc7;

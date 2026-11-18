@@ -73,18 +73,6 @@
   align-items: center;
   gap: var(--space-2);
 }
-.avatar {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  border-radius: var(--radius-pill);
-  background: var(--accent-subtle);
-  color: var(--accent);
-  font-size: 10px;
-  font-weight: var(--weight-semibold);
-}
 .attachments {
   display: flex;
   flex-direction: column;

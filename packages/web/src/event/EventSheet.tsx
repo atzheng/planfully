@@ -20,6 +20,7 @@ import {
   canOpenInline,
   opensInline,
 } from './format';
+import { Avatar } from '../ui/Avatar';
 import { initials, kindLabel } from './labels';
 import { SheetHeader } from './SheetHeader';
 import { diffFields } from './formModel';
@@ -70,17 +71,13 @@ function People({ ids, roster }: { ids: string[]; roster: readonly RosterMember[
     <ul className={styles.people}>
       {people.map((n) => (
         <li key={n} className={styles.person}>
-          <span className={styles.avatar} aria-hidden="true">
-            {initials(n)}
-          </span>
+          <Avatar label={initials(n)} />
           {n}
         </li>
       ))}
       {former > 0 && (
         <li className={styles.person}>
-          <span className={styles.avatar} aria-hidden="true">
-            ?
-          </span>
+          <Avatar label="?" />
           {former === 1 ? 'Former participant' : `${former} former participants`}
         </li>
       )}

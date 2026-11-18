@@ -18,11 +18,13 @@ import {
   isIconOnly,
   withoutEmptyLanes,
 } from './layout';
-import type { Layout } from './layout';
+import type { Layout, LaneMode } from './layout';
+import { badgePlacement, participantBadges } from './badges';
 import { laneModeCodec } from './lanes';
 import { useRegisterFit, useTimelineControls } from './controls';
 import { roundRangeToHours, timelineRange, validZone } from './model';
 import { axisHourLabel, dayHeadingParts, localTimeRange, placeLabel, prefers12h } from './labels';
+import { Avatar } from '../ui/Avatar';
 import { Badge } from '../ui/Badge';
 import { anchorMsAt, scrollTopForAnchor } from './model';
 import {
@@ -76,12 +78,16 @@ const Blocks = memo(function Blocks({
   byId,
   selectedId,
   laneWidth,
+  roster,
+  laneMode,
   onOpen,
 }: {
   blocks: Layout['blocks'];
   byId: Map<string, Event>;
   selectedId: string;
   laneWidth: number;
+  roster: readonly RosterMember[];
+  laneMode: LaneMode;
   onOpen: (id: string) => void;
 }) {
   return (
@@ -134,7 +140,40 @@ const Blocks = memo(function Blocks({
         // Too narrow for text (planfully-f9n): icon only, name and time in aria-label / title.
         const iconOnly = !bar && isIconOnly(geo.x1 - geo.x0);
         const nameOnly = bar || iconOnly;
-        const fullName = `${e.name}${time ? `, ${time}` : ''}${cancelled ? ' (cancelled)' : ''}${e.needsReview ? ' (needs review)' : ''}`;
+        const people = participantBadges(e.participants, roster);
+        const names = people.flatMap((p) => (p.name ? [p.name] : []));
+        const withNames = names.length ? `, with ${names.join(', ')}` : '';
+        const fullName = `${e.name}${time ? `, ${time}` : ''}${cancelled ? ' (cancelled)' : ''}${e.needsReview ? ' (needs review)' : ''}${withNames}`;
+        const showPlace = Boolean(place) && b.height >= PLACE_MIN_PX;
+        const placement = nameOnly
+          ? null
+          : badgePlacement({
+              tier,
+              widthPx: geo.x1 - geo.x0,
+              heightPx: b.height,
+              titleChars: e.name.length,
+              count: people.length,
+              laneMode,
+              textRows: (time && secondary ? 1 : 0) + (showPlace ? 1 : 0),
+              reservedPx: e.needsReview ? 22 : 0,
+            });
+        const badgeEls =
+          placement && placement.where !== 'hidden' ? (
+            <span
+              className={placement.where === 'inline' ? styles.badgesInline : styles.badgesBelow}
+              data-testid="participant-badges"
+              data-placement={placement.where}
+              aria-hidden="true"
+            >
+              {people.slice(0, placement.shown).map((p, i) => (
+                <Avatar key={i} size="sm" label={p.label} tone={p.tone} />
+              ))}
+              {placement.more > 0 && (
+                <Avatar size="sm" label={`+${placement.more}`} tone="neutral" />
+              )}
+            </span>
+          ) : null;
+        const inline = placement?.where === 'inline';
         return (
           <button
             key={`${b.laneKey}:${b.eventId}`}
@@ -167,12 +206,19 @@ const Blocks = memo(function Blocks({
                   <EventIcon event={e} />
                 </span>
                 <span className={styles.blockText}>
-                  <span className={styles.blockName}>{e.name}</span>
-                  {time && secondary && <span className={styles.blockTime}>{time}</span>}
-                  {place && b.height >= PLACE_MIN_PX && (
-                    <span className={styles.blockPlace}>{place}</span>
+                  {inline ? (
+                    <span className={styles.titleRow}>
+                      <span className={styles.blockName}>{e.name}</span>
+                      {badgeEls}
+                    </span>
+                  ) : (
+                    <span className={styles.blockName}>{e.name}</span>
                   )}
+                  {time && secondary && <span className={styles.blockTime}>{time}</span>}
+                  {showPlace && <span className={styles.blockPlace}>{place}</span>}
+                  {!inline && badgeEls}
                   {cancelled && <span className={styles.srOnly}> (cancelled)</span>}
+                  {names.length > 0 && <span className={styles.srOnly}>{withNames}</span>}
                 </span>
               </span>
             )}
@@ -647,6 +693,8 @@ export function Timeline({ gutter: gutterProp }: { gutter?: ReactNode } = {}) {
                               byId={byId}
                               selectedId={openId}
                               laneWidth={laneWidth}
+                              roster={roster}
+                              laneMode={laneMode}
                               onOpen={setOpenId}
                             />
                           </div>
