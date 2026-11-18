@@ -1,7 +1,13 @@
 // PDF itinerary. buildItinerary is pure; renderPdf loads jsPDF lazily (separate chunk).
 
 import { DateTime } from 'luxon';
-import { dayKey, toInstant, type Event, type RosterMember } from '@planfully/shared';
+import {
+  dayKey,
+  localTimeAbbreviation,
+  toInstant,
+  type Event,
+  type RosterMember,
+} from '@planfully/shared';
 import type { Filter } from '../filters/filter';
 import { participantNames } from '../event/format';
 import { eventKindLabel } from '../timeline/model';
@@ -16,7 +22,7 @@ import {
 
 export type ItineraryRow = {
   id: string;
-  /** '09:30 GMT+2' (zone only when it differs from the previous row); '' when unscheduled */
+  /** '09:30 CEST' (zone only when it differs from the previous row); '' when unscheduled */
   time: string;
   name: string;
   type: string;
@@ -68,8 +74,11 @@ export function describeFilter(filter: Filter, roster: readonly RosterMember[]):
 }
 
 function zoneAbbr(t: { local: string; tz: string }): string {
-  const dt = DateTime.fromISO(t.local, { zone: t.tz });
-  return dt.isValid ? (dt.offsetNameShort ?? t.tz) : t.tz;
+  try {
+    return localTimeAbbreviation(t);
+  } catch {
+    return t.tz;
+  }
 }
 
 function locationText(e: Event): string {
