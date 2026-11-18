@@ -3,7 +3,15 @@ import { expect, test } from 'vitest';
 import {
   initialScrollMs,
   layoutEvents,
+  blockTier,
+  DEPTH_STEP_PX,
+  MAX_COLUMNS,
+  maxColumnsForWidth,
+  type Block,
+  MIN_BAR_PX,
   MIN_BLOCK_PX,
+  MIN_LINE_BLOCK_PX,
+  minBlockHeight,
   withoutEmptyLanes,
   type LaneSpec,
 } from './layout';
@@ -201,7 +209,7 @@ test('expand: overlapping blocks never overlap visually (property)', () => {
     const s = Math.floor(rnd() * 600);
     evs.push(ev(f(s), f(s + 15 + Math.floor(rnd() * 240))));
   }
-  const { blocks } = layoutEvents(evs, scale, none);
+  const { blocks } = layoutEvents(evs, scale, none, 1000); // uncapped: the cap deliberately overlaps
   for (const x of blocks) {
     expect(x.span).toBeGreaterThanOrEqual(1);
     expect(x.column + x.span).toBeLessThanOrEqual(x.columns);
@@ -232,4 +240,111 @@ test('expand: lanes by type and by person are laid out independently', () => {
     [2, 1],
   ]);
   expect(byPerson.filter((x) => x.laneKey === 'bob')).toEqual([]);
+});
+
+test('min height shrinks with zoom: full, single line, thin bar', () => {
+  expect(minBlockHeight(48)).toBe(MIN_BLOCK_PX);
+  expect(minBlockHeight(6)).toBe(MIN_LINE_BLOCK_PX);
+  expect(minBlockHeight(4.9)).toBe(MIN_BAR_PX);
+  expect(MIN_BAR_PX).toBeGreaterThanOrEqual(4);
+  // A 1 hour event at ~6 px/h is a legible single-line block, not a bar.
+  const e = ev('2026-06-01T09:00', '2026-06-01T10:00');
+  const { blocks } = layoutEvents([e], makeScale(Date.UTC(2026, 5, 1), 6), none);
+  expect(blocks[0]?.height).toBe(MIN_LINE_BLOCK_PX);
+  expect(blockTier(MIN_LINE_BLOCK_PX, 44)).toBe('line');
+  expect(blockTier(MIN_BAR_PX, 44)).toBe('bar');
+  expect(blockTier(60, 44)).toBe('full');
+});
+
+test('far zoom: every event stays its own block and columns are capped', () => {
+  const far = makeScale(Date.UTC(2026, 5, 1), 0.5);
+  const many = Array.from({ length: 30 }, (_, i) =>
+    ev(`2026-06-01T${String(8 + (i % 12)).padStart(2, '0')}:${i < 12 ? '00' : '30'}`, null),
+  );
+  const { blocks } = layoutEvents(many, far, none);
+  expect(blocks).toHaveLength(30);
+  expect(new Set(blocks.map((b) => b.eventId)).size).toBe(30);
+  for (const b of blocks) {
+    expect(b.columns).toBeLessThanOrEqual(MAX_COLUMNS);
+    expect(b.column).toBeLessThan(b.columns);
+    expect(b.height).toBe(MIN_BAR_PX);
+  }
+});
+
+test('column cap lets overflowing blocks share a column, cascaded by depth', () => {
+  const evs = Array.from({ length: 4 }, () => ev('2026-06-01T09:00', '2026-06-01T10:00'));
+  const { blocks } = layoutEvents(evs, scale, none, 2);
+  expect(blocks.map((b) => b.column).sort()).toEqual([0, 0, 1, 1]);
+  expect(blocks.map((b) => b.depth).sort()).toEqual([0, 0, 1, 1]);
+  expect(blocks.every((b) => b.columns === 2)).toBe(true);
+});
+
+test('maxColumnsForWidth: floor(width / 90) clamped to 1..5', () => {
+  expect(maxColumnsForWidth(331)).toBe(3);
+  expect(maxColumnsForWidth(140)).toBe(1);
+  expect(maxColumnsForWidth(10)).toBe(1);
+  expect(maxColumnsForWidth(2000)).toBe(5);
+  expect(maxColumnsForWidth(Number.NaN)).toBe(5);
+});
+
+/**
+ * Every block must keep a region no later block (drawn on top) covers: a strip DEPTH_STEP_PX wide
+ * over its full height, or a top band 12px tall at full width. Pixel rects use the same formulas as
+ * Timeline.tsx for a lane `w` px wide.
+ */
+function exposed(blocks: Block[], w: number): Block[] {
+  const rect = (b: Block) => {
+    const x0 = (b.column / b.columns) * w + 1 + b.depth * DEPTH_STEP_PX;
+    const x1 = ((b.column + b.span) / b.columns) * w - 1;
+    return { x0, x1, y0: b.top, y1: b.top + b.height };
+  };
+  const bad: Block[] = [];
+  blocks.forEach((b, i) => {
+    const r = rect(b);
+    const later = blocks.slice(i + 1).map(rect);
+    const overlapsY = (l: { y0: number; y1: number }, y0: number, y1: number) =>
+      l.y0 < y1 && y0 < l.y1;
+    const strip = later.every(
+      (l) => !(overlapsY(l, r.y0, r.y1) && l.x0 < r.x0 + DEPTH_STEP_PX && r.x0 < l.x1),
+    );
+    const bandY1 = Math.min(r.y1, r.y0 + 12);
+    const band =
+      bandY1 - r.y0 >= Math.min(12, r.y1 - r.y0) &&
+      later.every((l) => !(overlapsY(l, r.y0, bandY1) && l.x0 < r.x1 && r.x0 < l.x1));
+    if (!strip && !band) bad.push(b);
+  });
+  return bad;
+}
+
+test('capped columns: every block keeps an uncovered, tappable region', () => {
+  const lane = 331;
+  const cap = maxColumnsForWidth(lane);
+  const bars = makeScale(Date.UTC(2026, 5, 1), 6);
+  const lay = (evs: Event[], sc = scale) => layoutEvents(evs, sc, none, cap).blocks;
+  // 7 identical events (the review's case).
+  const same = Array.from({ length: 7 }, () => ev('2026-06-01T09:00', '2026-06-01T10:00'));
+  expect(exposed(lay(same), lane)).toEqual([]);
+  // Near miss: bars 30 minutes apart at 6 px/h (3px apart), many in a cluster.
+  const near = Array.from({ length: 10 }, (_, i) =>
+    ev(`2026-06-01T${String(8 + Math.floor(i / 2)).padStart(2, '0')}:${i % 2 ? '30' : '00'}`, null),
+  );
+  expect(exposed(lay(near, bars), lane)).toEqual([]);
+  // Random events at 6 px/h.
+  let seed = 11;
+  const rnd = () => (seed = (seed * 1664525 + 1013904223) % 4294967296) / 4294967296;
+  const f = (m: number) =>
+    `2026-06-01T${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+  const rand: Event[] = [];
+  for (let i = 0; i < 12; i++) {
+    const st = Math.floor(rnd() * 20) * 30;
+    rand.push(ev(f(st), f(st + 30 + Math.floor(rnd() * 8) * 30)));
+  }
+  const rb = lay(rand, bars);
+  expect(rb).toHaveLength(12);
+  expect(exposed(rb, lane)).toEqual([]);
+  // Beyond columns * (MAX_DEPTH + 1) overlapping blocks the deepest level is shared: still one
+  // block per event, all inside the lane.
+  const crowd = lay(Array.from({ length: 40 }, () => ev('2026-06-01T09:00', '2026-06-01T10:00')));
+  expect(crowd).toHaveLength(40);
+  expect(crowd.every((b) => b.column < b.columns && b.columns <= cap)).toBe(true);
 });

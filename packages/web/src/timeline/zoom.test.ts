@@ -11,7 +11,6 @@ import {
   pinchPx,
   pxToZoom,
   scrollTopForPointer,
-  showSecondary,
   wheelPx,
   zoomCodec,
   zoomToPx,
@@ -71,10 +70,6 @@ describe('zoom math', () => {
       const top = scrollTopForPointer(after, ms, heading, y);
       if (top > 0) expect(after.toMs(top + y - heading)).toBeCloseTo(ms, 0);
     }
-  });
-  it('hides secondary text on short blocks', () => {
-    expect(showSecondary(28)).toBe(false);
-    expect(showSecondary(60)).toBe(true);
   });
 });
 

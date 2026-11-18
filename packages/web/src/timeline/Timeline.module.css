@@ -265,6 +265,9 @@
   text-align: left;
   cursor: pointer;
 }
+.block:focus-visible {
+  z-index: 3;
+}
 .block:focus-visible,
 .todayPill:focus-visible,
 .unscheduledItem:focus-visible {
@@ -426,83 +429,6 @@
   white-space: nowrap;
 }
 
-/* Low-zoom summary chips and their event list (planfully-ieq). */
-.chip {
-  position: absolute;
-  left: 4px;
-  right: 4px;
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: 0 var(--space-2);
-  overflow: clip;
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--accent);
-  border-radius: var(--radius-sm);
-  background: var(--surface-2);
-  color: var(--text);
-  font: inherit;
-  font-size: var(--text-sm);
-  cursor: pointer;
-}
-.chipOpen {
-  background: var(--accent);
-  color: var(--accent-text);
-}
-.chipCount {
-  font-weight: 700;
-}
-.chipIcons {
-  white-space: nowrap;
-  overflow: hidden;
-}
-.chip:focus-visible,
-.chipItem:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-.chipList {
-  position: absolute;
-  left: 4px;
-  right: 4px;
-  z-index: 5;
-  list-style: none;
-  margin: 0;
-  padding: var(--space-1);
-  max-height: 240px;
-  overflow-y: auto;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--surface);
-  box-shadow: var(--shadow-sm);
-}
-.chipItem {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-  width: 100%;
-  min-height: 36px;
-  padding: 0 var(--space-2);
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text);
-  font: inherit;
-  font-size: var(--text-md);
-  text-align: left;
-  cursor: pointer;
-}
-.chipItem:hover {
-  background: var(--surface-2);
-}
-.chipItemName {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .heading b {
   color: var(--text);
   font-weight: var(--weight-semibold);
@@ -542,4 +468,35 @@
 }
 .nowrap {
   white-space: nowrap;
+}
+
+/* Thin type-coloured bar for far zoom: no text, name in aria-label/title; the pseudo-element
+   extends the hit area to 24px. */
+.bar {
+  overflow: visible;
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  background: var(--type-bar);
+}
+.bar:hover {
+  background: var(--type-bar);
+  filter: brightness(1.15);
+}
+.bar::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  /* Centred and capped at 24px so neighbouring bars' hit areas do not stack on each other. */
+  height: 24px;
+  transform: translateY(-50%);
+}
+.bar.selected {
+  outline: 2px solid var(--accent);
+  box-shadow: none;
+}
+.bar.cancelled {
+  opacity: 0.5;
 }

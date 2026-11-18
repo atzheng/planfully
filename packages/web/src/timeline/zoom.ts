@@ -97,10 +97,8 @@ export function scrollTopForPointer(
   return Math.max(0, scale.toY(ms) + headingPx - y);
 }
 
-/** Secondary block text (time) only when the block is tall enough for two lines. */
+/** Blocks at least this tall show a second line (time) in the full tier. */
 export const SECONDARY_TEXT_MIN_PX = 44;
-export const showSecondary = (blockHeightPx: number): boolean =>
-  blockHeightPx >= SECONDARY_TEXT_MIN_PX;
 
 // ---- Hooks -----------------------------------------------------------------------------------
 
