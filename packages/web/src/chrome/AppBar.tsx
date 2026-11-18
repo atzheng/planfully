@@ -5,6 +5,7 @@ import { useRef, useState } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router';
 import {
   CalendarDays,
+  ChevronsDownUp,
   CloudOff,
   ChevronDown,
   Cloud,
@@ -106,6 +107,7 @@ export function AppBar({ view, setView }: { view: View; setView: (v: View) => vo
   const [tzRaw] = useQueryState('tz', stringCodec, '');
   const [laneMode, setLaneMode] = useQueryState('lanes', laneModeCodec, 'none');
   const [wxOn, setWxOn] = useQueryState('wx', booleanCodec, false);
+  const [condense, setCondense] = useQueryState('condense', booleanCodec, false);
   const [searching, setSearching] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   const receipt = useRef<ReceiptPicker>(null);
@@ -161,6 +163,14 @@ export function AppBar({ view, setView }: { view: View; setView: (v: View) => vo
             keepOpen: true,
             testId: 'wx-toggle',
             onSelect: () => setWxOn(!wxOn),
+          },
+          {
+            label: 'Condense empty time',
+            icon: <ChevronsDownUp size={16} aria-hidden="true" />,
+            checked: condense,
+            keepOpen: true,
+            testId: 'condense-toggle',
+            onSelect: () => setCondense(!condense),
           },
           {
             label: 'Fit trip',

@@ -29,7 +29,8 @@ import {
   TimeScaleProvider,
   VisibleRangeProvider,
 } from './scale';
-import type { Tick, TimeScale, VisibleRange } from './scale';
+import type { Gap, Tick, TimeScale, VisibleRange } from './scale';
+import { eventGaps, formatGap } from './condense';
 import {
   attachGestureZoom,
   buttonPx,
@@ -61,6 +62,7 @@ const PLACE_MIN_PX = 60;
 const LANE_MIN_PX = 140;
 const NO_ROSTER: readonly RosterMember[] = [];
 const NO_BLOCKS: Layout['blocks'] = [];
+const NO_GAPS: readonly Gap[] = [];
 const browserZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 
 const Blocks = memo(function Blocks({
@@ -209,6 +211,7 @@ export function Timeline({ gutter: gutterProp }: { gutter?: ReactNode } = {}) {
   const { include: who, exclude: whoOut } = useWhoSelection();
   const [laneMode] = useQueryState('lanes', laneModeCodec, 'none');
   const [wxOn] = useQueryState('wx', booleanCodec, false);
+  const [condense] = useQueryState('condense', booleanCodec, false);
   const { pxPerHour, setPx, needsDefault, autoFit } = useZoom(tripId);
   const gutter = wxOn ? <WeatherStrip /> : gutterProp;
   const gutterPx = wxOn ? WEATHER_GUTTER_PX : 64;
@@ -224,13 +227,17 @@ export function Timeline({ gutter: gutterProp }: { gutter?: ReactNode } = {}) {
   // While the filter empties the view, keep the last scale and canvas height so the scroll position survives.
   const lastScale = useRef<TimeScale | null>(null);
   const lastHeight = useRef(0);
+  // Condensed time (6s9): stretches between events longer than the threshold collapse to a gap marker.
+  const gaps = useMemo(() => (condense ? eventGaps(events) : NO_GAPS), [condense, events]);
   const scale = useMemo(
     () =>
       range
-        ? makeScale(range.fromMs, pxPerHour)
+        ? makeScale(range.fromMs, pxPerHour, gaps)
         : (lastScale.current ?? makeScale(Date.now(), pxPerHour)),
-    [range, pxPerHour],
+    [range, pxPerHour, gaps],
   );
+  const gapsRef = useRef(gaps);
+  gapsRef.current = gaps;
   if (range) lastScale.current = scale;
   // Lane width drives the column cap. Lane count is estimated before layout (lanes depend on it).
   const [viewW, setViewW] = useState(375);
@@ -333,8 +340,8 @@ export function Timeline({ gutter: gutterProp }: { gutter?: ReactNode } = {}) {
     if (!autoFit || rangeFrom === undefined || rangeTo === undefined || !el) return;
     const viewport = el.clientHeight - topPx;
     if (!(viewport > 0)) return;
-    setMeasuredDefaultPx(tripId, defaultPxPerHour(rangeFrom, rangeTo, viewport));
-  }, [autoFit, rangeFrom, rangeTo, topPx, tripId, hasSize]);
+    setMeasuredDefaultPx(tripId, defaultPxPerHour(rangeFrom, rangeTo, viewport, gaps));
+  }, [autoFit, rangeFrom, rangeTo, topPx, tripId, hasSize, gaps]);
 
   // Open at today (or the trip's first day), once, when the axis first exists.
   const scrolled = useRef(false);
@@ -400,7 +407,7 @@ export function Timeline({ gutter: gutterProp }: { gutter?: ReactNode } = {}) {
     const r = rangeRef.current;
     const el = scroller.current;
     if (!r || !el) return;
-    zoomTo(fitPx(r.fromMs, r.toMs, el.clientHeight - topPx), topPx, r.fromMs);
+    zoomTo(fitPx(r.fromMs, r.toMs, el.clientHeight - topPx, gapsRef.current), topPx, r.fromMs);
   };
 
   useEffect(() => {
@@ -551,9 +558,28 @@ export function Timeline({ gutter: gutterProp }: { gutter?: ReactNode } = {}) {
                       )}
                       <div className={styles.tickLayer} aria-hidden="true">
                         <Ticks list={tickList} scale={scale} />
+                        {scale.gaps.map((g) => (
+                          <div
+                            key={g.fromMs}
+                            className={styles.gapBand}
+                            style={{ top: g.fromY, height: g.toY - g.fromY }}
+                            data-testid="gap-band"
+                          />
+                        ))}
                       </div>
                       <div className={styles.axis} aria-hidden="true">
                         <TickLabels list={tickList} scale={scale} zone={zone} endMs={range.toMs} />
+                        {scale.gaps.map((g) => (
+                          <span
+                            key={g.fromMs}
+                            className={styles.gapLabel}
+                            style={{ top: g.fromY, height: g.toY - g.fromY }}
+                            data-testid="gap-label"
+                            title={`${formatGap(g.toMs - g.fromMs)} with no events`}
+                          >
+                            {formatGap(g.toMs - g.fromMs)}
+                          </span>
+                        ))}
                         {showNow && (
                           <div className={styles.nowTick} style={{ top: scale.toY(nowMs) }} />
                         )}
