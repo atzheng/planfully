@@ -154,7 +154,7 @@ export function EmailViewer({
                 ),
             )}
           </dl>
-          {email.html ? (
+          {load.state !== 'ready' ? null : email.html ? (
             <>
               {!remote && hasRemoteImages(email.html) && (
                 <div className={styles.notice}>
