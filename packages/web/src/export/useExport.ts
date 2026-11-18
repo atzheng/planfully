@@ -4,7 +4,8 @@ import { useTrip } from '../trip/store';
 import { downloadIcs } from './ics';
 import { buildItinerary, renderPdf } from './pdf';
 
-export type ExportItem = { id: string; label: string; run: () => Promise<void> };
+/** run may resolve to a notice to show the user (the export worked, but with a caveat). */
+export type ExportItem = { id: string; label: string; run: () => Promise<string | undefined> };
 
 /**
  * Export actions for the overflow menu. To add a format, append an entry to `items`.
@@ -14,6 +15,7 @@ export function useExport(): {
   items: ExportItem[];
   busy: boolean;
   error: string | null;
+  notice: string | null;
   choose: (item: ExportItem) => Promise<void>;
   dismiss: () => void;
 } {
@@ -22,28 +24,37 @@ export function useExport(): {
   const meta = useTrip((s) => s.meta);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const items: ExportItem[] = [
     {
       id: 'pdf',
       label: 'PDF',
-      run: () =>
-        renderPdf(
+      run: async () => {
+        const { unsupported } = await renderPdf(
           buildItinerary(events, meta?.roster ?? [], filter, { tripName: meta?.name ?? 'Trip' }),
-        ),
+        );
+        return unsupported.length
+          ? `The PDF can't show ${unsupported.join(' or ')} text yet: it is replaced by a placeholder.`
+          : undefined;
+      },
     },
     {
       id: 'ics',
       label: 'Calendar (.ics)',
-      run: async () => downloadIcs(events, meta?.name ?? 'Trip', meta?.roster ?? []),
+      run: async () => {
+        downloadIcs(events, meta?.name ?? 'Trip', meta?.roster ?? []);
+        return undefined;
+      },
     },
   ];
 
   const choose = async (item: ExportItem) => {
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
-      await item.run();
+      setNotice((await item.run()) ?? null);
     } catch {
       setError(`Couldn't create the ${item.label}`);
     } finally {
@@ -51,5 +62,15 @@ export function useExport(): {
     }
   };
 
-  return { items, busy, error, choose, dismiss: () => setError(null) };
+  return {
+    items,
+    busy,
+    error,
+    notice,
+    choose,
+    dismiss: () => {
+      setError(null);
+      setNotice(null);
+    },
+  };
 }

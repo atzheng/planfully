@@ -2,7 +2,7 @@
 // itinerary has other characters we fetch a subset Noto font from our own origin (/fonts, SIL OFL,
 // see public/fonts/OFL.txt). Detection and font choice are pure; only loadFontBase64 does I/O.
 
-export type Script = 'latin-ext' | 'thai' | 'kana' | 'han' | 'unsupported';
+export type Script = 'latin-ext' | 'thai' | 'kana' | 'hangul' | 'han' | 'rtl' | 'unsupported';
 
 export type FontFace = { style: 'normal' | 'bold'; file: string };
 export type FontChoice = { family: string; faces: FontFace[] };
@@ -60,14 +60,41 @@ const KANA_RANGES = [
   [0x3040, 0x30ff],
   [0x31f0, 0x31ff],
 ] as const;
-// Han, CJK punctuation and fullwidth forms. Hangul is deliberately absent: no Korean font yet.
+// Han, CJK punctuation and fullwidth forms.
 const HAN_RANGES = [
   [0x3000, 0x303f],
   [0x3400, 0x4dbf],
   [0x4e00, 0x9fff],
   [0xf900, 0xfaff],
-  [0xff00, 0xffef],
+  [0xff00, 0xff9f],
+  [0xffdd, 0xffef],
 ] as const;
+
+const HANGUL_RANGES = [
+  [0x1100, 0x11ff],
+  [0x3130, 0x318f],
+  [0xa960, 0xa97f],
+  [0xac00, 0xd7ff],
+  [0xffa0, 0xffdc],
+] as const;
+const HEBREW_RANGES = [
+  [0x590, 0x5ff],
+  [0xfb1d, 0xfb4f],
+] as const;
+const ARABIC_RANGES = [
+  [0x600, 0x6ff],
+  [0x750, 0x77f],
+  [0x8a0, 0x8ff],
+  [0xfb50, 0xfdff],
+  [0xfe70, 0xfeff],
+] as const;
+
+const SYRIAC_RANGES = [
+  [0x700, 0x74f],
+  [0x860, 0x86f],
+] as const;
+const THAANA_RANGES = [[0x780, 0x7bf]] as const;
+const NKO_RANGES = [[0x7c0, 0x7ff]] as const;
 
 const coversLatinExt = (cp: number) =>
   inRanges(cp, LATIN_EXT_RANGES) || inRanges(cp, GREEK_CYR_RANGES);
@@ -77,7 +104,9 @@ export function classifyChar(cp: number): Script {
   if (coversLatinExt(cp)) return 'latin-ext';
   if (inRanges(cp, THAI_RANGES)) return 'thai';
   if (inRanges(cp, KANA_RANGES)) return 'kana';
+  if (inRanges(cp, HANGUL_RANGES)) return 'hangul';
   if (inRanges(cp, HAN_RANGES)) return 'han';
+  if (rtlKind(cp)) return 'rtl';
   return 'unsupported';
 }
 
@@ -114,6 +143,13 @@ const NOTO_JP: FontChoice = {
     { style: 'bold', file: 'NotoSansJP-Regular.ttf' },
   ],
 };
+const NOTO_KR: FontChoice = {
+  family: 'NotoSansKR',
+  faces: [
+    { style: 'normal', file: 'NotoSansKR-Regular.ttf' },
+    { style: 'bold', file: 'NotoSansKR-Regular.ttf' },
+  ],
+};
 const NOTO_SC: FontChoice = {
   family: 'NotoSansSC',
   faces: [
@@ -123,15 +159,68 @@ const NOTO_SC: FontChoice = {
 };
 
 /**
- * One font per document (jsPDF has no per-glyph fallback): kana (Japanese font) wins over Han
- * alone (Simplified Chinese font) wins over Thai wins over Latin/Greek/Cyrillic. Characters the chosen font lacks print as '?'. Null: built-in is enough.
+ * The font for one piece of text (the PDF picks per cell, since jsPDF has no per-glyph fallback):
+ * kana (Japanese font) wins over Hangul (Korean) wins over Han alone (Simplified Chinese) wins over
+ * Thai wins over Latin/Greek/Cyrillic. The CJK fonts include Latin, so Latin mixed in is fine.
+ * Characters the chosen font lacks print as '?'. Null: the built-in font is enough.
+ * Arabic/Hebrew are masked by maskRtl before this is called, so 'rtl' alone needs no font.
  */
-export function chooseFont(scripts: ReadonlySet<Script>): FontChoice | null {
+export function chooseFont(
+  scripts: ReadonlySet<Script>,
+  /** the document has kana somewhere: Han-only text then uses the Japanese forms too */
+  docHasKana = false,
+): FontChoice | null {
   if (scripts.has('kana')) return NOTO_JP;
-  if (scripts.has('han')) return NOTO_SC;
+  if (scripts.has('hangul')) return NOTO_KR;
+  if (scripts.has('han')) return docHasKana ? NOTO_JP : NOTO_SC;
   if (scripts.has('thai')) return NOTO_THAI;
   if (scripts.has('latin-ext') || scripts.has('unsupported')) return NOTO_SANS;
   return null;
+}
+
+export type RtlScript = 'Arabic' | 'Hebrew' | 'Syriac' | 'Thaana' | "N'Ko";
+
+/** Right-to-left scripts the PDF cannot draw (need shaping and bidi), by name. */
+function rtlKind(cp: number): RtlScript | null {
+  if (inRanges(cp, HEBREW_RANGES)) return 'Hebrew';
+  if (inRanges(cp, ARABIC_RANGES)) return 'Arabic';
+  if (inRanges(cp, SYRIAC_RANGES)) return 'Syriac';
+  if (inRanges(cp, THAANA_RANGES)) return 'Thaana';
+  if (inRanges(cp, NKO_RANGES)) return "N'Ko";
+  return null;
+}
+
+/**
+ * Arabic and Hebrew need shaping and bidi reordering, which jsPDF lacks (see the PR notes of
+ * planfully-pa5 for why we do not pre-shape). Each run of such text becomes '[Arabic text]' /
+ * '[Hebrew text]' so the PDF says plainly that something is missing rather than printing '?'.
+ * Returns the masked text and which scripts were replaced.
+ */
+export function maskRtl(s: string): { text: string; found: RtlScript[] } {
+  const kind = rtlKind;
+  const found = new Set<RtlScript>();
+  let out = '';
+  let run: RtlScript | null = null;
+  let pending = ''; // spaces seen after a run: kept only if another RTL char follows
+  for (const ch of s) {
+    const k = kind(ch.codePointAt(0) as number);
+    if (k) {
+      if (run === k) pending = '';
+      else {
+        out += pending + `[${k} text]`;
+        pending = '';
+        run = k;
+        found.add(k);
+      }
+    } else if (run && /[\s\u200e\u200f]/.test(ch) && ch !== '\n') {
+      pending += ch;
+    } else {
+      out += pending + ch;
+      pending = '';
+      run = null;
+    }
+  }
+  return { text: out + pending, found: [...found].sort() };
 }
 
 /** Replace characters the target cannot draw with '?'. covers=null means the built-in font. */

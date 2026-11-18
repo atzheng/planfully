@@ -36,7 +36,9 @@ import type { Tick, TimeScale, VisibleRange } from './scale';
 import {
   attachGestureZoom,
   buttonPx,
+  defaultPxPerHour,
   fitPx,
+  setMeasuredDefaultPx,
   pinchPx,
   scrollTopForPointer,
   SECONDARY_TEXT_MIN_PX,
@@ -243,12 +245,13 @@ export function Timeline({ gutter: gutterProp }: { gutter?: ReactNode } = {}) {
   const totalEvents = useTrip((s) => s.events.length);
   const roster = useTrip((s) => s.meta?.roster) ?? NO_ROSTER;
   const allEvents = useTrip((s) => s.events);
+  const tripId = useTrip((s) => s.tripId);
   const [tzRaw, setTzRaw] = useQueryState('tz', stringCodec, '');
   const [openId, setOpenId] = useQueryState('e', stringCodec, '');
   const { include: who, exclude: whoOut } = useWhoSelection();
   const [laneMode] = useQueryState('lanes', laneModeCodec, 'none');
   const [wxOn] = useQueryState('wx', booleanCodec, false);
-  const { pxPerHour, setPx } = useZoom();
+  const { pxPerHour, setPx, needsDefault, autoFit } = useZoom(tripId);
   const gutter = wxOn ? <WeatherStrip /> : gutterProp;
   const gutterPx = wxOn ? WEATHER_GUTTER_PX : 64;
 
@@ -362,14 +365,28 @@ export function Timeline({ gutter: gutterProp }: { gutter?: ReactNode } = {}) {
     setHeadingMs(Math.floor(h / 60_000) * 60_000);
   }, [scale, range, topPx]);
 
+  // No zoom in the URL: once the scroller has a real size, pick the default (5 days or the whole trip)
+  // before first paint; useZoom and usePxPerHour both switch to it in the same commit. It is refitted
+  // when the trip range changes (events arriving) until the user zooms, but not on resize or rotation.
+  const [hasSize, setHasSize] = useState(false);
+  const rangeFrom = range?.fromMs;
+  const rangeTo = range?.toMs;
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    if (!autoFit || rangeFrom === undefined || rangeTo === undefined || !el) return;
+    const viewport = el.clientHeight - topPx;
+    if (!(viewport > 0)) return;
+    setMeasuredDefaultPx(tripId, defaultPxPerHour(rangeFrom, rangeTo, viewport));
+  }, [autoFit, rangeFrom, rangeTo, topPx, tripId, hasSize]);
+
   // Open at today (or the trip's first day), once, when the axis first exists.
   const scrolled = useRef(false);
   useLayoutEffect(() => {
-    if (scrolled.current || !range) return;
+    if (scrolled.current || !range || needsDefault) return;
     scrolled.current = true;
     scrollToMs(initialScrollMs(events, Date.now()), 'auto');
     anchorMs.current = anchorMsAt(scale, scroller.current?.scrollTop ?? 0, topPx);
-  }, [range, events, scrollToMs, scale, topPx]);
+  }, [range, events, scrollToMs, scale, topPx, needsDefault]);
   // Keep the time at the top of the viewport at the same screen y when the scale changes (filters, zoom).
   const lastAnchoredScale = useRef(scale);
   const lastTopPx = useRef(topPx);
@@ -391,6 +408,7 @@ export function Timeline({ gutter: gutterProp }: { gutter?: ReactNode } = {}) {
     if (!el || typeof ResizeObserver === 'undefined') return;
     const ro = new ResizeObserver(() => {
       measure();
+      setHasSize(el.clientHeight > 0);
       setViewW(el.clientWidth);
     });
     ro.observe(el);

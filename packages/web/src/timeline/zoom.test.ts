@@ -7,6 +7,7 @@ import {
   gesturePx,
   clampPx,
   DEFAULT_ZOOM,
+  defaultPxPerHour,
   fitPx,
   pinchPx,
   pxToZoom,
@@ -96,5 +97,36 @@ describe('safari gestures', () => {
     off();
     fire('gesturechange', { scale: 3, clientY: 1 });
     expect(calls).toHaveLength(1);
+  });
+});
+
+describe('defaultPxPerHour', () => {
+  const D = 24 * H;
+  it('fits 5 days for a long trip', () => {
+    expect(defaultPxPerHour(0, 30 * D, 720)).toBeCloseTo(6, 5);
+    expect(defaultPxPerHour(0, 5 * D, 720)).toBeCloseTo(6, 5);
+  });
+  it('caps at 5 days: a longer trip gives the same value', () => {
+    expect(defaultPxPerHour(0, 6 * D, 720)).toBe(defaultPxPerHour(0, 60 * D, 720));
+  });
+  it('fits the whole trip when shorter than 5 days', () => {
+    expect(defaultPxPerHour(0, 2 * D, 720)).toBeCloseTo(15, 5);
+  });
+  it('shows at least 5 days of a long trip at phone and desktop heights', () => {
+    for (const vp of [650, 760]) {
+      expect(vp / defaultPxPerHour(0, 40 * D, vp)).toBeGreaterThanOrEqual(120 - 1e-6);
+    }
+  });
+  it('clamps to MIN and MAX', () => {
+    expect(defaultPxPerHour(0, 30 * D, 10)).toBe(MIN_PX_PER_HOUR);
+    expect(defaultPxPerHour(0, 1 * H, 5000)).toBe(MAX_PX_PER_HOUR);
+  });
+  it('falls back to the default for a non-positive viewport', () => {
+    expect(defaultPxPerHour(0, 30 * D, 0)).toBe(48);
+    expect(defaultPxPerHour(0, 30 * D, -20)).toBe(48);
+  });
+  it('falls back to the default for an empty or inverted range', () => {
+    expect(defaultPxPerHour(5 * D, 5 * D, 720)).toBe(48);
+    expect(defaultPxPerHour(5 * D, 2 * D, 720)).toBe(48);
   });
 });
