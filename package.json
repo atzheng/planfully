@@ -13,7 +13,8 @@
     "format": "prettier --write .",
     "build": "pnpm -r run build",
     "dev": "pnpm -r --parallel run dev",
-    "seed": "pnpm --filter @planfully/worker seed --"
+    "seed": "pnpm --filter @planfully/worker seed --",
+    "deploy": "pnpm --filter @planfully/web run build && pnpm --filter @planfully/worker run deploy"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
