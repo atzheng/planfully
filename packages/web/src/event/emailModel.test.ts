@@ -96,6 +96,19 @@ describe('buildSrcdoc', () => {
     expect(doc).not.toContain('<base');
     expect(doc).not.toContain('refresh');
   });
+  test('strips link, svg and ping so nothing is prefetched or navigates the frame', () => {
+    const doc = buildSrcdoc(
+      '<head><link rel="dns-prefetch" href="//t.example"><link rel="preconnect" href="https://t.example"></head>' +
+        '<body><a href="https://x.example" ping="https://t.example/p">x</a>' +
+        '<svg><a xlink:href="https://evil.example"><text>hi</text></a></svg></body>',
+      [],
+      { remoteImages: false },
+    );
+    expect(doc).not.toContain('<link');
+    expect(doc).not.toContain('ping=');
+    expect(doc).not.toContain('<svg');
+    expect(doc).not.toContain('evil.example');
+  });
   test('the iframe sandbox never allows scripts or same-origin', () => {
     expect(EMAIL_IFRAME_SANDBOX).not.toMatch(/allow-scripts/);
     expect(EMAIL_IFRAME_SANDBOX).not.toMatch(/allow-same-origin/);
@@ -107,6 +120,9 @@ describe('hasRemoteImages', () => {
     expect(hasRemoteImages('<img src="https://t.example/p.gif">')).toBe(true);
     expect(hasRemoteImages('<td background="http://t.example/b.png">')).toBe(true);
     expect(hasRemoteImages('<div style="background:url(https://t.example/b.png)">')).toBe(true);
+    expect(hasRemoteImages('<div style="background:image-set(https://t.example/a.png 1x)">')).toBe(
+      true,
+    );
     expect(hasRemoteImages('<img src="cid:a"><img src="data:image/png;base64,AA">')).toBe(false);
   });
 });

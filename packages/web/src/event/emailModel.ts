@@ -103,7 +103,7 @@ export function rewriteCid(html: string, attachments: ParsedAttachment[]): strin
 
 /** Whether the HTML refers to remote images (so the "Load remote images" button is worth showing). */
 export function hasRemoteImages(html: string): boolean {
-  return /(?:\bsrc|\bbackground|\bsrcset)\s*=\s*["']?\s*(?:https?:)?\/\/|url\(\s*["']?\s*(?:https?:)?\/\//i.test(
+  return /(?:\bsrc|\bbackground|\bsrcset)\s*=\s*["']?\s*(?:https?:)?\/\/|(?:url|image-set)\(\s*["']?\s*(?:https?:)?\/\//i.test(
     html,
   );
 }
@@ -131,10 +131,11 @@ export function buildSrcdoc(
 ): string {
   const doc = new DOMParser().parseFromString(rewriteCid(html, attachments), 'text/html');
   for (const el of Array.from(
-    doc.querySelectorAll('base, meta[http-equiv], script, object, embed, iframe, frame'),
+    doc.querySelectorAll('base, meta[http-equiv], script, object, embed, iframe, frame, link, svg'),
   ))
     el.remove();
   for (const a of Array.from(doc.querySelectorAll('a[href], area[href]'))) {
+    a.removeAttribute('ping');
     a.setAttribute('target', '_blank');
     a.setAttribute('rel', 'noopener noreferrer');
   }
