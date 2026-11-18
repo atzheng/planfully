@@ -1,0 +1,18 @@
+From: Hotel Casa del Mar <reservas@casadelmar.example>
+To: trip@trips.example.com
+Subject: Confirmacion de su reserva SV-20931
+Date: Sun, 10 May 2026 10:00:00 +0200
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+Estimado Sr. Jones:
+
+Le confirmamos su reserva en el Hotel Casa del Mar, Calle Betis 22, 41010 Sevilla.
+
+Numero de reserva: SV-20931
+Huesped: Bob Jones
+Llegada: 20 de julio de 2026 (check-in a partir de las 14:00)
+Salida: 23 de julio de 2026 (check-out hasta las 12:00)
+Habitacion: Doble con vistas al rio, desayuno incluido
+
+Para cualquier consulta, responda a este correo. Le esperamos.

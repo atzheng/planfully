@@ -1,0 +1,15 @@
+{
+  "events": [
+    {
+      "type": "flight",
+      "name": "AI 433",
+      "start": { "local": "2026-07-03T07:25", "tz": "Europe/Paris" },
+      "end": { "local": "2026-07-03T08:55", "tz": "Europe/Lisbon" },
+      "confirmation": "4HT9RW",
+      "location": "CDG",
+      "endLocation": "LIS",
+      "participants": ["bob"],
+      "status": "confirmed"
+    }
+  ]
+}

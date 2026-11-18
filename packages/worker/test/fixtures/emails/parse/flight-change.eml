@@ -1,0 +1,21 @@
+From: Northwind Air <notifications@northwind-air.example>
+To: trip@trips.example.com
+Subject: Schedule change for your flight NW 2 on 12 June
+Date: Wed, 20 May 2026 06:41:55 +0000
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+Dear SMITH/ALICE MS,
+
+We have changed the schedule of one of your flights. Your booking reference is unchanged: K7Q3ZP.
+
+Flight NW 2, Friday 12 June 2026
+Chicago O'Hare (ORD) to Paris Charles de Gaulle (CDG)
+
+  Previous:  departs 16:45, arrives 07:55 (13 June)
+  NEW:       departs 17:30, arrives 08:40 (13 June)
+
+All times are local. Your other flights are not affected. No action is needed; if the new
+times do not suit you, you can change or cancel at northwind-air.example/manage.
+
+Northwind Air Customer Care

@@ -1,0 +1,42 @@
+From: Hotel Le Marais <reservations@lemarais-hotel.example>
+To: trip@trips.example.com
+Subject: Your reservation HM-884213 - confirmation attached
+Date: Tue, 05 May 2026 09:48:00 +0000
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="pdfb"
+
+--pdfb
+Content-Type: text/plain; charset=utf-8
+
+Dear Ms Smith,
+
+Thank you for choosing Hotel Le Marais. Your booking reference is HM-884213.
+Your full confirmation is attached as a PDF.
+
+Warm regards,
+Reservations
+--pdfb
+Content-Type: application/pdf; name="confirmation-HM-884213.pdf"
+Content-Disposition: attachment; filename="confirmation-HM-884213.pdf"
+Content-Transfer-Encoding: base64
+
+JVBERi0xLjQKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2Jq
+CjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUl0gL0NvdW50IDEgPj4KZW5kb2Jq
+CjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCA1OTUg
+ODQyXSAvQ29udGVudHMgNCAwIFIgL1Jlc291cmNlcyA8PCAvRm9udCA8PCAvRjEgNSAwIFIgPj4g
+Pj4gPj4KZW5kb2JqCjQgMCBvYmoKPDwgL0xlbmd0aCA1MDAgPj4Kc3RyZWFtCkJUCi9GMSAxMiBU
+ZgoxNCBUTAo1MCA3ODAgVGQKKEhPVEVMIExFIE1BUkFJUyAtIFJFU0VSVkFUSU9OIENPTkZJUk1B
+VElPTikgVGoKVCoKKCkgVGoKVCoKKFJlc2VydmF0aW9uIG51bWJlcjogSE0tODg0MjEzKSBUagpU
+KgooR3Vlc3Q6IEFsaWNlIFNtaXRoKSBUagpUKgooSG90ZWw6IEhvdGVsIExlIE1hcmFpcywgMTIg
+UnVlIGRlIFR1cmVubmUsIDc1MDAzIFBhcmlzLCBGcmFuY2UpIFRqClQqCihBcnJpdmFsOiBTYXR1
+cmRheSAxMyBKdW5lIDIwMjYgXChjaGVjay1pbiBmcm9tIDE1OjAwXCkpIFRqClQqCihEZXBhcnR1
+cmU6IE1vbmRheSAyMiBKdW5lIDIwMjYgXChjaGVjay1vdXQgYnkgMTE6MDBcKSkgVGoKVCoKKFJv
+b206IERlbHV4ZSBEb3VibGUsIDIgZ3Vlc3RzLCBicmVha2Zhc3Qgbm90IGluY2x1ZGVkKSBUagpU
+KgooUmF0ZTogRVVSIDIxNC4wMCBwZXIgbmlnaHQpIFRqClQqCigpIFRqClQqCihGcmVlIGNhbmNl
+bGxhdGlvbiB1bnRpbCA2IEp1bmUgMjAyNi4pIFRqCkVUCmVuZHN0cmVhbQplbmRvYmoKNSAwIG9i
+ago8PCAvVHlwZSAvRm9udCAvU3VidHlwZSAvVHlwZTEgL0Jhc2VGb250IC9IZWx2ZXRpY2EgPj4K
+ZW5kb2JqCnhyZWYKMCA2CjAwMDAwMDAwMDAgNjU1MzUgZiAKMDAwMDAwMDAwOSAwMDAwMCBuIAow
+MDAwMDAwMDU4IDAwMDAwIG4gCjAwMDAwMDAxMTUgMDAwMDAgbiAKMDAwMDAwMDI0MSAwMDAwMCBu
+IAowMDAwMDAwNzkyIDAwMDAwIG4gCnRyYWlsZXIKPDwgL1NpemUgNiAvUm9vdCAxIDAgUiA+Pgpz
+dGFydHhyZWYKODYyCiUlRU9GCg==
+--pdfb--

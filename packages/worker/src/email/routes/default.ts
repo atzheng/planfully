@@ -3,7 +3,7 @@ import type { Attachment, Event, Location, ParsedEvent } from '@planfully/shared
 import type { TripRow } from '../../db/trips';
 import type { Env } from '../../env';
 import { computeBias, geocode, type GeocodeSession } from '../../geo/geocode';
-import { parseEmail } from '../../llm/parse';
+import { parseEmailDetailed } from '../../llm/parse';
 import type { LlmClient } from '../../llm/parse';
 import { BlobTooLargeError } from '../../storage/blobs';
 import { appendEvent, storeAttachment } from '../store';
@@ -73,11 +73,15 @@ export async function tagFor(
   return dedupeTag(dedupeKey, e.type, e.confirmation + leg);
 }
 
-async function parse(email: ParsedEmail, env: Env, trip: TripRow): Promise<ParsedEvent[]> {
+async function parse(
+  email: ParsedEmail,
+  env: Env,
+  trip: TripRow,
+): Promise<{ events: ParsedEvent[]; dropped: number }> {
   const apiKey = env.ANTHROPIC_API_KEY;
-  if (!apiKey) return [];
+  if (!apiKey) return { events: [], dropped: 0 };
   try {
-    return await parseEmail(email, {
+    return await parseEmailDetailed(email, {
       roster: trip.roster,
       today: todayFor(email.date),
       apiKey,
@@ -85,7 +89,7 @@ async function parse(email: ParsedEmail, env: Env, trip: TripRow): Promise<Parse
     });
   } catch (err) {
     logFailure('parse', err);
-    return [];
+    return { events: [], dropped: 0 };
   }
 }
 
@@ -241,10 +245,10 @@ async function notifyPartial(env: Env, trip: TripRow, email: ParsedEmail): Promi
 
 /** Parse, geocode, dedupe, seal and append (SPEC.md section 5). */
 export const defaultRoute: EmailRoute = async ({ env, trip, email }) => {
-  const parsed = await parse(email, env, trip);
+  const { events: parsed, dropped } = await parse(email, env, trip);
   const { appended, failed } = parsed.length
     ? await ingestEvents(env, trip, email, parsed)
     : { appended: 0, failed: false };
   if (appended === 0) await fallback(env, trip, email);
-  else if (failed) await notifyPartial(env, trip, email);
+  else if (failed || dropped > 0) await notifyPartial(env, trip, email);
 };

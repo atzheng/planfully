@@ -1,0 +1,13 @@
+{
+  "events": [
+    {
+      "type": "lodging",
+      "name": "Alfama Bay",
+      "start": { "local": "2026-07-03T15:00", "tz": "Europe/Lisbon" },
+      "end": { "local": "2026-07-06T11:00", "tz": "Europe/Lisbon" },
+      "confirmation": "LIS-55102",
+      "participants": ["bob"],
+      "status": "cancelled"
+    }
+  ]
+}
