@@ -3,7 +3,12 @@ import { expect, test } from 'vitest';
 import {
   initialScrollMs,
   layoutEvents,
+  blockTier,
+  MAX_COLUMNS,
+  MIN_BAR_PX,
   MIN_BLOCK_PX,
+  MIN_LINE_BLOCK_PX,
+  minBlockHeight,
   withoutEmptyLanes,
   type LaneSpec,
 } from './layout';
@@ -232,4 +237,40 @@ test('expand: lanes by type and by person are laid out independently', () => {
     [2, 1],
   ]);
   expect(byPerson.filter((x) => x.laneKey === 'bob')).toEqual([]);
+});
+
+test('min height shrinks with zoom: full, single line, thin bar', () => {
+  expect(minBlockHeight(48)).toBe(MIN_BLOCK_PX);
+  expect(minBlockHeight(6)).toBe(MIN_LINE_BLOCK_PX);
+  expect(minBlockHeight(4.9)).toBe(MIN_BAR_PX);
+  expect(MIN_BAR_PX).toBeGreaterThanOrEqual(4);
+  // A 1 hour event at ~6 px/h is a legible single-line block, not a bar.
+  const e = ev('2026-06-01T09:00', '2026-06-01T10:00');
+  const { blocks } = layoutEvents([e], makeScale(Date.UTC(2026, 5, 1), 6), none);
+  expect(blocks[0]?.height).toBe(MIN_LINE_BLOCK_PX);
+  expect(blockTier(MIN_LINE_BLOCK_PX, 44)).toBe('line');
+  expect(blockTier(MIN_BAR_PX, 44)).toBe('bar');
+  expect(blockTier(60, 44)).toBe('full');
+});
+
+test('far zoom: every event stays its own block and columns are capped', () => {
+  const far = makeScale(Date.UTC(2026, 5, 1), 0.5);
+  const many = Array.from({ length: 30 }, (_, i) =>
+    ev(`2026-06-01T${String(8 + (i % 12)).padStart(2, '0')}:${i < 12 ? '00' : '30'}`, null),
+  );
+  const { blocks } = layoutEvents(many, far, none);
+  expect(blocks).toHaveLength(30);
+  expect(new Set(blocks.map((b) => b.eventId)).size).toBe(30);
+  for (const b of blocks) {
+    expect(b.columns).toBeLessThanOrEqual(MAX_COLUMNS);
+    expect(b.column).toBeLessThan(b.columns);
+    expect(b.height).toBe(MIN_BAR_PX);
+  }
+});
+
+test('column cap lets overflowing blocks share a column', () => {
+  const evs = Array.from({ length: 4 }, () => ev('2026-06-01T09:00', '2026-06-01T10:00'));
+  const { blocks } = layoutEvents(evs, scale, none, 2);
+  expect(blocks.map((b) => b.column).sort()).toEqual([0, 0, 1, 1]);
+  expect(blocks.every((b) => b.columns === 2)).toBe(true);
 });

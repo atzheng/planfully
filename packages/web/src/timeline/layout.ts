@@ -25,8 +25,33 @@ export type Block = {
 };
 export type Layout = { lanes: Lane[]; blocks: Block[]; unscheduled: Event[] };
 
-/** Minimum block height in px so point and short events stay tappable; used for overlap detection too. */
+/** Minimum block heights in px per render tier (see `minBlockHeight`); used for overlap detection too. */
 export const MIN_BLOCK_PX = 28;
+export const MIN_LINE_BLOCK_PX = 18;
+export const MIN_BAR_PX = 6;
+/** Zoom at or above which short events get the full-size minimum height. */
+export const FULL_MIN_PX_PER_HOUR = 24;
+/** Zoom at or above which short events keep a single-line (icon + title) minimum height. */
+export const LINE_MIN_PX_PER_HOUR = 5;
+/** Rendered heights below this are thin bars (no text); from here up a block shows one line of text. */
+export const LINE_BLOCK_MIN_PX = 16;
+/** Most columns an overlap cluster may use; further blocks share columns (stack) instead of narrowing. */
+export const MAX_COLUMNS = 5;
+
+export type BlockTier = 'full' | 'line' | 'bar';
+
+/** Minimum rendered height of a block at this zoom: shrinks as you zoom out so overlaps stay small. */
+export function minBlockHeight(pxPerHour: number): number {
+  if (pxPerHour >= FULL_MIN_PX_PER_HOUR) return MIN_BLOCK_PX;
+  if (pxPerHour >= LINE_MIN_PX_PER_HOUR) return MIN_LINE_BLOCK_PX;
+  return MIN_BAR_PX;
+}
+
+/** How a block of this rendered height is drawn: title + time, one line, or a thin type-coloured bar. */
+export function blockTier(heightPx: number, fullMinPx: number): BlockTier {
+  if (heightPx >= fullMinPx) return 'full';
+  return heightPx >= LINE_BLOCK_MIN_PX ? 'line' : 'bar';
+}
 
 /** Lane for participant ids that are not in the roster. Only present when some event needs it. */
 export const OTHER_LANE_KEY = '_other';
@@ -77,7 +102,13 @@ function expandSpans(cluster: Block[]): void {
  * Within a lane, overlapping blocks (after min height) form a cluster, packed greedily into the first
  * free column (interval-graph colouring); `columns` is the cluster's column count.
  */
-export function layoutEvents(events: Event[], scale: TimeScale, spec: LaneSpec): Layout {
+export function layoutEvents(
+  events: Event[],
+  scale: TimeScale,
+  spec: LaneSpec,
+  maxColumns = MAX_COLUMNS,
+): Layout {
+  const minHeight = minBlockHeight(scale.pxPerHour);
   const unscheduled: Event[] = [];
   const rosterIds = new Set(spec.roster.map((m) => m.id));
   const byLane = new Map<string, { eventId: string; top: number; height: number }[]>();
@@ -90,7 +121,7 @@ export function layoutEvents(events: Event[], scale: TimeScale, spec: LaneSpec):
       continue;
     }
     const top = scale.toY(iv.start);
-    const height = Math.max(MIN_BLOCK_PX, scale.toY(iv.end) - top);
+    const height = Math.max(minHeight, scale.toY(iv.end) - top);
     for (const key of laneKeys(e, spec, rosterIds)) {
       present.add(key);
       let list = byLane.get(key);
@@ -137,8 +168,14 @@ export function layoutEvents(events: Event[], scale: TimeScale, spec: LaneSpec):
     for (const it of items) {
       if (it.top >= clusterEnd) flush();
       let col = colEnds.findIndex((end) => end <= it.top);
-      if (col === -1) col = colEnds.length;
-      colEnds[col] = it.top + it.height;
+      if (col === -1) {
+        if (colEnds.length < maxColumns) col = colEnds.length;
+        else {
+          // Column cap reached: share the column that frees up first (blocks stack, none is dropped).
+          col = colEnds.indexOf(Math.min(...colEnds));
+        }
+      }
+      colEnds[col] = Math.max(colEnds[col] ?? -Infinity, it.top + it.height);
       clusterEnd = Math.max(clusterEnd, it.top + it.height);
       cluster.push({
         eventId: it.eventId,

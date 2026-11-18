@@ -5,10 +5,8 @@ import { useFilteredEvents } from '../filters/filter';
 import { booleanCodec, stringCodec, stringListCodec, useQueryState } from '../lib/queryState';
 import { useRegisterCentre } from '../event/AddEvent';
 import { useTrip } from '../trip/store';
-import { bucketLabel, compactBuckets, isCompact } from './compact';
 import { EventIcon } from '../ui/EventIcon';
-import type { Bucket } from './compact';
-import { initialScrollMs, layoutEvents, withoutEmptyLanes } from './layout';
+import { blockTier, initialScrollMs, layoutEvents, withoutEmptyLanes } from './layout';
 import type { Layout } from './layout';
 import { laneModeCodec } from './lanes';
 import { useRegisterFit, useTimelineControls } from './controls';
@@ -31,7 +29,7 @@ import {
   fitPx,
   pinchPx,
   scrollTopForPointer,
-  showSecondary,
+  SECONDARY_TEXT_MIN_PX,
   useZoom,
   wheelPx,
 } from './zoom';
@@ -74,17 +72,26 @@ const Blocks = memo(function Blocks({
         const time = localTimeRange(e);
         const place = placeLabel(e);
         const cancelled = e.status === 'cancelled';
-        const secondary = showSecondary(b.height);
+        const tier = blockTier(b.height, SECONDARY_TEXT_MIN_PX);
+        const secondary = tier === 'full';
+        const bar = tier === 'bar';
         const selected = e.id === selectedId;
         return (
           <button
             key={`${b.laneKey}:${b.eventId}`}
             type="button"
-            className={`${styles.block} ${cancelled ? styles.cancelled : ''} ${secondary ? '' : styles.compact} ${selected ? styles.selected : ''}`}
+            className={`${styles.block} ${cancelled ? styles.cancelled : ''} ${tier === 'full' ? '' : bar ? styles.bar : styles.compact} ${selected ? styles.selected : ''}`}
             aria-current={selected ? 'true' : undefined}
             data-testid="block"
             data-event-id={e.id}
             data-type={e.type}
+            data-tier={tier}
+            title={bar ? e.name : undefined}
+            aria-label={
+              bar
+                ? `${e.name}${time ? `, ${time}` : ''}${cancelled ? ' (cancelled)' : ''}${e.needsReview ? ' (needs review)' : ''}`
+                : undefined
+            }
             style={{
               top: b.top,
               height: b.height,
@@ -93,20 +100,22 @@ const Blocks = memo(function Blocks({
             }}
             onClick={() => onOpen(e.id)}
           >
-            <span className={styles.blockLabel}>
-              <span className={styles.blockIcon} aria-hidden="true">
-                <EventIcon event={e} />
+            {bar ? null : (
+              <span className={styles.blockLabel}>
+                <span className={styles.blockIcon} aria-hidden="true">
+                  <EventIcon event={e} />
+                </span>
+                <span className={styles.blockText}>
+                  <span className={styles.blockName}>{e.name}</span>
+                  {time && secondary && <span className={styles.blockTime}>{time}</span>}
+                  {place && b.height >= PLACE_MIN_PX && (
+                    <span className={styles.blockPlace}>{place}</span>
+                  )}
+                  {cancelled && <span className={styles.srOnly}> (cancelled)</span>}
+                </span>
               </span>
-              <span className={styles.blockText}>
-                <span className={styles.blockName}>{e.name}</span>
-                {time && secondary && <span className={styles.blockTime}>{time}</span>}
-                {place && b.height >= PLACE_MIN_PX && (
-                  <span className={styles.blockPlace}>{place}</span>
-                )}
-                {cancelled && <span className={styles.srOnly}> (cancelled)</span>}
-              </span>
-            </span>
-            {e.needsReview && (
+            )}
+            {e.needsReview && !bar && (
               <Badge
                 tone="warning"
                 className={styles.review}
@@ -121,122 +130,6 @@ const Blocks = memo(function Blocks({
         );
       })}
     </>
-  );
-});
-
-const NO_BUCKETS: Bucket[] = [];
-const MAX_CHIP_ICONS = 3;
-
-/** Low-zoom summary chips for one lane; a chip opens a small list of its events (planfully-ieq). */
-const Chips = memo(function Chips({
-  buckets,
-  byId,
-  zone,
-  onOpen,
-}: {
-  buckets: Bucket[];
-  byId: Map<string, Event>;
-  zone: string;
-  onOpen: (id: string) => void;
-}) {
-  const [openKey, setOpenKey] = useState<string | null>(null);
-  const root = useRef<HTMLDivElement>(null);
-  const chipRefs = useRef(new Map<string, HTMLButtonElement>());
-  /** Close the list; `refocus` returns focus to its chip (Escape, toggle) but not after picking an event. */
-  const close = useCallback(
-    (refocus: boolean) => {
-      if (refocus && openKey) chipRefs.current.get(openKey)?.focus();
-      setOpenKey(null);
-    },
-    [openKey],
-  );
-  useEffect(() => {
-    const el = root.current;
-    if (!openKey || !el) return;
-    el.querySelector<HTMLButtonElement>('[data-testid=chip-item]')?.focus();
-    const onDown = (ev: PointerEvent) => {
-      if (!el.contains(ev.target as Node)) setOpenKey(null);
-    };
-    // On the wrapper (not document) so an open event sheet does not also see this Escape.
-    const onKey = (ev: KeyboardEvent) => {
-      if (ev.key !== 'Escape') return;
-      ev.stopPropagation();
-      close(true);
-    };
-    document.addEventListener('pointerdown', onDown);
-    el.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('pointerdown', onDown);
-      el.removeEventListener('keydown', onKey);
-    };
-  }, [openKey, close]);
-  return (
-    <div ref={root}>
-      {buckets.map((b) => {
-        const open = openKey === b.key;
-        const label = bucketLabel(b.eventIds.length, b.unit, b.startMs, zone);
-        return (
-          <div key={b.key}>
-            <button
-              type="button"
-              className={`${styles.chip} ${open ? styles.chipOpen : ''}`}
-              data-testid="chip"
-              ref={(n) => {
-                if (n) chipRefs.current.set(b.key, n);
-                else chipRefs.current.delete(b.key);
-              }}
-              style={{ top: b.top, height: b.height }}
-              aria-label={label}
-              aria-expanded={open}
-              onClick={() => (open ? close(true) : setOpenKey(b.key))}
-            >
-              <span className={styles.chipCount}>{b.eventIds.length}</span>
-              <span className={styles.chipIcons} aria-hidden="true">
-                {b.types.slice(0, MAX_CHIP_ICONS).map((t) => (
-                  <EventIcon key={t} type={t} size={14} />
-                ))}
-                {b.types.length > MAX_CHIP_ICONS ? '…' : ''}
-              </span>
-            </button>
-            {open && (
-              <ul
-                className={styles.chipList}
-                data-testid="chip-list"
-                style={{ top: b.top + b.height + 2 }}
-                aria-label={label}
-              >
-                {b.eventIds.map((id) => {
-                  const e = byId.get(id);
-                  if (!e) return null;
-                  const time = localStartLabel(e);
-                  return (
-                    <li key={id}>
-                      <button
-                        type="button"
-                        className={`${styles.chipItem} ${e.status === 'cancelled' ? styles.cancelled : ''}`}
-                        data-testid="chip-item"
-                        data-event-id={id}
-                        onClick={() => {
-                          close(false);
-                          onOpen(id);
-                        }}
-                      >
-                        <EventIcon event={e} />
-                        <span className={styles.chipItemName}>{e.name}</span>
-                        {time && <span className={styles.blockTime}>{time}</span>}
-                        {e.status === 'cancelled' && (
-                          <span className={styles.srOnly}> (cancelled)</span>
-                        )}
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </div>
-        );
-      })}
-    </div>
   );
 });
 
@@ -345,18 +238,6 @@ export function Timeline({ gutter: gutterProp }: { gutter?: ReactNode } = {}) {
     }
     return m;
   }, [layout]);
-  const compact = isCompact(pxPerHour);
-  const bucketsByLane = useMemo(() => {
-    const m = new Map<string, Bucket[]>();
-    if (!compact || !range) return m;
-    const byEvent = new Map(events.map((e) => [e.id, e]));
-    for (const b of compactBuckets(layout, byEvent, scale, zone, scale.toY(range.toMs))) {
-      const list = m.get(b.laneKey);
-      if (list) list.push(b);
-      else m.set(b.laneKey, [b]);
-    }
-    return m;
-  }, [compact, layout, events, scale, zone, range]);
   const laneHead = laneMode === 'none' ? 0 : LANE_HEAD_PX;
   /** Scroller y at which the time axis starts (day heading plus lane header row). */
   const topPx = HEADING_PX + laneHead;
@@ -638,21 +519,12 @@ export function Timeline({ gutter: gutterProp }: { gutter?: ReactNode } = {}) {
                             data-testid="lane"
                             data-lane={l.key}
                           >
-                            {compact ? (
-                              <Chips
-                                buckets={bucketsByLane.get(l.key) ?? NO_BUCKETS}
-                                byId={byId}
-                                zone={zone}
-                                onOpen={setOpenId}
-                              />
-                            ) : (
-                              <Blocks
-                                blocks={blocksByLane.get(l.key) ?? NO_BLOCKS}
-                                byId={byId}
-                                selectedId={openId}
-                                onOpen={setOpenId}
-                              />
-                            )}
+                            <Blocks
+                              blocks={blocksByLane.get(l.key) ?? NO_BLOCKS}
+                              byId={byId}
+                              selectedId={openId}
+                              onOpen={setOpenId}
+                            />
                           </div>
                         ))}
                       </div>
