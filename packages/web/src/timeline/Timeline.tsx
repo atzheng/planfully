@@ -6,7 +6,14 @@ import { booleanCodec, stringCodec, useQueryState } from '../lib/queryState';
 import { useRegisterCentre } from '../event/AddEvent';
 import { useTrip } from '../trip/store';
 import { EventIcon } from '../ui/EventIcon';
-import { blockTier, initialScrollMs, layoutEvents, withoutEmptyLanes } from './layout';
+import {
+  blockTier,
+  DEPTH_STEP_PX,
+  initialScrollMs,
+  layoutEvents,
+  maxColumnsForWidth,
+  withoutEmptyLanes,
+} from './layout';
 import type { Layout } from './layout';
 import { laneModeCodec } from './lanes';
 import { useRegisterFit, useTimelineControls } from './controls';
@@ -48,6 +55,8 @@ const AXIS_PX = 44;
 const SCROLL_LEAD_PX = 48;
 /** Block height at which the place line joins the title and time. */
 const PLACE_MIN_PX = 60;
+/** Minimum lane width (matches --lane-min in Timeline.module.css). */
+const LANE_MIN_PX = 140;
 const NO_ROSTER: readonly RosterMember[] = [];
 const NO_BLOCKS: Layout['blocks'] = [];
 const browserZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
@@ -94,8 +103,8 @@ const Blocks = memo(function Blocks({
             style={{
               top: b.top,
               height: b.height,
-              left: `calc(${(b.column / b.columns) * 100}% + 1px)`,
-              width: `calc(${(b.span / b.columns) * 100}% - 2px)`,
+              left: `calc(${(b.column / b.columns) * 100}% + ${1 + b.depth * DEPTH_STEP_PX}px)`,
+              width: `calc(${(b.span / b.columns) * 100}% - ${2 + b.depth * DEPTH_STEP_PX}px)`,
             }}
             onClick={() => onOpen(e.id)}
           >
@@ -220,13 +229,30 @@ export function Timeline({ gutter: gutterProp }: { gutter?: ReactNode } = {}) {
     [range, pxPerHour],
   );
   if (range) lastScale.current = scale;
+  // Lane width drives the column cap. Lane count is estimated before layout (lanes depend on it).
+  const [viewW, setViewW] = useState(375);
+  const laneCount =
+    laneMode === 'none'
+      ? 1
+      : laneMode === 'type'
+        ? new Set(events.map((e) => e.type)).size
+        : who.length || roster.length;
+  const laneWidth = Math.max(
+    LANE_MIN_PX,
+    (viewW - (wxOn || gutterProp ? gutterPx : 0) - AXIS_PX) / Math.max(1, laneCount),
+  );
   const layout = useMemo(
     () =>
       withoutEmptyLanes(
-        layoutEvents(events, scale, { mode: laneMode, roster, only: who, exclude: whoOut }),
+        layoutEvents(
+          events,
+          scale,
+          { mode: laneMode, roster, only: who, exclude: whoOut },
+          maxColumnsForWidth(laneWidth),
+        ),
         laneMode,
       ),
-    [events, scale, roster, laneMode, who, whoOut],
+    [laneWidth, events, scale, roster, laneMode, who, whoOut],
   );
   const blocksByLane = useMemo(() => {
     const m = new Map<string, Layout['blocks']>();
@@ -320,8 +346,12 @@ export function Timeline({ gutter: gutterProp }: { gutter?: ReactNode } = {}) {
   useEffect(() => {
     const el = scroller.current;
     if (!el || typeof ResizeObserver === 'undefined') return;
-    const ro = new ResizeObserver(() => measure());
+    const ro = new ResizeObserver(() => {
+      measure();
+      setViewW(el.clientWidth);
+    });
     ro.observe(el);
+    setViewW(el.clientWidth);
     return () => ro.disconnect();
   }, [measure]);
 

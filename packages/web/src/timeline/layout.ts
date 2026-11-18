@@ -24,6 +24,8 @@ export type Block = {
   columns: number;
   /** Columns this block occupies (>= 1): it extends right over columns with no time-overlapping block. */
   span: number;
+  /** Cascade level (0..MAX_DEPTH) among time-overlapping blocks sharing this column; inset by depth * DEPTH_STEP_PX. */
+  depth: number;
 };
 export type Layout = { lanes: Lane[]; blocks: Block[]; unscheduled: Event[] };
 
@@ -39,6 +41,22 @@ export const LINE_MIN_PX_PER_HOUR = 5;
 export const LINE_BLOCK_MIN_PX = 16;
 /** Most columns an overlap cluster may use; further blocks share columns (stack) instead of narrowing. */
 export const MAX_COLUMNS = 5;
+
+/** Narrowest a column may get before the cluster stops adding columns and cascades instead. */
+export const MIN_COLUMN_PX = 90;
+/** Horizontal inset per cascade level, so each stacked block keeps an exposed strip this wide. */
+export const DEPTH_STEP_PX = 16;
+/**
+ * Deepest cascade level (4 steps = 64px of a >= 90px column). Every block keeps an exposed strip while
+ * at most (MAX_DEPTH + 1) blocks per column overlap in time; beyond that the deepest level is shared.
+ */
+export const MAX_DEPTH = 4;
+
+/** Column cap for a lane `laneWidthPx` wide: floor(width / 90) clamped to 1..MAX_COLUMNS. */
+export function maxColumnsForWidth(laneWidthPx: number): number {
+  const n = Math.floor(laneWidthPx / MIN_COLUMN_PX);
+  return Math.min(MAX_COLUMNS, Math.max(1, Number.isFinite(n) ? n : MAX_COLUMNS));
+}
 
 export type BlockTier = 'full' | 'line' | 'bar';
 
@@ -160,15 +178,21 @@ export function layoutEvents(
     let cluster: Block[] = [];
     let clusterEnd = -Infinity;
     let colEnds: number[] = [];
-    let shares: number[] = [];
+    /** Per column, the blocks already placed there (for cascade depth). */
+    let colItems: { end: number; depth: number }[][] = [];
     const flush = () => {
       for (const b of cluster) b.columns = colEnds.length;
       expandSpans(cluster);
       blocks.push(...cluster);
       cluster = [];
       colEnds = [];
-      shares = [];
+      colItems = [];
       clusterEnd = -Infinity;
+    };
+    const depthIn = (c: number, top: number): number => {
+      let d = -1;
+      for (const o of colItems[c] ?? []) if (o.end > top) d = Math.max(d, o.depth);
+      return d + 1;
     };
     for (const it of items) {
       if (it.top >= clusterEnd) flush();
@@ -176,17 +200,16 @@ export function layoutEvents(
       if (col === -1) {
         if (colEnds.length < maxColumns) col = colEnds.length;
         else {
-          // Column cap reached: share the column that frees up first (blocks stack, none is dropped).
+          // Column cap reached: stack onto the column where the cascade is shallowest (none is dropped).
           let best = 0;
           for (let c = 1; c < colEnds.length; c++) {
-            const bc = colEnds[best] ?? 0;
-            const cc = colEnds[c] ?? 0;
-            if (cc < bc || (cc === bc && (shares[c] ?? 0) < (shares[best] ?? 0))) best = c;
+            if (depthIn(c, it.top) < depthIn(best, it.top)) best = c;
           }
           col = best;
-          shares[col] = (shares[col] ?? 0) + 1;
         }
       }
+      const depth = Math.min(MAX_DEPTH, depthIn(col, it.top));
+      (colItems[col] ??= []).push({ end: it.top + it.height, depth });
       colEnds[col] = Math.max(colEnds[col] ?? -Infinity, it.top + it.height);
       clusterEnd = Math.max(clusterEnd, it.top + it.height);
       cluster.push({
@@ -197,6 +220,7 @@ export function layoutEvents(
         column: col,
         columns: 1,
         span: 1,
+        depth,
       });
     }
     flush();

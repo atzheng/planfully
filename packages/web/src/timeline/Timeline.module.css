@@ -265,6 +265,9 @@
   text-align: left;
   cursor: pointer;
 }
+.block:focus-visible {
+  z-index: 3;
+}
 .block:focus-visible,
 .todayPill:focus-visible,
 .unscheduledItem:focus-visible {
@@ -486,7 +489,8 @@
   left: 0;
   right: 0;
   top: 50%;
-  height: max(100%, 24px);
+  /* Centred and capped at 24px so neighbouring bars' hit areas do not stack on each other. */
+  height: 24px;
   transform: translateY(-50%);
 }
 .bar.selected {
