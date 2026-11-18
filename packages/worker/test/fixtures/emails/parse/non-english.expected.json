@@ -1,0 +1,14 @@
+{
+  "events": [
+    {
+      "type": "lodging",
+      "name": "Casa del Mar",
+      "start": { "local": "2026-07-20T14:00", "tz": "Europe/Madrid" },
+      "end": { "local": "2026-07-23T12:00", "tz": "Europe/Madrid" },
+      "confirmation": "SV-20931",
+      "location": "Casa del Mar",
+      "participants": ["bob"],
+      "status": "confirmed"
+    }
+  ]
+}

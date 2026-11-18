@@ -1,0 +1,13 @@
+{
+  "events": [
+    {
+      "type": "dining",
+      "name": "Comptoir",
+      "start": { "local": "2026-06-14T20:00", "tz": "Europe/Paris" },
+      "confirmation": "TB-48213",
+      "location": "Comptoir",
+      "participants": [],
+      "status": "confirmed"
+    }
+  ]
+}

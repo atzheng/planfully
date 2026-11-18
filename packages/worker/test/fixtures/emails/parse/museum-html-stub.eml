@@ -1,0 +1,30 @@
+From: Musee des Arts <tickets@museedesarts.example>
+To: trip@trips.example.com
+Subject: Your timed tickets for Sunday 21 June
+Date: Sat, 09 May 2026 08:15:00 +0000
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="alt1"
+
+--alt1
+Content-Type: text/plain; charset=utf-8
+
+View this email in your browser: https://museedesarts.example/v/8841
+
+--alt1
+Content-Type: text/html; charset=utf-8
+
+<html><body>
+<table width="600"><tr><td>
+<h1>Your tickets are confirmed</h1>
+<p>Musee des Arts, 1 Rue de la Paix, 75002 Paris</p>
+<table>
+<tr><td>Order</td><td>MA-2290718</td></tr>
+<tr><td>Visit date</td><td>Sunday 21 June 2026</td></tr>
+<tr><td>Timed entry</td><td>10:30 (please arrive 15 minutes early)</td></tr>
+<tr><td>Tickets</td><td>2 x Adult, permanent collection and Impressionist wing</td></tr>
+</table>
+<p>Show the QR code in your account at the entrance. Large bags are not permitted.</p>
+</td></tr></table>
+</body></html>
+
+--alt1--

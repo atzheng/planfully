@@ -1,0 +1,36 @@
+From: Northwind Air <reservations@northwind-air.example>
+To: trip@trips.example.com
+Subject: Your itinerary and e-ticket receipt - confirmation K7Q3ZP
+Date: Mon, 04 May 2026 14:12:09 +0000
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+Thank you for booking with Northwind Air.
+
+Booking reference (PNR): K7Q3ZP
+
+Passengers:
+  SMITH/ALICE MS    E-ticket 016-2204419873
+  JONES/BOB MR      E-ticket 016-2204419874
+
+OUTBOUND - Friday 12 June 2026
+NW 1  San Francisco (SFO) -> Chicago O'Hare (ORD)
+  Departs SFO Terminal 3   08:10
+  Arrives ORD Terminal 1   14:05
+  Seats: 24A / 24B   Economy
+
+NW 2  Chicago O'Hare (ORD) -> Paris Charles de Gaulle (CDG)
+  Departs ORD Terminal 1   16:45
+  Arrives CDG Terminal 2E  07:55 (+1 day, Saturday 13 June)
+  Seats: 31A / 31B   Economy
+
+RETURN - Monday 22 June 2026
+NW 3  Paris Charles de Gaulle (CDG) -> San Francisco (SFO)
+  Departs CDG Terminal 2E  11:20
+  Arrives SFO Terminal 3   13:50
+  Seats: 40C / 40D   Economy
+
+Total fare: USD 2,184.60 (2 passengers)
+Frequent flyer: NW 88231907 (Alice Smith)
+
+All times are local to the airport.

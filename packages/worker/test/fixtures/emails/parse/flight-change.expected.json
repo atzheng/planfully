@@ -1,0 +1,15 @@
+{
+  "events": [
+    {
+      "type": "flight",
+      "name": "NW 2",
+      "start": { "local": "2026-06-12T17:30", "tz": "America/Chicago" },
+      "end": { "local": "2026-06-13T08:40", "tz": "Europe/Paris" },
+      "confirmation": "K7Q3ZP",
+      "location": "ORD",
+      "endLocation": "CDG",
+      "participants": ["alice"],
+      "status": "confirmed"
+    }
+  ]
+}

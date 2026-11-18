@@ -1,0 +1,35 @@
+From: RailLink France <tickets@raillink.example>
+To: trip@trips.example.com
+Subject: Your e-tickets - order XTR4PQ
+Date: Wed, 06 May 2026 16:20:00 +0000
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="pdfb"
+
+--pdfb
+Content-Type: text/plain; charset=utf-8
+
+Your e-tickets are attached. Please have them ready on your phone or printed.
+
+Order: XTR4PQ
+--pdfb
+Content-Type: application/pdf; name="tickets-XTR4PQ.pdf"
+Content-Disposition: attachment; filename="tickets-XTR4PQ.pdf"
+Content-Transfer-Encoding: base64
+
+JVBERi0xLjQKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2Jq
+CjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUl0gL0NvdW50IDEgPj4KZW5kb2Jq
+CjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCA1OTUg
+ODQyXSAvQ29udGVudHMgNCAwIFIgL1Jlc291cmNlcyA8PCAvRm9udCA8PCAvRjEgNSAwIFIgPj4g
+Pj4gPj4KZW5kb2JqCjQgMCBvYmoKPDwgL0xlbmd0aCAzMzUgPj4Kc3RyZWFtCkJUCi9GMSAxMiBU
+ZgoxNCBUTAo1MCA3ODAgVGQKKFJBSUxMSU5LIEZSQU5DRSAtIEUtVElDS0VUKSBUagpUKgooKSBU
+agpUKgooT3JkZXIgcmVmZXJlbmNlOiBYVFI0UFEpIFRqClQqCihQYXNzZW5nZXJzOiBTTUlUSCBB
+bGljZSwgSk9ORVMgQm9iKSBUagpUKgooVHJhaW46IFRHViA2NjA5KSBUagpUKgooRGF0ZTogVHVl
+c2RheSAxNiBKdW5lIDIwMjYpIFRqClQqCihEZXBhcnQ6IFBhcmlzIEdhcmUgZGUgTHlvbiBhdCAw
+OTowNykgVGoKVCoKKEFycml2ZTogTHlvbiBQYXJ0LURpZXUgYXQgMTE6MDUpIFRqClQqCihDb2Fj
+aCAxMSwgc2VhdHMgNjIgYW5kIDYzLCAybmQgY2xhc3MpIFRqCkVUCmVuZHN0cmVhbQplbmRvYmoK
+NSAwIG9iago8PCAvVHlwZSAvRm9udCAvU3VidHlwZSAvVHlwZTEgL0Jhc2VGb250IC9IZWx2ZXRp
+Y2EgPj4KZW5kb2JqCnhyZWYKMCA2CjAwMDAwMDAwMDAgNjU1MzUgZiAKMDAwMDAwMDAwOSAwMDAw
+MCBuIAowMDAwMDAwMDU4IDAwMDAwIG4gCjAwMDAwMDAxMTUgMDAwMDAgbiAKMDAwMDAwMDI0MSAw
+MDAwMCBuIAowMDAwMDAwNjI3IDAwMDAwIG4gCnRyYWlsZXIKPDwgL1NpemUgNiAvUm9vdCAxIDAg
+UiA+PgpzdGFydHhyZWYKNjk3CiUlRU9GCg==
+--pdfb--

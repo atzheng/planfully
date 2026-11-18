@@ -244,6 +244,10 @@ type EmailRoute = (ctx: { env: Env; trip: TripRow; email: ParsedEmail }) => Prom
 type ParsedEvent = Omit<Event, 'id'|'attachments'|'source'|'createdAt'|'pinned'|'deleted'>
                  & { attachmentIndexes: number[] }    // indexes into email.attachments
 parseEmail(email: ParsedEmail, opts: { roster: RosterMember[]; today: string; apiKey: string }): Promise<ParsedEvent[]>
+// parseEmailDetailed(...): Promise<{ events: ParsedEvent[]; dropped: number }> is the same call plus the count of invalid events dropped; parseEmail returns only events.
+// Behaviour: output with any invalid element is retried once; if still partly invalid the valid events are returned with dropped > 0 (default.ts then notifies needs-review);
+// max_tokens is not retried. text/plain shorter than 200 chars is sent together with the rendered HTML. Flights: location.name is 'City Airport Name (IATA)'.
+// Real-API evaluation: `pnpm --filter @planfully/worker eval` (opt-in, never in `pnpm test`).
 
 // geo/geocode.ts — returns the input unchanged when no key is set or the match is weak
 geocode(env: Env, loc: Location, session?: { blocked?: boolean; bias?: GeoBias }): Promise<Location>
@@ -290,7 +294,7 @@ Never log email content, event content or tokens.
 
 ## 8. Config
 
-Worker bindings and vars (`src/env.ts`): `DB` (D1), `BLOBS` (R2), `ASSETS` (static assets), `TRIP_DOMAIN`, `ADMIN_SECRET`, `ANTHROPIC_API_KEY`, `GOOGLE_MAPS_SERVER_KEY`. Local values in `packages/worker/.dev.vars` (gitignored); commit `.dev.vars.example`. Web: `VITE_GOOGLE_MAPS_KEY` in `packages/web/.env.local` (gitignored); commit `.env.example`. Code must run with the two API keys unset: geocoding returns no coordinates, the map shows a "key not configured" notice, and LLM tests use a mocked client.
+Worker bindings and vars (`src/env.ts`): `DB` (D1), `BLOBS` (R2), `ASSETS` (static assets), `TRIP_DOMAIN`, `ADMIN_SECRET`, `ANTHROPIC_API_KEY`, `GOOGLE_MAPS_SERVER_KEY`. Local values in `packages/worker/.dev.vars` (gitignored); commit `.dev.vars.example`. Web: `VITE_GOOGLE_MAPS_KEY` in `packages/web/.env.local` (gitignored); commit `.env.example`. Production deploy: see `DEPLOY.md` (`pnpm run deploy`; `TRIP_DOMAIN=planfully.us`, app at the apex via a Workers custom domain). Code must run with the two API keys unset: geocoding returns no coordinates, the map shows a "key not configured" notice, and LLM tests use a mocked client.
 
 ## 9. Commands
 
