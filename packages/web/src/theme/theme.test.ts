@@ -1,5 +1,12 @@
-import { beforeEach, describe, expect, it } from 'vitest';
-import { THEME_KEY, nextSetting, readSetting, resolveTheme, writeSetting } from './theme';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  THEME_KEY,
+  mapColorScheme,
+  nextSetting,
+  readSetting,
+  resolveTheme,
+  writeSetting,
+} from './theme';
 
 describe('resolveTheme', () => {
   it('explicit settings ignore the OS', () => {
@@ -29,5 +36,26 @@ describe('setting storage', () => {
     expect(nextSetting('system')).toBe('light');
     expect(nextSetting('light')).toBe('dark');
     expect(nextSetting('dark')).toBe('system');
+  });
+});
+
+describe('mapColorScheme', () => {
+  it('maps resolved themes to Google Maps schemes', () => {
+    expect(mapColorScheme('dark')).toBe('DARK');
+    expect(mapColorScheme('light')).toBe('LIGHT');
+  });
+});
+
+describe('throwing storage', () => {
+  afterEach(() => vi.restoreAllMocks());
+  it('read falls back to system and write does not throw', () => {
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('denied');
+    });
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('denied');
+    });
+    expect(readSetting()).toBe('system');
+    expect(() => writeSetting('dark')).not.toThrow();
   });
 });

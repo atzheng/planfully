@@ -16,6 +16,11 @@ export function resolveTheme(setting: ThemeSetting, systemPrefersDark: boolean):
   return systemPrefersDark ? 'dark' : 'light';
 }
 
+/** Google Maps `colorScheme` for a resolved theme. */
+export function mapColorScheme(resolved: ResolvedTheme): 'DARK' | 'LIGHT' {
+  return resolved === 'dark' ? 'DARK' : 'LIGHT';
+}
+
 export function nextSetting(s: ThemeSetting): ThemeSetting {
   return THEME_SETTINGS[(THEME_SETTINGS.indexOf(s) + 1) % THEME_SETTINGS.length] ?? 'system';
 }

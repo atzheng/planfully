@@ -6,6 +6,7 @@ import { stringCodec, useQueryState } from '../lib/queryState';
 import { useFilteredEvents } from '../filters/filter';
 import { TYPE_HUE, TYPE_ICON } from '../timeline/model';
 import { boundsKey, buildMapModel, locatedEvents, type MapModel } from './markers';
+import { mapColorScheme } from '../theme/theme';
 import { useTheme } from '../theme/useTheme';
 import styles from './MapView.module.css';
 
@@ -79,7 +80,7 @@ function MapCanvas({
         // colorScheme is read once at creation, so a theme change remounts the map.
         key={dark ? 'dark' : 'light'}
         mapId={env.VITE_GOOGLE_MAP_ID || DEFAULT_MAP_ID}
-        colorScheme={dark ? 'DARK' : 'LIGHT'}
+        colorScheme={mapColorScheme(dark ? 'dark' : 'light')}
         defaultCenter={{ lat: 20, lng: 0 }}
         defaultZoom={2}
         gestureHandling="greedy"
