@@ -9,6 +9,7 @@ import {
   stringListCodec,
   useQueryState,
 } from '../lib/queryState';
+import { useRegisterCentre } from '../event/AddEvent';
 import { useTrip } from '../trip/store';
 import { bucketLabel, compactBuckets, isCompact } from './compact';
 import type { Bucket } from './compact';
@@ -352,6 +353,17 @@ export function Timeline({ gutter: gutterProp }: { gutter?: ReactNode } = {}) {
   /** Screen y (below the scroller top) at which `anchorMs` must stay after a scale change. */
   const anchorY = useRef(0);
   const [headingMs, setHeadingMs] = useState(scale.originMs);
+  // The Add button starts new events at the middle of what is on screen.
+  useRegisterCentre(() => {
+    const el = scroller.current;
+    if (!el || !range) return null;
+    // The scroller can extend below the window: take the middle of the part actually on screen.
+    const r = el.getBoundingClientRect();
+    const top = Math.max(r.top, 0);
+    const bottom = Math.min(r.bottom, window.innerHeight);
+    const mid = bottom > top ? (top + bottom) / 2 - r.top : el.clientHeight / 2;
+    return { ms: scale.toMs(el.scrollTop + mid - topPx), tz: zone };
+  });
 
   const scrollToMs = useCallback(
     (ms: number, behavior: ScrollBehavior = 'smooth') => {

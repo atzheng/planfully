@@ -1,9 +1,11 @@
 import { MarkerClusterer } from '@googlemaps/markerclusterer';
 import { AdvancedMarker, APIProvider, Map, useMap } from '@vis.gl/react-google-maps';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useAddEvent } from '../event/AddEvent';
 import { stringCodec, useQueryState } from '../lib/queryState';
 import { useFilteredEvents } from '../filters/filter';
 import { TYPE_HUE, TYPE_ICON } from '../timeline/model';
+import { latLngAtPixel } from './pointAt';
 import { boundsKey, buildMapModel, locatedEvents, type MapModel } from './markers';
 import styles from './MapView.module.css';
 
@@ -100,6 +102,7 @@ function MapCanvas({
         <FitBounds model={model} />
         <Paths model={model} />
         <ClusteredMarkers model={model} onOpen={onOpen} />
+        <AddAtPoint />
         {children}
       </Map>
       {model.markers.length === 0 && (
@@ -132,6 +135,73 @@ function FitBounds({ model }: { model: MapModel }) {
       map.setOptions({ maxZoom: null });
     };
   }, [map, key]);
+  return null;
+}
+
+const LONG_PRESS_MS = 500;
+const LONG_PRESS_SLOP_PX = 10;
+
+/** Right-click, or a long press on touch, starts a new event at that point. */
+function AddAtPoint() {
+  const map = useMap();
+  const add = useAddEvent();
+  const addRef = useRef(add);
+  addRef.current = add;
+  useEffect(() => {
+    const div = map?.getDiv();
+    if (!map || !div) return;
+    const at = (e: MouseEvent | PointerEvent) => {
+      const center = map.getCenter();
+      const zoom = map.getZoom();
+      if (!center || zoom === undefined) return;
+      const r = div.getBoundingClientRect();
+      const p = latLngAtPixel(
+        { lat: center.lat(), lng: center.lng() },
+        zoom,
+        { width: r.width, height: r.height },
+        e.clientX - r.left,
+        e.clientY - r.top,
+      );
+      addRef.current?.openAtPoint(p.lat, p.lng);
+    };
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let start: { x: number; y: number } | null = null;
+    const cancel = () => {
+      clearTimeout(timer);
+      start = null;
+    };
+    const onDown = (e: PointerEvent) => {
+      if (e.pointerType === 'mouse') return;
+      if (start) return cancel(); // a second finger is a pinch, not a press
+      start = { x: e.clientX, y: e.clientY };
+      timer = setTimeout(() => {
+        start = null;
+        at(e);
+      }, LONG_PRESS_MS);
+    };
+    const onMove = (e: PointerEvent) => {
+      if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) > LONG_PRESS_SLOP_PX) {
+        cancel();
+      }
+    };
+    const onContext = (e: MouseEvent) => {
+      e.preventDefault();
+      at(e);
+    };
+    div.addEventListener('pointerdown', onDown);
+    div.addEventListener('pointermove', onMove);
+    div.addEventListener('pointerup', cancel);
+    div.addEventListener('pointercancel', cancel);
+    div.addEventListener('contextmenu', onContext);
+    return () => {
+      cancel();
+      div.removeEventListener('pointerdown', onDown);
+      div.removeEventListener('pointermove', onMove);
+      div.removeEventListener('pointerup', cancel);
+      div.removeEventListener('pointercancel', cancel);
+      div.removeEventListener('contextmenu', onContext);
+    };
+  }, [map]);
   return null;
 }
 
