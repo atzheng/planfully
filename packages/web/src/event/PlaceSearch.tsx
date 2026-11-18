@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import type { Location } from '@planfully/shared';
 import * as api from '../lib/api';
 import { useTrip } from '../trip/store';
+import { Input } from '../ui/Input';
 import styles from './PlaceSearch.module.css';
 
 export const SEARCH_DELAY_MS = 300;
@@ -71,7 +72,7 @@ export function PlaceSearch({
 
   return (
     <div className={styles.wrap}>
-      <input
+      <Input
         id={id}
         type="text"
         role="combobox"

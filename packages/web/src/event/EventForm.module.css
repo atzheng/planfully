@@ -1,71 +1,110 @@
 .form {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.section {
   display: grid;
   gap: var(--space-3);
-  margin-top: var(--space-3);
   min-width: 0;
+  padding: var(--space-4) 0;
+  border-top: 1px solid var(--border);
 }
-.field {
-  display: grid;
-  gap: var(--space-1);
-  min-width: 0;
+.section:first-child {
+  border-top: 0;
+  padding-top: 0;
 }
-.field label {
+.sectionTitle {
+  margin: 0;
   color: var(--text-muted);
   font-size: var(--text-xs);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  font-weight: var(--weight-semibold);
 }
-.form input,
-.form select,
-.form textarea {
-  width: 100%;
-  min-width: 0;
-  min-height: var(--tap);
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--surface);
+.cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+}
+@media (min-width: 720px) {
+  .cols {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+/* Date + time + zone in one row; the zone is a quiet suffix. */
+.when {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-2);
+}
+.whenHead {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-height: 24px;
+}
+.whenLabel {
   color: var(--text);
-  font: inherit;
-  box-sizing: border-box;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
 }
-.form [aria-invalid='true'] {
-  border-color: var(--danger);
-}
-.group {
-  display: grid;
-  gap: var(--space-2);
+.rowError {
+  grid-column: 1 / -1;
   margin: 0;
-  padding: var(--space-2) var(--space-3) var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  min-width: 0;
+  color: var(--danger);
+  font-size: var(--text-xs);
 }
-.group legend {
-  padding: 0 var(--space-1);
+.zone {
+  max-width: 60%;
+  min-height: 24px;
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
   color: var(--text-muted);
-  font-size: var(--text-md);
+  font: inherit;
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
 }
-.pair {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-2);
+.zone:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.zoneSelect {
+  width: 260px;
+  max-width: calc(100vw - 32px);
 }
 .chips {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
 }
-.error {
-  color: var(--danger);
-  font-size: var(--text-md);
-}
 .hint {
+  margin: 0;
   color: var(--text-muted);
   font-size: var(--text-xs);
 }
+/* Stays in view at the bottom of the scrolling sheet. */
 .actions {
+  position: sticky;
+  bottom: calc(-1 * var(--space-4));
+  z-index: 10;
   display: flex;
-  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: var(--space-2);
+  margin: var(--space-2) calc(-1 * var(--space-4)) calc(-1 * var(--space-4));
+  padding: var(--space-3) var(--space-4);
+  padding-bottom: max(var(--space-3), env(safe-area-inset-bottom));
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+@media (max-width: 719px) {
+  .actions > * {
+    flex: 1;
+  }
 }

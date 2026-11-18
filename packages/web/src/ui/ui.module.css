@@ -340,6 +340,18 @@
 }
 
 /* ---- Sheet ---- */
+.handle {
+  width: 36px;
+  height: 4px;
+  margin: calc(-1 * var(--space-2)) auto var(--space-3);
+  border-radius: var(--radius-pill);
+  background: var(--border-strong);
+}
+@media (min-width: 720px) {
+  .handle {
+    display: none;
+  }
+}
 .backdrop {
   position: fixed;
   inset: 0;

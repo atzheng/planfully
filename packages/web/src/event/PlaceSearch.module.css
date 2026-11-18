@@ -2,13 +2,20 @@
   position: relative;
   min-width: 0;
 }
+/* Styled like a Menu panel: raised, hairline border, rounded rows. */
 .list {
+  position: absolute;
+  z-index: 20;
+  top: 100%;
+  left: 0;
+  right: 0;
   margin: var(--space-1) 0 0;
-  padding: 0;
+  padding: var(--space-1);
   list-style: none;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-md);
-  background: var(--surface);
+  background: var(--raised);
+  box-shadow: var(--shadow-sm);
   max-height: 14rem;
   overflow-y: auto;
 }
@@ -18,13 +25,11 @@
 .option {
   display: grid;
   gap: 2px;
-  min-height: var(--tap);
-  padding: var(--space-2) var(--space-3);
+  min-height: var(--control-md);
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
   cursor: pointer;
   overflow-wrap: anywhere;
-}
-.option + .option {
-  border-top: 1px solid var(--border);
 }
 .active,
 .option:hover {
@@ -32,13 +37,14 @@
 }
 .name {
   color: var(--text);
+  font-size: var(--text-md);
 }
 .addr {
   color: var(--text-muted);
-  font-size: var(--text-md);
+  font-size: var(--text-sm);
 }
 .note {
   margin: var(--space-1) 0 0;
   color: var(--text-muted);
-  font-size: var(--text-md);
+  font-size: var(--text-sm);
 }

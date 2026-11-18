@@ -91,7 +91,7 @@ describe('edit and delete', () => {
   test('editing a time sends a patch with only that field', async () => {
     const { posted } = await setup();
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
-    fireEvent.change(input('Time'), { target: { value: '21:00' } });
+    fireEvent.change(input('Start time'), { target: { value: '21:00' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(posted).toHaveLength(1));
     expect(posted[0]).toEqual({
@@ -107,7 +107,7 @@ describe('edit and delete', () => {
     const { posted } = await setup();
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
     fireEvent.change(input('Name'), { target: { value: '' } });
-    fireEvent.change(input('Date', 1), { target: { value: '2026-07-01' } });
+    fireEvent.change(input('End date'), { target: { value: '2026-07-01' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     expect(await screen.findByText('Enter a name')).toBeTruthy();
     expect(screen.getByText('End is before the start')).toBeTruthy();
@@ -184,7 +184,7 @@ describe('edit and delete', () => {
         },
       ] as never);
     });
-    fireEvent.change(input('Time'), { target: { value: '21:00' } });
+    fireEvent.change(input('Start time'), { target: { value: '21:00' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(posted).toHaveLength(1));
     expect((posted[0] as { fields: object }).fields).toEqual({

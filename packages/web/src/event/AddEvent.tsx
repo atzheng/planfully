@@ -16,9 +16,9 @@ import { fromInstant, type Event } from '@planfully/shared';
 import { useTripActions } from '../trip/actions';
 import { useTrip, useTripStore } from '../trip/store';
 import { Button } from '../ui/Button';
-import { IconButton } from '../ui/IconButton';
 import { Sheet } from '../ui/Sheet';
 import { EventForm } from './EventForm';
+import { SheetHeader } from './SheetHeader';
 import styles from './AddEvent.module.css';
 
 /** The time at the centre of what the timeline shows, and the zone it is shown in. */
@@ -97,12 +97,7 @@ function AddSheet({ initial, onClose }: { initial: Partial<Event>; onClose: () =
   const lastError = useTrip((s) => s.lastError);
   return (
     <Sheet open onClose={onClose} label="Add event" side>
-      <div className={styles.header}>
-        <h2 className={styles.title}>Add event</h2>
-        <IconButton label="Close" onClick={onClose}>
-          ×
-        </IconButton>
-      </div>
+      <SheetHeader title="Add event" onClose={onClose} />
       {lastError && (
         <div role="alert" className={styles.error}>
           Could not save: {lastError.message}{' '}
