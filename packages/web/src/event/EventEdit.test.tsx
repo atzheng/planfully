@@ -132,7 +132,9 @@ describe('edit and delete', () => {
     fireEvent.change(input('Name'), { target: { value: 'Supper' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     expect(await screen.findByText(/Could not save/)).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Save' })).toBeTruthy();
+    // lastError is set before the form's submit promise settles, so the button reads
+    // "Saving..." for a moment: wait for it to come back instead of asserting synchronously.
+    expect(await screen.findByRole('button', { name: 'Save' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
     await waitFor(() => expect(store.getState().lastError).toBeNull());
   });
