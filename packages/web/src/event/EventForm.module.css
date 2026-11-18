@@ -75,9 +75,9 @@
   background: var(--surface-2);
   color: var(--text);
 }
-.zoneSelect {
-  width: 260px;
-  max-width: calc(100vw - 32px);
+.zonePop {
+  width: 280px;
+  max-width: calc(100vw - 48px);
 }
 .chips {
   display: flex;
