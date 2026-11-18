@@ -12,6 +12,7 @@ import {
   describeHit,
   fetchRange,
   hitAt,
+  inGap,
   scaleMax,
   stepFor,
   type Bucket,
@@ -56,7 +57,10 @@ export function WeatherStrip() {
   const range = useMemo(() => fetchRange(visible), [visible]);
   const weather = useWeather(range.fromMs, range.toMs);
   const step = stepFor(scale.pxPerHour);
-  const strip = useMemo(() => buildStrip(weather.series, step, zone), [weather.series, step, zone]);
+  const strip = useMemo(
+    () => buildStrip(weather.series, step, zone, scale.gaps, scale.toY),
+    [weather.series, step, zone, scale.gaps, scale.toY],
+  );
   const [tip, setTip] = useState<Tip | null>(null);
   const root = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -112,7 +116,9 @@ export function WeatherStrip() {
   };
 
   const showDay = scale.pxPerHour * 24 >= MIN_DAY_LABEL_PX;
-  const labels = showDay ? dayLabels(strip.segments, zone) : [];
+  const labels = showDay
+    ? dayLabels(strip.segments, zone).filter((d) => !inGap(d.startMs, scale.gaps))
+    : [];
   const dayYs = labels.map((d) => y(d.startMs) + 11);
   let lastLabelY = -Infinity;
   const renderSegment = (s: StripSegment, i: number) => {
@@ -122,6 +128,7 @@ export function WeatherStrip() {
     if (
       i > 0 &&
       s.segment.label &&
+      !inGap(s.segment.fromMs, scale.gaps) &&
       y(s.segment.toMs) - segY >= 12 &&
       segY + 11 - lastLabelY >= 12
     ) {

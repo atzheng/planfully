@@ -27,6 +27,8 @@ export type Bucket = {
   precipSum: number;
   /** Hours with data in the bucket. */
   n: number;
+  /** Set when several buckets were folded into one inside a collapsed gap (condensed time). */
+  merged?: true;
 };
 
 export function bucketStart(ms: number, step: Step, zone: string): number {
@@ -102,6 +104,57 @@ export function bucketize(
     }));
 }
 
+/** A collapsed stretch of the time axis with its drawn extent (a `ScaleGap`, structurally). */
+export type YGap = { fromMs: number; toMs: number; fromY: number; toY: number };
+
+/** Buckets drawn shorter than this many px are folded together (condensed time only). */
+export const MIN_BUCKET_PX = 4;
+
+/** True when `ms` is strictly inside one of the gaps. */
+export function inGap(ms: number, gaps: readonly YGap[]): boolean {
+  return gaps.some((g) => ms > g.fromMs && ms < g.toMs);
+}
+
+/**
+ * Fold runs of adjacent buckets that lie inside one condensed gap and are drawn under
+ * `MIN_BUCKET_PX` tall into a single bucket (averages weighted by hours, extremes kept, rain
+ * summed), so the lines do not zigzag over a few px. With no gaps the input is returned as is.
+ */
+export function thinBuckets(
+  buckets: readonly Bucket[],
+  gaps: readonly YGap[],
+  toY: (ms: number) => number,
+): Bucket[] {
+  if (gaps.length === 0) return [...buckets];
+  const gapOf = (b: Bucket) =>
+    toY(b.toMs) - toY(b.fromMs) < MIN_BUCKET_PX
+      ? gaps.find((g) => b.fromMs >= g.fromMs && b.toMs <= g.toMs)
+      : undefined;
+  const out: Bucket[] = [];
+  let runGap: YGap | undefined;
+  for (const b of buckets) {
+    const g = gapOf(b);
+    const prev = out[out.length - 1];
+    if (g && g === runGap && prev && prev.toMs === b.fromMs) {
+      const n = prev.n + b.n;
+      out[out.length - 1] = {
+        fromMs: prev.fromMs,
+        toMs: b.toMs,
+        tempAvg: (prev.tempAvg * prev.n + b.tempAvg * b.n) / n,
+        tempMin: Math.min(prev.tempMin, b.tempMin),
+        tempMax: Math.max(prev.tempMax, b.tempMax),
+        windAvg: (prev.windAvg * prev.n + b.windAvg * b.n) / n,
+        windMax: Math.max(prev.windMax, b.windMax),
+        precipSum: prev.precipSum + b.precipSum,
+        n,
+        merged: true,
+      };
+    } else out.push(b);
+    runGap = g;
+  }
+  return out;
+}
+
 export type BandKind = 'none' | 'error';
 export type Band = { fromMs: number; toMs: number; kind: BandKind };
 type Status = 'loading' | 'ready' | 'error' | 'empty';
@@ -163,9 +216,12 @@ export function buildStrip(
   input: readonly SegmentInput[],
   step: Step,
   zone: string,
+  /** Condensed-time gaps and the scale's `toY`; omitted (or empty) for a linear axis. */
+  gaps: readonly YGap[] = [],
+  toY: (ms: number) => number = () => 0,
 ): { segments: StripSegment[]; extents: Extents } {
   const segments = input.map(({ segment, series, status }): StripSegment => {
-    const buckets = bucketize(series, segment, step, zone);
+    const buckets = thinBuckets(bucketize(series, segment, step, zone), gaps, toY);
     return {
       segment,
       status,
@@ -225,6 +281,10 @@ export function describeHit(hit: Hit, step: Step, zone: string, units: Units): s
     return `${fmt(hit.atMs, 'ccc LLL d, h a')}${place}: ${what}`;
   }
   const b = hit.bucket;
+  if (b.merged) {
+    const range = `${fmt(b.fromMs, 'ccc LLL d, h a')} to ${fmt(b.toMs, 'ccc LLL d, h a')}`;
+    return `${range}${place}: ${formatTemp(b.tempMin, units.temp)} to ${formatTemp(b.tempMax, units.temp)}, wind up to ${formatWind(b.windMax, units.wind)}, rain total ${formatPrecip(b.precipSum, units.temp)}`;
+  }
   const when =
     step === 'day'
       ? fmt(b.fromMs, 'ccc LLL d')
