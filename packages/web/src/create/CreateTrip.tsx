@@ -7,6 +7,7 @@ import {
   toBase64Url,
 } from '@planfully/shared';
 import { ApiError, createTrip, type RosterMember } from '../lib/api';
+import { ThemeToggle } from '../theme/ThemeToggle';
 import { Button } from '../ui/Button';
 import styles from './CreateTrip.module.css';
 
@@ -168,6 +169,9 @@ export function CreateTrip() {
 
   return (
     <main className={styles.page}>
+      <div style={{ float: 'right' }}>
+        <ThemeToggle />
+      </div>
       <h1>New trip</h1>
       <form className={styles.form} onSubmit={submit}>
         <label className={styles.field}>

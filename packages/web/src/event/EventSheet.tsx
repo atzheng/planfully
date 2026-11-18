@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useState, type ReactNode } from 'react';
 import type { Attachment, Event, Location } from '@planfully/shared';
 import { stringCodec, useQueryState } from '../lib/queryState';
 import { useBlobCached } from '../offline/useBlobCached';
@@ -12,6 +12,7 @@ import {
   formatDuration,
   formatLocalTime,
   formatSize,
+  isEmailAttachment,
   mapsUrl,
   opensInline,
   participantNames,
@@ -50,19 +51,21 @@ function LocationField({ label, loc }: { label: string; loc: Location }) {
   );
 }
 
-function AttachmentRow({ a }: { a: Attachment }) {
+// Lazy: the viewer and postal-mime stay out of the main bundle until an email is opened.
+const EmailViewer = lazy(() => import('./EmailViewer').then((m) => ({ default: m.EmailViewer })));
+
+function useOpenAttachment(a: Attachment) {
   const tripId = useTrip((s) => s.tripId);
   const keys = useTrip((s) => s.keys);
   const [state, setState] = useState<'idle' | 'loading' | 'error'>('idle');
-  const offline = useBlobCached(a.id, state);
 
-  const onClick = async () => {
+  const run = async (forceDownload = false) => {
     if (!keys) return;
     // Open synchronously so popup blockers allow it; navigate once the blob is ready.
     // The new window keeps `opener` (no `noopener`, which would make window.open return null).
     // That is safe here: we only do this for allowlisted inert types (pdf and raster images),
     // never for anything that can run script.
-    const win = opensInline(a.mime) ? window.open('', '_blank') : null;
+    const win = !forceDownload && opensInline(a.mime) ? window.open('', '_blank') : null;
     setState('loading');
     try {
       const blob = await fetchAttachment(a, { tripId, ...keys });
@@ -86,18 +89,55 @@ function AttachmentRow({ a }: { a: Attachment }) {
       setState('error');
     }
   };
+  return { state, run };
+}
+
+function AttachmentRow({
+  a,
+  onViewEmail,
+}: {
+  a: Attachment;
+  onViewEmail: (a: Attachment) => void;
+}) {
+  const { state, run } = useOpenAttachment(a);
+  const offline = useBlobCached(a.id, state);
+  const isEmail = isEmailAttachment(a);
 
   return (
     <li>
-      <button
-        type="button"
-        className={styles.linkButton}
-        onClick={() => void onClick()}
-        disabled={state === 'loading'}
-      >
-        {a.filename}
-      </button>{' '}
+      {isEmail ? (
+        <>
+          <button
+            type="button"
+            className={styles.linkButton}
+            onClick={() => onViewEmail(a)}
+            data-testid="view-email"
+          >
+            View email
+          </button>{' '}
+          <button
+            type="button"
+            className={styles.linkButton}
+            onClick={() => void run(true)}
+            disabled={state === 'loading'}
+          >
+            Download .eml
+          </button>{' '}
+        </>
+      ) : (
+        <>
+          <button
+            type="button"
+            className={styles.linkButton}
+            onClick={() => void run()}
+            disabled={state === 'loading'}
+          >
+            {a.filename}
+          </button>{' '}
+        </>
+      )}
       <span className={styles.meta}>
+        {isEmail && `${a.filename} · `}
         {formatSize(a.size)}
         {offline && ' · Available offline'}
         {state === 'loading' && ' · Opening...'}
@@ -108,6 +148,15 @@ function AttachmentRow({ a }: { a: Attachment }) {
         </div>
       )}
     </li>
+  );
+}
+
+function EmailView({ a, onBack }: { a: Attachment; onBack: () => void }) {
+  const { run } = useOpenAttachment(a);
+  return (
+    <Suspense fallback={<p role="status">Opening email...</p>}>
+      <EmailViewer attachment={a} onBack={onBack} onDownload={() => void run(true)} />
+    </Suspense>
   );
 }
 
@@ -173,10 +222,12 @@ function Details({
   event,
   onEdit,
   onDelete,
+  onViewEmail,
 }: {
   event: Event;
   onEdit: () => void;
   onDelete: () => void;
+  onViewEmail: (a: Attachment) => void;
 }) {
   const roster = useTrip((s) => s.meta?.roster ?? []);
   const [copied, setCopied] = useState<'idle' | 'ok' | 'failed'>('idle');
@@ -238,7 +289,7 @@ function Details({
           <Field label="Attachments">
             <ul className={styles.attachments}>
               {files.map((a) => (
-                <AttachmentRow key={a.id} a={a} />
+                <AttachmentRow key={a.id} a={a} onViewEmail={onViewEmail} />
               ))}
             </ul>
           </Field>
@@ -247,7 +298,7 @@ function Details({
           <Field label="Original email">
             <ul className={styles.attachments}>
               {emails.map((a) => (
-                <AttachmentRow key={a.id} a={a} />
+                <AttachmentRow key={a.id} a={a} onViewEmail={onViewEmail} />
               ))}
             </ul>
           </Field>
@@ -272,6 +323,7 @@ function OpenSheet({ id, setId }: { id: string; setId: (v: string) => void }) {
   const events = useTrip((s) => s.events);
   const close = useCallback(() => setId(''), [setId]);
   const [editing, setEditing] = useState<Event | null>(null);
+  const [viewing, setViewing] = useState<Attachment | null>(null);
   const actions = useTripActions();
   const event = events.find((e) => e.id === id);
 
@@ -298,9 +350,12 @@ function OpenSheet({ id, setId }: { id: string; setId: (v: string) => void }) {
             setEditing(null);
           }}
         />
+      ) : viewing ? (
+        <EmailView a={viewing} onBack={() => setViewing(null)} />
       ) : (
         <Details
           event={event}
+          onViewEmail={setViewing}
           onEdit={() => setEditing(event)}
           onDelete={() => {
             close();

@@ -61,6 +61,11 @@ const INLINE_MIMES = new Set([
 ]);
 export const opensInline = (mime: string) => INLINE_MIMES.has(mime.toLowerCase());
 
+/** The original-email attachment stored by the Worker (.eml, message/rfc822). */
+export function isEmailAttachment(a: { mime: string; filename: string }): boolean {
+  return a.mime.toLowerCase() === 'message/rfc822' || /\.eml$/i.test(a.filename);
+}
+
 export function formatSize(n: number): string {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;

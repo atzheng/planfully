@@ -6,6 +6,9 @@ import { stringCodec, useQueryState } from '../lib/queryState';
 import { useFilteredEvents } from '../filters/filter';
 import { TYPE_HUE, eventIcon } from '../timeline/model';
 import { boundsKey, buildMapModel, locatedEvents, type MapModel } from './markers';
+import { LocateControl } from './LocateControl';
+import { mapColorScheme } from '../theme/theme';
+import { useTheme } from '../theme/useTheme';
 import styles from './MapView.module.css';
 
 /** Google's demo map id enables advanced markers without a Cloud-styled map. */
@@ -22,17 +25,7 @@ const pinColors = (type: keyof typeof TYPE_HUE) => ({
 });
 
 function usePrefersDark(): boolean {
-  const [dark, setDark] = useState(
-    () => typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches,
-  );
-  useEffect(() => {
-    if (typeof matchMedia !== 'function') return;
-    const mq = matchMedia('(prefers-color-scheme: dark)');
-    const on = () => setDark(mq.matches);
-    mq.addEventListener('change', on);
-    return () => mq.removeEventListener('change', on);
-  }, []);
-  return dark;
+  return useTheme().resolved === 'dark';
 }
 
 /**
@@ -88,7 +81,7 @@ function MapCanvas({
         // colorScheme is read once at creation, so a theme change remounts the map.
         key={dark ? 'dark' : 'light'}
         mapId={env.VITE_GOOGLE_MAP_ID || DEFAULT_MAP_ID}
-        colorScheme={dark ? 'DARK' : 'LIGHT'}
+        colorScheme={mapColorScheme(dark ? 'dark' : 'light')}
         defaultCenter={{ lat: 20, lng: 0 }}
         defaultZoom={2}
         gestureHandling="greedy"
@@ -102,6 +95,7 @@ function MapCanvas({
         <Paths model={model} />
         <ClusteredMarkers model={model} onOpen={onOpen} />
         <AddAtPoint />
+        <LocateControl />
         {children}
       </Map>
       {model.markers.length === 0 && (
