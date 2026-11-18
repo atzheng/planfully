@@ -313,6 +313,14 @@ export function AppBar({ view, setView }: { view: View; setView: (v: View) => vo
             Exporting...
           </span>
         )}
+        {exporter.notice && (
+          <p role="status" className={styles.toast}>
+            {exporter.notice}{' '}
+            <button type="button" className={styles.linkButton} onClick={exporter.dismiss}>
+              Dismiss
+            </button>
+          </p>
+        )}
         {exporter.error && (
           <p role="alert" className={`${styles.toast} ${styles.toastError}`}>
             {exporter.error}{' '}

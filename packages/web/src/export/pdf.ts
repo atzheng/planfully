@@ -16,6 +16,9 @@ import {
   coverageFor,
   detectScripts,
   loadFontBase64,
+  maskRtl,
+  type FontChoice,
+  type RtlScript,
   sanitize,
   type FontLoader,
 } from './fonts';
@@ -239,8 +242,53 @@ export type RenderDeps = {
   save?: (doc: import('jspdf').jsPDF, fileName: string) => void;
 };
 
+export type RenderResult = {
+  /** Scripts the PDF cannot draw (replaced by a '[Arabic text]' placeholder); [] normally. */
+  unsupported: RtlScript[];
+};
+
+/**
+ * Plans the fonts for a document: every distinct string is masked (Arabic/Hebrew), assigned the
+ * font its own scripts need, and the set of fonts to embed is returned. Pure apart from the
+ * lazily imported coverage table.
+ */
+export async function planFonts(texts: readonly string[]): Promise<{
+  choices: FontChoice[];
+  unsupported: RtlScript[];
+  /** Masked, sanitised text and the font family to draw it in ('helvetica' = built-in). */
+  prepare: (s: string) => { text: string; family: string };
+}> {
+  const masked = new Map<string, string>();
+  const found = new Set<RtlScript>();
+  const byFamily = new Map<string, FontChoice>();
+  const choiceOf = new Map<string, FontChoice | null>();
+  // A Japanese itinerary has kanji-only cells too: they must use the Japanese glyph forms.
+  const docHasKana = texts.some((t) => detectScripts(maskRtl(t).text).has('kana'));
+  for (const raw of texts) {
+    if (masked.has(raw)) continue;
+    const m = maskRtl(raw);
+    m.found.forEach((f) => found.add(f));
+    masked.set(raw, m.text);
+    const choice = chooseFont(detectScripts(m.text), docHasKana);
+    choiceOf.set(raw, choice);
+    if (choice) byFamily.set(choice.family, choice);
+  }
+  const coverage = new Map<string, (cp: number) => boolean>();
+  for (const c of byFamily.values()) coverage.set(c.family, await coverageFor(c));
+  return {
+    choices: [...byFamily.values()],
+    unsupported: [...found].sort(),
+    prepare: (raw) => {
+      const m = masked.get(raw) ?? maskRtl(raw).text;
+      const choice = choiceOf.get(raw) ?? chooseFont(detectScripts(m), docHasKana);
+      const covers = choice ? (coverage.get(choice.family) ?? null) : null;
+      return { text: sanitize(m, covers), family: choice?.family ?? 'helvetica' };
+    },
+  };
+}
+
 /** Builds and downloads the PDF. Loads jsPDF and autotable on first use. */
-export async function renderPdf(it: Itinerary, deps: RenderDeps = {}): Promise<void> {
+export async function renderPdf(it: Itinerary, deps: RenderDeps = {}): Promise<RenderResult> {
   const [{ jsPDF }, { autoTable }] = await Promise.all([
     import('jspdf'),
     import('jspdf-autotable'),
@@ -249,63 +297,94 @@ export async function renderPdf(it: Itinerary, deps: RenderDeps = {}): Promise<v
   const margin = 40;
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
-  // Only fetch a Unicode font when the text needs one.
-  const choice = chooseFont(detectScripts(itineraryText(it)));
-  let family = 'helvetica';
-  if (choice) {
-    const load = deps.loadFont ?? loadFontBase64;
-    const data = new Map<string, string>();
-    for (const face of choice.faces) {
-      if (!data.has(face.file)) data.set(face.file, await load(face.file));
-    }
-    for (const face of choice.faces) {
-      const vfsName = `${face.style}-${face.file}`;
-      doc.addFileToVFS(vfsName, data.get(face.file) ?? '');
-      doc.addFont(vfsName, choice.family, face.style);
-    }
-    family = choice.family;
-  }
-  const covers = choice ? await coverageFor(choice) : null;
-  const t = (s: string) => sanitize(s, covers);
 
-  let y = margin + 14;
-  doc.setFont(family, 'bold').setFontSize(18).text(t(it.tripName), margin, y);
-  y += 16;
-  doc.setFont(family, 'normal').setFontSize(9).setTextColor(90);
-  doc.text(t(`${it.generated}. ${it.count} ${it.count === 1 ? 'event' : 'events'}.`), margin, y);
-  y += 12;
-  const filterLine = it.filters.length
-    ? `Filters: ${it.filters.join('; ')}`
-    : 'Filters: none (all events)';
-  const lines = doc.splitTextToSize(t(filterLine), pageW - margin * 2) as string[];
-  doc.text(lines, margin, y);
-  y += lines.length * 11 + 8;
-  doc.setTextColor(0);
-
-  // Notes and filenames live in the event cell so a row (and its notes) never splits across pages.
-  const cell = (r: ItineraryRow) => {
+  // Each cell (and heading) gets the font its own text needs, so a mixed itinerary can have Latin,
+  // Japanese and Korean rows in one PDF. Fonts are fetched only for the scripts present.
+  const NOTICE_FOR = (u: RtlScript[]) =>
+    `Text in ${u.join(' and ')} cannot be shown in this PDF and appears as a placeholder, e.g. [${u[0]} text].`;
+  const rowsAll = [...it.days.flatMap((d) => d.rows), ...it.unscheduled];
+  const cellText = (r: ItineraryRow) => {
     const extra = [r.notes, r.attachments.length ? `Files: ${r.attachments.join(', ')}` : '']
       .filter(Boolean)
       .join('\n');
-    return t(extra ? `${r.name}\n${extra}` : r.name);
+    return extra ? `${r.name}\n${extra}` : r.name;
   };
+  const filterLine = it.filters.length
+    ? `Filters: ${it.filters.join('; ')}`
+    : 'Filters: none (all events)';
+  const texts = [
+    it.tripName,
+    `${it.generated}. ${it.count} ${it.count === 1 ? 'event' : 'events'}.`,
+    filterLine,
+    ...it.days.map((d) => d.label),
+    ...rowsAll.flatMap((r) => [
+      r.time,
+      cellText(r),
+      r.type,
+      r.confirmation,
+      r.location,
+      r.participants,
+    ]),
+  ];
+  const plan = await planFonts(texts);
+  const load = deps.loadFont ?? loadFontBase64;
+  const loaded = new Map<string, string>();
+  for (const choice of plan.choices) {
+    for (const face of choice.faces) {
+      if (!loaded.has(face.file)) loaded.set(face.file, await load(face.file));
+    }
+  }
+  for (const choice of plan.choices) {
+    for (const face of choice.faces) {
+      const vfsName = `${choice.family}-${face.style}-${face.file}`;
+      doc.addFileToVFS(vfsName, loaded.get(face.file) ?? '');
+      doc.addFont(vfsName, choice.family, face.style);
+    }
+  }
+  const t = (s: string) => plan.prepare(s).text;
+  const fam = (s: string) => plan.prepare(s).family;
+  const cellOf = (s: string) => {
+    const p = plan.prepare(s);
+    return { content: p.text, styles: { font: p.family } };
+  };
+
+  let y = margin + 14;
+  doc.setFont(fam(it.tripName), 'bold').setFontSize(18).text(t(it.tripName), margin, y);
+  y += 16;
+  const gen = `${it.generated}. ${it.count} ${it.count === 1 ? 'event' : 'events'}.`;
+  doc.setFont(fam(gen), 'normal').setFontSize(9).setTextColor(90);
+  doc.text(t(gen), margin, y);
+  y += 12;
+  doc.setFont(fam(filterLine), 'normal');
+  const lines = doc.splitTextToSize(t(filterLine), pageW - margin * 2) as string[];
+  doc.text(lines, margin, y);
+  y += lines.length * 11 + 8;
+  if (plan.unsupported.length) {
+    doc.setFont('helvetica', 'normal').setTextColor(160, 40, 40);
+    const note = doc.splitTextToSize(NOTICE_FOR(plan.unsupported), pageW - margin * 2) as string[];
+    doc.text(note, margin, y);
+    y += note.length * 11 + 8;
+  }
+  doc.setTextColor(0);
+
+  // Notes and filenames live in the event cell so a row (and its notes) never splits across pages.
   const columns = ['Time', 'Event', 'Type', 'Confirmation', 'Location', 'Who'];
   const section = (title: string, rows: ItineraryRow[]) => {
     autoTable(doc, {
       startY: y,
       margin: { left: margin, right: margin, bottom: margin + 10 },
-      head: [[{ content: t(title), colSpan: columns.length }], columns],
+      head: [[{ ...cellOf(title), colSpan: columns.length }], columns],
       body: rows.map((r) => [
-        t(r.time),
-        cell(r),
-        t(r.type),
-        t(r.confirmation),
-        t(r.location),
-        t(r.participants),
+        cellOf(r.time),
+        cellOf(cellText(r)),
+        cellOf(r.type),
+        cellOf(r.confirmation),
+        cellOf(r.location),
+        cellOf(r.participants),
       ]),
       showHead: 'everyPage',
       rowPageBreak: 'avoid',
-      styles: { font: family, fontSize: 8.5, cellPadding: 4, overflow: 'linebreak' },
+      styles: { font: 'helvetica', fontSize: 8.5, cellPadding: 4, overflow: 'linebreak' },
       headStyles: { fillColor: [90, 90, 90], textColor: 255 },
       // Fixed widths so every day's table lines up (A4 content width is 515pt).
       columnStyles: {
@@ -337,4 +416,5 @@ export async function renderPdf(it: Itinerary, deps: RenderDeps = {}): Promise<v
     doc.text(`Page ${i} of ${pages}`, pageW - margin, pageH - 20, { align: 'right' });
   }
   (deps.save ?? ((d, name) => d.save(name)))(doc, pdfFileName(it.tripName));
+  return { unsupported: plan.unsupported };
 }
