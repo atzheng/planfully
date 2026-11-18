@@ -1,8 +1,11 @@
-import { useId, useMemo, useState, type ReactNode } from 'react';
+import { useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { Event } from '@planfully/shared';
 import { useTrip } from '../trip/store';
 import { Button } from '../ui/Button';
 import { Chip } from '../ui/Chip';
+import { Field } from '../ui/Field';
+import { Input, Select, Textarea } from '../ui/Input';
+import { Popover } from '../ui/Popover';
 import { PlaceSearch } from './PlaceSearch';
 import {
   buildFields,
@@ -16,6 +19,7 @@ import {
   type FormErrors,
   type FormValues,
 } from './formModel';
+import { modeLabel, statusLabel, typeLabel, zoneCity } from './labels';
 import styles from './EventForm.module.css';
 
 export type EventFormProps = {
@@ -28,27 +32,77 @@ export type EventFormProps = {
   defaultTz?: string;
 };
 
-function Field({
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  const id = useId();
+  return (
+    <section className={styles.section} aria-labelledby={id}>
+      <h3 id={id} className={styles.sectionTitle}>
+        {title}
+      </h3>
+      {children}
+    </section>
+  );
+}
+
+/** The zone as a quiet suffix; pressing it opens a selector. */
+function ZoneButton({
   label,
-  error,
-  id,
-  children,
+  value,
+  zones,
+  onChange,
 }: {
   label: string;
-  error?: string;
-  id: string;
-  children: ReactNode;
+  value: string;
+  zones: readonly string[];
+  onChange: (tz: string) => void;
 }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLButtonElement>(null);
   return (
-    <div className={styles.field}>
-      <label htmlFor={id}>{label}</label>
-      {children}
-      {error && (
-        <div id={`${id}-err`} role="alert" className={styles.error}>
-          {error}
-        </div>
-      )}
-    </div>
+    <>
+      <button
+        ref={ref}
+        type="button"
+        className={styles.zone}
+        aria-label={`${label}: ${value}`}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        title={value}
+        onClick={() => setOpen((o) => !o)}
+      >
+        {zoneCity(value)}
+      </button>
+      <Popover
+        open={open}
+        onClose={() => setOpen(false)}
+        anchorRef={ref}
+        label={label}
+        align="end"
+        onKeyDown={(e) => {
+          if (e.key !== 'Tab') return;
+          // Close and return focus to the trigger; keep the key from the Sheet's focus trap.
+          e.preventDefault();
+          e.stopPropagation();
+          setOpen(false);
+        }}
+      >
+        <Select
+          aria-label={label}
+          className={styles.zoneSelect}
+          value={value}
+          onChange={(e) => {
+            onChange(e.target.value);
+            setOpen(false);
+          }}
+        >
+          {zones.map((z) => (
+            <option key={z} value={z}>
+              {z}
+            </option>
+          ))}
+        </Select>
+      </Popover>
+    </>
   );
 }
 
@@ -68,21 +122,10 @@ export function EventForm({
   const set = <K extends keyof FormValues>(k: K, val: FormValues[K]) =>
     setV((prev) => ({ ...prev, [k]: val }));
   const id = (k: string) => `${uid}-${k}`;
-  const attrs = (k: keyof FormValues) => ({
-    id: id(k),
-    'aria-invalid': errors[k] ? true : undefined,
-    'aria-describedby': errors[k] ? `${id(k)}-err` : undefined,
-  });
-  const text = (k: keyof FormValues) => ({
-    ...attrs(k),
-    value: v[k] as string,
-    onChange: (e: { target: { value: string } }) => set(k, e.target.value as never),
-  });
-
   /** Name input with place search. Picking fills name, address and coordinates; typing after a pick drops them. */
-  const place = (k: 'location' | 'endLocation') => (
+  const place = (k: 'location' | 'endLocation', fieldId: string) => (
     <PlaceSearch
-      id={id(`${k}Name`)}
+      id={fieldId}
       value={v[`${k}Name`]}
       onChange={(t) =>
         setV((prev) => ({
@@ -134,116 +177,154 @@ export function EventForm({
   const known = new Set(roster.map((r) => r.id));
   const everyone = v.participants.length === 0;
 
+  const timeRow = (w: 'start' | 'end') => {
+    const dk = `${w}Date` as 'startDate' | 'endDate';
+    const tk = `${w}Time` as 'startTime' | 'endTime';
+    const zk = `${w}Tz` as 'startTz' | 'endTz';
+    const name = w === 'start' ? 'Start' : 'End';
+    const lid = id(`${w}Label`);
+    return (
+      <div className={styles.when} role="group" aria-labelledby={lid}>
+        <div className={styles.whenHead}>
+          <span id={lid} className={styles.whenLabel}>
+            {w === 'start' ? 'Starts' : 'Ends'}
+          </span>
+          <ZoneButton
+            label={`${name} time zone`}
+            value={v[zk]}
+            zones={zones}
+            onChange={(tz) => set(zk, tz)}
+          />
+        </div>
+        <Input
+          type="date"
+          aria-label={`${name} date`}
+          invalid={Boolean(errors[dk])}
+          aria-describedby={errors[dk] ? `${id(dk)}-err` : undefined}
+          value={v[dk]}
+          onChange={(e) => set(dk, e.target.value)}
+        />
+        <Input
+          type="time"
+          aria-label={`${name} time`}
+          value={v[tk]}
+          onChange={(e) => set(tk, e.target.value)}
+        />
+        {errors[dk] && (
+          <p id={`${id(dk)}-err`} role="alert" className={styles.rowError}>
+            {errors[dk]}
+          </p>
+        )}
+      </div>
+    );
+  };
+
   return (
     <form className={styles.form} onSubmit={(e) => void submit(e)} noValidate>
-      <Field label="Name" error={errors.name} id={id('name')}>
-        <input type="text" required {...text('name')} />
-      </Field>
-      <div className={styles.pair}>
-        <Field label="Type" id={id('type')}>
-          <select
-            {...attrs('type')}
-            value={v.type}
-            onChange={(e) => set('type', e.target.value as FormValues['type'])}
-          >
-            {EVENT_TYPES.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </select>
+      <Section title="What">
+        <Field label="Name" error={errors.name} required>
+          {(p) => (
+            <Input
+              {...p}
+              type="text"
+              placeholder="Dinner at Belcanto"
+              value={v.name}
+              onChange={(e) => set('name', e.target.value)}
+            />
+          )}
         </Field>
-        {isTransport(v.type) && (
-          <Field label="Mode" id={id('mode')}>
-            <select
-              {...attrs('mode')}
-              value={v.mode}
-              onChange={(e) => set('mode', e.target.value as FormValues['mode'])}
-            >
-              <option value="">(unspecified)</option>
-              {TRANSIT_MODES.map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-            </select>
-          </Field>
-        )}
-        <Field label="Status" id={id('status')}>
-          <select
-            {...attrs('status')}
-            value={v.status}
-            onChange={(e) => set('status', e.target.value as FormValues['status'])}
-          >
-            <option value="confirmed">confirmed</option>
-            <option value="cancelled">cancelled</option>
-          </select>
-        </Field>
-      </div>
-
-      {(['start', 'end'] as const).map((w) => {
-        const dk = `${w}Date` as 'startDate' | 'endDate';
-        const tk = `${w}Time` as 'startTime' | 'endTime';
-        const zk = `${w}Tz` as 'startTz' | 'endTz';
-        return (
-          <fieldset key={w} className={styles.group}>
-            <legend>{w === 'start' ? 'Start' : 'End'}</legend>
-            <div className={styles.pair}>
-              <Field label="Date" id={id(dk)} error={errors[dk]}>
-                <input type="date" {...text(dk)} />
-              </Field>
-              <Field label="Time" id={id(tk)}>
-                <input type="time" {...text(tk)} />
-              </Field>
-            </div>
-            <Field label="Time zone" id={id(zk)}>
-              <select {...attrs(zk)} value={v[zk]} onChange={(e) => set(zk, e.target.value)}>
-                {zones.map((z) => (
-                  <option key={z} value={z}>
-                    {z}
+        <div className={styles.cols}>
+          <Field label="Type">
+            {(p) => (
+              <Select
+                {...p}
+                value={v.type}
+                onChange={(e) => set('type', e.target.value as FormValues['type'])}
+              >
+                {EVENT_TYPES.map((t) => (
+                  <option key={t} value={t}>
+                    {typeLabel(t)}
                   </option>
                 ))}
-              </select>
+              </Select>
+            )}
+          </Field>
+          {isTransport(v.type) && (
+            <Field label="Transit mode">
+              {(p) => (
+                <Select
+                  {...p}
+                  value={v.mode}
+                  onChange={(e) => set('mode', e.target.value as FormValues['mode'])}
+                >
+                  <option value="">Unspecified</option>
+                  {TRANSIT_MODES.map((m) => (
+                    <option key={m} value={m}>
+                      {modeLabel(m)}
+                    </option>
+                  ))}
+                </Select>
+              )}
             </Field>
-          </fieldset>
-        );
-      })}
-
-      <Field label="Confirmation" id={id('confirmation')}>
-        <input type="text" {...text('confirmation')} />
-      </Field>
-      <fieldset className={styles.group}>
-        <legend>Location</legend>
-        <Field label="Name" id={id('locationName')}>
-          {place('location')}
-        </Field>
-        <Field label="Address" id={id('locationAddress')}>
-          <input
-            type="text"
-            {...text('locationAddress')}
-            onChange={(e) => setAddress('location', e.target.value)}
-          />
-        </Field>
-      </fieldset>
-      {isTransport(v.type) && (
-        <fieldset className={styles.group}>
-          <legend>Arrives at</legend>
-          <Field label="Name" id={id('endLocationName')}>
-            {place('endLocation')}
+          )}
+          <Field label="Status">
+            {(p) => (
+              <Select
+                {...p}
+                value={v.status}
+                onChange={(e) => set('status', e.target.value as FormValues['status'])}
+              >
+                {(['confirmed', 'cancelled'] as const).map((st) => (
+                  <option key={st} value={st}>
+                    {statusLabel(st)}
+                  </option>
+                ))}
+              </Select>
+            )}
           </Field>
-          <Field label="Address" id={id('endLocationAddress')}>
-            <input
-              type="text"
-              {...text('endLocationAddress')}
-              onChange={(e) => setAddress('endLocation', e.target.value)}
-            />
-          </Field>
-        </fieldset>
-      )}
+        </div>
+      </Section>
 
-      <fieldset className={styles.group}>
-        <legend>Participants</legend>
-        <div className={styles.chips}>
+      <Section title="When">
+        {timeRow('start')}
+        {timeRow('end')}
+      </Section>
+
+      <Section title="Where">
+        <div className={styles.cols}>
+          <Field label={isTransport(v.type) ? 'From' : 'Location'}>
+            {(p) => place('location', p.id)}
+          </Field>
+          <Field label="Address">
+            {(p) => (
+              <Input
+                {...p}
+                type="text"
+                value={v.locationAddress}
+                onChange={(e) => setAddress('location', e.target.value)}
+              />
+            )}
+          </Field>
+        </div>
+        {isTransport(v.type) && (
+          <div className={styles.cols}>
+            <Field label="Arrives at">{(p) => place('endLocation', p.id)}</Field>
+            <Field label="Arrival address">
+              {(p) => (
+                <Input
+                  {...p}
+                  type="text"
+                  value={v.endLocationAddress}
+                  onChange={(e) => setAddress('endLocation', e.target.value)}
+                />
+              )}
+            </Field>
+          </div>
+        )}
+      </Section>
+
+      <Section title="Who">
+        <div className={styles.chips} role="group" aria-label="Participants">
           <Chip selected={everyone} onClick={() => set('participants', [])}>
             Everyone
           </Chip>
@@ -265,20 +346,39 @@ export function EventForm({
           ))}
         </div>
         {v.participants.some((p) => !known.has(p)) && (
-          <div className={styles.hint}>Former participants stay on the event.</div>
+          <p className={styles.hint}>Former participants stay on the event.</p>
         )}
-      </fieldset>
+      </Section>
 
-      <Field label="Notes" id={id('notes')}>
-        <textarea rows={3} {...text('notes')} />
-      </Field>
+      <Section title="Details">
+        <Field label="Confirmation">
+          {(p) => (
+            <Input
+              {...p}
+              type="text"
+              value={v.confirmation}
+              onChange={(e) => set('confirmation', e.target.value)}
+            />
+          )}
+        </Field>
+        <Field label="Notes">
+          {(p) => (
+            <Textarea
+              {...p}
+              rows={3}
+              value={v.notes}
+              onChange={(e) => set('notes', e.target.value)}
+            />
+          )}
+        </Field>
+      </Section>
 
       <div className={styles.actions}>
-        <Button primary type="submit" disabled={busy}>
-          {busy ? 'Saving...' : submitLabel}
-        </Button>
-        <Button onClick={onCancel} disabled={busy}>
+        <Button variant="ghost" onClick={onCancel} disabled={busy}>
           Cancel
+        </Button>
+        <Button variant="primary" type="submit" disabled={busy}>
+          {busy ? 'Saving...' : submitLabel}
         </Button>
       </div>
     </form>

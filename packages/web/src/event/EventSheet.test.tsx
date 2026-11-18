@@ -87,7 +87,7 @@ describe('EventSheet', () => {
   test('renders every populated field', async () => {
     await setup('?e=e1');
     expect(await screen.findByRole('heading', { name: 'Dinner at Belcanto' })).toBeTruthy();
-    expect(screen.getByText('dining')).toBeTruthy();
+    expect(screen.getByText('Dining')).toBeTruthy();
     expect(screen.getByText('Cancelled')).toBeTruthy();
     expect(screen.getByText('Needs review')).toBeTruthy();
     expect(screen.getByText('2h')).toBeTruthy();
