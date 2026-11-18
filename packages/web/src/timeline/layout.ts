@@ -28,11 +28,16 @@ export type Block = {
   depth: number;
   /** True for a side-rail block (lodging, or any event of >= RAIL_MIN_MS): outside column allocation. */
   rail: boolean;
-  /** Rail blocks: cascade slot from the lane's right edge (0 = outermost); right offset is slot * RAIL_STEP_PX. 0 otherwise. */
+  /** Rail blocks: side-by-side slot from the lane's right edge (0 = outermost) within the rail's overlap group. 0 otherwise. */
   railSlot: number;
+  /** Rail blocks: CSS `right` (px) of the rail, from the lane's right edge. 0 otherwise. */
+  railX: number;
+  /** Rail blocks: width (px), shared by every rail in the overlap group. 0 otherwise. */
+  railWidth: number;
   /**
-   * Non-rail blocks: rail slots reserved at the lane's right edge (0..MAX_RAILS): the maximum over the block's
-   * overlap cluster, so right edges line up. Width stops short by `railBudgetPx(railInset)`. 0 with no rail.
+   * Non-rail blocks: px reserved at the lane's right edge: the pixel extent (`railX + railWidth`) of the widest-reaching
+   * rail the block (including its hit extension) overlaps in time, maximised over its overlap cluster so right
+   * edges line up. Width stops short by this much. 0 with no rail.
    */
   railInset: number;
 };
@@ -53,16 +58,39 @@ export const MAX_COLUMNS = 5;
 
 /** Events at least this long (and all lodging) render as a side rail instead of taking an overlap column. */
 export const RAIL_MIN_MS = 24 * 3600_000;
-/** Width (and hit area) of a rail; the lowest slot of overlapping rails is fully exposed. */
+/** Full width (and hit area) of a rail; used when at most 2 rails overlap in time. */
 export const RAIL_PX = 36;
-/** Overlapping rails cascade: each slot is offset this far from the previous one, so each keeps >= this strip. */
-export const RAIL_STEP_PX = 16;
-/** Most cascaded rail slots at a lane edge (budget 36 + 3 * 16 = 84px); more overlapping rails share the last slot. */
+/** Gap between side-by-side rails. */
+export const RAIL_GAP_PX = 2;
+/** Narrowest a rail gets while an overlap group has up to MAX_RAILS rails; more shrink further (never overlap). */
+export const MIN_RAIL_PX = 20;
+/** Overlap-group size up to which rails keep at least MIN_RAIL_PX. */
 export const MAX_RAILS = 4;
+/** Narrower than this a rail's vertical label does not fit: the rail shows only its colour (aria-label / title stay). */
+export const RAIL_LABEL_MIN_WIDTH_PX = 28;
+/** Rails of one overlap group share this much width at the lane edge on narrow lanes (more on wide lanes). */
+export const RAIL_BUDGET_MIN_PX = 80;
+export const RAIL_BUDGET_MAX_PX = 140;
 
-/** Horizontal space a lane edge reserves for `slots` cascaded rails (0 for none). */
-export function railBudgetPx(slots: number): number {
-  return slots <= 0 ? 0 : RAIL_PX + (slots - 1) * RAIL_STEP_PX;
+/** Width budget for a group of overlapping rails in a lane `laneWidthPx` wide (80px when unknown or narrow, up to 140px). */
+export function railBudgetPx(laneWidthPx?: number): number {
+  if (laneWidthPx === undefined || !Number.isFinite(laneWidthPx)) return RAIL_BUDGET_MIN_PX;
+  return Math.min(RAIL_BUDGET_MAX_PX, Math.max(RAIL_BUDGET_MIN_PX, Math.floor(laneWidthPx * 0.25)));
+}
+
+/**
+ * Width of each rail when `k` rails overlap in time: RAIL_PX for 1-2, else shrunk evenly so k rails plus gaps fit
+ * `budgetPx`, but not below MIN_RAIL_PX (up to MAX_RAILS) or 8px (beyond, so rails still never overlap).
+ */
+export function railWidthFor(k: number, budgetPx: number): number {
+  if (k <= 2) return RAIL_PX;
+  const fit = Math.floor((budgetPx - (k - 1) * RAIL_GAP_PX) / k);
+  return Math.min(RAIL_PX, Math.max(k <= MAX_RAILS ? MIN_RAIL_PX : 8, fit));
+}
+
+/** Pixel `right` offset of a rail in slot `slot` of a group whose rails are `widthPx` wide. */
+export function railOffsetPx(slot: number, widthPx: number): number {
+  return slot * (widthPx + RAIL_GAP_PX);
 }
 
 /** Narrowest a column may get before the cluster stops adding columns and cascades instead. */
@@ -241,15 +269,32 @@ export function layoutEvents(
   for (const lane of lanes) {
     const all = (byLane.get(lane.key) ?? []).sort((a, b) => a.top - b.top || b.height - a.height);
     const items = all.filter((i) => !i.rail);
-    // Rails: first free slot from the lane edge (interval colouring), capped at MAX_RAILS.
+    // Rails: connected groups of rails overlapping in time. Within a group each rail takes the first free slot
+    // (interval colouring); slots sit side by side from the lane edge, all with the group's width, so none overlap.
     const rails: Block[] = [];
-    const slotEnds: number[] = [];
+    const budget = railBudgetPx(laneWidthPx);
+    let group: Block[] = [];
+    let groupEnd = -Infinity;
+    let slotEnds: number[] = [];
+    const closeGroup = () => {
+      const w = railWidthFor(slotEnds.length, budget);
+      for (const r of group) {
+        r.railWidth = w;
+        r.railX = railOffsetPx(r.railSlot, w);
+      }
+      rails.push(...group);
+      group = [];
+      slotEnds = [];
+      groupEnd = -Infinity;
+    };
     for (const it of all) {
       if (!it.rail) continue;
+      if (it.top >= groupEnd) closeGroup();
       let slot = slotEnds.findIndex((end) => end <= it.top);
-      if (slot === -1) slot = slotEnds.length < MAX_RAILS ? slotEnds.length : MAX_RAILS - 1;
-      slotEnds[slot] = Math.max(slotEnds[slot] ?? -Infinity, it.top + it.height);
-      rails.push({
+      if (slot === -1) slot = slotEnds.length;
+      slotEnds[slot] = it.top + it.height;
+      groupEnd = Math.max(groupEnd, it.top + it.height);
+      group.push({
         eventId: it.eventId,
         laneKey: lane.key,
         top: it.top,
@@ -260,21 +305,25 @@ export function layoutEvents(
         depth: 0,
         rail: true,
         railSlot: slot,
+        railX: 0,
+        railWidth: 0,
         railInset: 0,
       });
     }
-    // Column cap for this lane, leaving room for the widest rail cascade the lane has.
+    closeGroup();
+    // Column cap for this lane, leaving room for the widest rail extent the lane has.
+    const laneRailPx = rails.reduce((m, r) => Math.max(m, r.railX + r.railWidth), 0);
     const laneMax =
       laneWidthPx === undefined
         ? maxColumns
-        : Math.min(maxColumns, maxColumnsForWidth(laneWidthPx, railBudgetPx(slotEnds.length)));
+        : Math.min(maxColumns, maxColumnsForWidth(laneWidthPx, laneRailPx));
     const insetFor = (top: number, height: number): number => {
       let n = 0;
       // A bar's 24px hit area reaches past its box: keep it clear of rails in its vertical reach too.
       const ext = hitExtensionPx(height);
       for (const r of rails) {
         if (r.top < top + height + ext && r.top + r.height > top - ext)
-          n = Math.max(n, r.railSlot + 1);
+          n = Math.max(n, r.railX + r.railWidth);
       }
       return n;
     };
@@ -333,6 +382,8 @@ export function layoutEvents(
         depth,
         rail: false,
         railSlot: 0,
+        railX: 0,
+        railWidth: 0,
         railInset: 0,
       });
     }
@@ -368,10 +419,10 @@ export function withoutEmptyLanes(layout: Layout, mode: LaneMode): Layout {
 
 /**
  * Horizontal geometry of a non-rail block in a lane `laneWidthPx` wide. Columns divide the lane minus the
- * rail reserve (`railPx`), so a cluster's right edges line up. In px: `left = (lane - railPx) * colFrom +
+ * rail reserve (`railInset` px), so a cluster's right edges line up. In px: `left = (lane - railPx) * colFrom +
  * leftInset`, `width = (lane - railPx) * colSpan - widthInset`. The cascade inset (depth) is clamped so the
  * block keeps at least DEPTH_STEP_PX of width and never vanishes. `left` / `width` are the same as CSS.
- * Rails position with `right = railSlot * RAIL_STEP_PX` and width RAIL_PX instead.
+ * Rails position with `right = railX` and `width = railWidth` instead; `railInset` is that px extent.
  */
 export function blockGeometry(
   b: Pick<Block, 'column' | 'columns' | 'span' | 'depth' | 'railInset'>,
@@ -384,7 +435,7 @@ export function blockGeometry(
   /** Cascade depth after clamping to the available width. */
   depth: number;
 } {
-  const railPx = railBudgetPx(b.railInset);
+  const railPx = b.railInset;
   const from = b.column / b.columns;
   const span = b.span / b.columns;
   const avail = (laneWidthPx - railPx) * span;
