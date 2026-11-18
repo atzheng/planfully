@@ -11,9 +11,7 @@ import {
   initialScrollMs,
   layoutEvents,
   maxColumnsForWidth,
-  RAIL_PX,
-  RAIL_STEP_PX,
-  MAX_RAILS,
+  RAIL_LABEL_MIN_WIDTH_PX,
   blockGeometry,
   isIconOnly,
   withoutEmptyLanes,
@@ -119,14 +117,13 @@ const Blocks = memo(function Blocks({
               style={{
                 top: b.top,
                 height: b.height,
-                right: b.railSlot * RAIL_STEP_PX,
-                zIndex: 1 + MAX_RAILS - b.railSlot,
-                width: RAIL_PX,
+                right: b.railX,
+                width: b.railWidth,
               }}
               onClick={() => onOpen(e.id)}
             >
               <span className={styles.railFace}>
-                {b.height >= RAIL_LABEL_MIN_PX && (
+                {b.height >= RAIL_LABEL_MIN_PX && b.railWidth >= RAIL_LABEL_MIN_WIDTH_PX && (
                   <span className={styles.railLabel} aria-hidden="true">
                     <EventIcon event={e} size={14} />
                     <span className={styles.railName}>{e.name}</span>
