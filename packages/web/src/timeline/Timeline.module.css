@@ -8,28 +8,31 @@
 /* Display zone: tiny label in the hour-gutter corner, opens the zone picker. */
 .tzCorner {
   position: absolute;
-  top: 3px;
-  left: 2px;
+  top: 0;
+  left: 0;
   z-index: 9;
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid transparent;
 }
 .todayPill {
   position: absolute;
-  top: calc(28px + var(--space-2));
+  top: calc(24px + var(--space-2));
   left: 50%;
   z-index: 9;
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
-  height: 32px;
+  height: 28px;
   padding: 0 var(--space-3) 0 var(--space-2);
   transform: translateX(-50%);
-  border: 1px solid var(--border-strong);
+  border: 1px solid var(--border);
   border-radius: var(--radius-pill);
   background: var(--raised);
   color: var(--accent);
   font: inherit;
-  font-size: var(--text-sm);
-  font-weight: 600;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
   box-shadow: var(--shadow-sm);
   cursor: pointer;
 }
@@ -43,6 +46,7 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--raised);
+  box-shadow: var(--shadow-sm);
 }
 /* +/- sits above the Add button (bottom right, 16px margin, 52px tall). Desktop only: phones pinch. */
 .zoomPair {
@@ -52,7 +56,7 @@
   z-index: 9;
   display: none;
   flex-direction: column;
-  border: 1px solid var(--border-strong);
+  border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--raised);
   box-shadow: var(--shadow-sm);
@@ -95,35 +99,46 @@
 .heading {
   display: flex;
   align-items: center;
-  /* Leaves the corner for the zone label. */
-  padding: 0 var(--space-3) 0 60px;
-  background: var(--surface-2);
+  gap: 5px;
+  /* The inline padding-left is set in Timeline.tsx: it starts the text at the lane edge, right of the tz corner. */
+  padding: 0 var(--space-3);
+  background: var(--surface);
   border-bottom: 1px solid var(--border);
-  font-size: var(--text-md);
-  font-weight: 600;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  color: var(--text-muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 .canvas {
   --axis-x: 0px;
-  --left: 52px;
+  --axis-w: 44px;
+  --left: var(--axis-w);
   --lane-min: 140px;
   position: relative;
   min-width: calc(var(--left) + var(--lanes) * var(--lane-min));
 }
 .canvas.withGutter {
   --axis-x: var(--gutter-w, 64px);
-  --left: calc(var(--gutter-w, 64px) + 52px);
+  --left: calc(var(--gutter-w, 64px) + var(--axis-w));
 }
 .body,
 .laneHeads {
   display: grid;
-  grid-template-columns: 52px minmax(0, 1fr);
+  grid-template-columns: var(--axis-w) minmax(0, 1fr);
 }
 .withGutter .body,
 .withGutter .laneHeads {
-  grid-template-columns: var(--gutter-w, 64px) 52px minmax(0, 1fr);
+  grid-template-columns: var(--gutter-w, 64px) var(--axis-w) minmax(0, 1fr);
 }
 .body {
   position: relative;
+}
+.laneHeads {
+  position: sticky;
+  z-index: 6;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
 }
 .laneHeads {
   position: sticky;
@@ -134,7 +149,7 @@
 .headSpacer {
   position: sticky;
   left: 0;
-  background: var(--surface-2);
+  background: var(--surface);
   z-index: 1;
 }
 .withGutter .headSpacer:nth-child(2) {
@@ -150,11 +165,12 @@
   min-width: var(--lane-min);
   display: flex;
   align-items: center;
-  gap: var(--space-1);
+  gap: 5px;
   padding: 0 var(--space-2);
   border-left: 1px solid var(--border);
-  font-size: var(--text-md);
-  font-weight: 600;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
   text-transform: capitalize;
 }
 .laneName {
@@ -206,44 +222,46 @@
   left: 0;
   right: 0;
   height: 0;
-  border-top: 1px solid var(--border);
-  opacity: 0.9;
+  border-top: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
 }
 .day,
 .week {
-  border-top-color: var(--text-muted);
+  border-top-color: var(--border-strong);
 }
 .tickLabel {
   position: absolute;
-  left: 4px;
-  font-size: var(--text-xs);
-  color: var(--text-muted);
+  right: 6px;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--text-subtle);
+  text-align: right;
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 .tickLabel.day,
 .tickLabel.week {
   white-space: normal;
-  max-width: 48px;
-  line-height: 1.1;
-  color: var(--text);
-  font-weight: 600;
+  max-width: 36px;
+  line-height: 1.2;
+  color: var(--text-muted);
 }
 .block {
   position: absolute;
   display: flex;
   gap: var(--space-1);
   align-items: flex-start;
-  padding: 2px 6px;
+  padding: 3px 6px 3px 7px;
   margin: 0;
   overflow: clip;
   border: 1px solid var(--border);
   border-left: 3px solid var(--type-bar);
   border-radius: var(--radius-sm);
-  background: var(--type-bg);
+  /* Surface card with a faint tint of the type colour. */
+  background: color-mix(in srgb, var(--type-bg) 62%, var(--surface));
   color: var(--type-fg);
   font: inherit;
-  font-size: var(--text-md);
-  line-height: 1.2;
+  font-size: var(--text-sm);
+  line-height: 1.25;
   text-align: left;
   cursor: pointer;
 }
@@ -272,15 +290,32 @@
   min-width: 0;
 }
 .blockName {
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   overflow: hidden;
   text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow-wrap: anywhere;
 }
 .blockTime {
   font-size: var(--text-xs);
-  opacity: 0.85;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .compact .blockName {
+  display: block;
+  white-space: nowrap;
+}
+.blockPlace {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 .zoomBtn {
@@ -309,7 +344,7 @@
   outline-offset: -2px;
 }
 .cancelled {
-  opacity: 0.7;
+  opacity: 0.6;
 }
 .cancelled .blockName,
 .cancelled.unscheduledItem {
@@ -318,41 +353,39 @@
 .review {
   flex: none;
   margin-left: auto;
-  width: 16px;
+  min-width: 16px;
   height: 16px;
-  border-radius: 50%;
-  background: var(--danger);
-  color: var(--surface);
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 16px;
-  text-align: center;
+  padding: 0 4px;
 }
 .now {
   position: absolute;
   left: 0;
   right: 0;
   z-index: 4;
-  border-top: 2px solid var(--danger);
+  border-top: 1.5px solid var(--accent);
   pointer-events: none;
 }
 .now::before {
   content: '';
   position: absolute;
-  left: -1px;
-  top: -6px;
-  width: 10px;
-  height: 10px;
+  left: 2px;
+  top: -5px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-  background: var(--danger);
+  background: var(--accent);
 }
 .unscheduled {
-  padding: var(--space-3);
+  padding: var(--space-2) var(--space-3) var(--space-3);
   border-top: 1px solid var(--border);
 }
 .unscheduled h2 {
-  margin: 0 0 var(--space-2);
-  font-size: var(--text-lg);
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
 }
 .unscheduled ul {
   margin: 0;
@@ -364,12 +397,14 @@
   align-items: center;
   gap: var(--space-2);
   width: 100%;
-  min-height: var(--tap);
+  min-height: 36px;
   padding: 0 var(--space-2);
   border: 0;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text);
   font: inherit;
+  font-size: var(--text-sm);
   text-align: left;
   cursor: pointer;
 }
@@ -393,17 +428,17 @@
   padding: 0 var(--space-2);
   overflow: clip;
   border: 1px solid var(--border);
-  border-left: 4px solid var(--accent);
+  border-left: 3px solid var(--accent);
   border-radius: var(--radius-sm);
   background: var(--surface-2);
   color: var(--text);
   font: inherit;
-  font-size: var(--text-md);
+  font-size: var(--text-sm);
   cursor: pointer;
 }
 .chipOpen {
   background: var(--accent);
-  color: var(--surface);
+  color: var(--accent-text);
 }
 .chipCount {
   font-weight: 700;
@@ -430,7 +465,7 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--surface);
-  box-shadow: 0 4px 16px rgb(0 0 0 / 0.25);
+  box-shadow: var(--shadow-sm);
 }
 .chipItem {
   display: flex;
@@ -456,5 +491,46 @@
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.heading b {
+  color: var(--text);
+  font-weight: var(--weight-semibold);
+}
+.tickLabel.day b {
+  display: block;
+  color: var(--text);
+  font-weight: var(--weight-semibold);
+}
+.block:hover {
+  border-color: var(--border-strong);
+  border-left-color: var(--type-bar);
+  background: color-mix(in srgb, var(--type-bg) 85%, var(--surface));
+}
+.block.selected {
+  z-index: 2;
+  border-color: var(--accent);
+  border-left-color: var(--type-bar);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.compact {
+  align-items: center;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+.compact .blockLabel {
+  align-items: center;
+}
+.unscheduledItem:hover {
+  background: var(--surface-2);
+}
+.unscheduledName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.nowrap {
   white-space: nowrap;
 }

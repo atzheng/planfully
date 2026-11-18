@@ -12,7 +12,9 @@ import { initialScrollMs, layoutEvents, withoutEmptyLanes } from './layout';
 import type { Layout } from './layout';
 import { laneModeCodec } from './lanes';
 import { useRegisterFit, useTimelineControls } from './controls';
-import { dayHeading, localStartLabel, roundRangeToHours, timelineRange, validZone } from './model';
+import { localStartLabel, roundRangeToHours, timelineRange, validZone } from './model';
+import { axisHourLabel, dayHeadingParts, localTimeRange, placeLabel, prefers12h } from './labels';
+import { Badge } from '../ui/Badge';
 import { anchorMsAt, scrollTopForAnchor } from './model';
 import {
   makeScale,
@@ -39,11 +41,15 @@ import { WEATHER_GUTTER_PX, WeatherLegend, WeatherStrip } from './WeatherStrip';
 import styles from './Timeline.module.css';
 
 /** Height of the sticky day heading; the canvas starts below it. */
-const HEADING_PX = 28;
+const HEADING_PX = 24;
 /** Height of the sticky lane header row (only present in a lane mode). */
-const LANE_HEAD_PX = 32;
+const LANE_HEAD_PX = 24;
+/** Width of the hour axis column (matches --axis-w in Timeline.module.css). */
+const AXIS_PX = 44;
 /** Context kept above the target when scrolling to a time. */
 const SCROLL_LEAD_PX = 48;
+/** Block height at which the place line joins the title and time. */
+const PLACE_MIN_PX = 60;
 const NO_ROSTER: readonly RosterMember[] = [];
 const NO_WHO: string[] = [];
 const NO_BLOCKS: Layout['blocks'] = [];
@@ -52,10 +58,12 @@ const browserZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || 'U
 const Blocks = memo(function Blocks({
   blocks,
   byId,
+  selectedId,
   onOpen,
 }: {
   blocks: Layout['blocks'];
   byId: Map<string, Event>;
+  selectedId: string;
   onOpen: (id: string) => void;
 }) {
   return (
@@ -63,14 +71,17 @@ const Blocks = memo(function Blocks({
       {blocks.map((b) => {
         const e = byId.get(b.eventId);
         if (!e) return null;
-        const time = localStartLabel(e);
+        const time = localTimeRange(e);
+        const place = placeLabel(e);
         const cancelled = e.status === 'cancelled';
         const secondary = showSecondary(b.height);
+        const selected = e.id === selectedId;
         return (
           <button
             key={`${b.laneKey}:${b.eventId}`}
             type="button"
-            className={`${styles.block} ${cancelled ? styles.cancelled : ''} ${secondary ? '' : styles.compact}`}
+            className={`${styles.block} ${cancelled ? styles.cancelled : ''} ${secondary ? '' : styles.compact} ${selected ? styles.selected : ''}`}
+            aria-current={selected ? 'true' : undefined}
             data-testid="block"
             data-event-id={e.id}
             data-type={e.type}
@@ -89,18 +100,22 @@ const Blocks = memo(function Blocks({
               <span className={styles.blockText}>
                 <span className={styles.blockName}>{e.name}</span>
                 {time && secondary && <span className={styles.blockTime}>{time}</span>}
+                {place && b.height >= PLACE_MIN_PX && (
+                  <span className={styles.blockPlace}>{place}</span>
+                )}
                 {cancelled && <span className={styles.srOnly}> (cancelled)</span>}
               </span>
             </span>
             {e.needsReview && (
-              <span
+              <Badge
+                tone="warning"
                 className={styles.review}
                 title="Needs review"
                 role="img"
                 aria-label="Needs review"
               >
                 !
-              </span>
+              </Badge>
             )}
           </button>
         );
@@ -239,18 +254,43 @@ const Ticks = memo(function Ticks({ list, scale }: { list: Tick[]; scale: TimeSc
   );
 });
 
-const TickLabels = memo(function TickLabels({ list, scale }: { list: Tick[]; scale: TimeScale }) {
+const TickLabels = memo(function TickLabels({
+  list,
+  scale,
+  zone,
+  endMs,
+}: {
+  list: Tick[];
+  scale: TimeScale;
+  zone: string;
+  /** The axis end: a tick there has no room below it (it would run into the Unscheduled list). */
+  endMs: number;
+}) {
+  const hour12 = useMemo(() => prefers12h(), []);
   return (
     <>
-      {list.map((t) => (
-        <span
-          key={t.ms}
-          className={`${styles.tickLabel} ${styles[t.kind]}`}
-          style={{ top: scale.toY(t.ms) + 2 }}
-        >
-          {t.label}
-        </span>
-      ))}
+      {list.map((t) => {
+        if (t.ms >= endMs) return null;
+        const parts = t.kind === 'day' ? dayHeadingParts(t.ms, zone) : null;
+        return (
+          <span
+            key={t.ms}
+            className={`${styles.tickLabel} ${styles[t.kind]}`}
+            style={{ top: scale.toY(t.ms) + 2 }}
+          >
+            {parts ? (
+              <>
+                <b>{parts.weekday}</b>
+                <span className={styles.nowrap}>{parts.rest}</span>
+              </>
+            ) : t.kind === 'hour' ? (
+              axisHourLabel(t.ms, zone, hour12)
+            ) : (
+              t.label
+            )}
+          </span>
+        );
+      })}
     </>
   );
 });
@@ -261,7 +301,7 @@ export function Timeline({ gutter: gutterProp }: { gutter?: ReactNode } = {}) {
   const roster = useTrip((s) => s.meta?.roster) ?? NO_ROSTER;
   const allEvents = useTrip((s) => s.events);
   const [tzRaw, setTzRaw] = useQueryState('tz', stringCodec, '');
-  const [, setOpenId] = useQueryState('e', stringCodec, '');
+  const [openId, setOpenId] = useQueryState('e', stringCodec, '');
   const [who] = useQueryState('who', stringListCodec, NO_WHO);
   const [laneMode] = useQueryState('lanes', laneModeCodec, 'none');
   const [wxOn] = useQueryState('wx', booleanCodec, false);
@@ -497,6 +537,9 @@ export function Timeline({ gutter: gutterProp }: { gutter?: ReactNode } = {}) {
   const todayOff = !!range && (todayTarget < visible.fromMs || todayTarget > visible.toMs);
 
   const empty = events.length === 0;
+  const headingParts = dayHeadingParts(headingMs, zone);
+  /** The tz label sits in the axis column's corner, to the right of any gutter. */
+  const cornerLeft = gutter ? gutterPx : 0;
   return (
     <section className={styles.timeline} aria-label="Timeline">
       {
@@ -526,8 +569,12 @@ export function Timeline({ gutter: gutterProp }: { gutter?: ReactNode } = {}) {
               {range && (
                 <>
                   <div className={styles.headingWrap}>
-                    <div className={styles.heading} style={{ height: HEADING_PX }}>
-                      {dayHeading(headingMs, zone)}
+                    <div
+                      className={styles.heading}
+                      style={{ height: HEADING_PX, paddingLeft: cornerLeft + AXIS_PX + 8 }}
+                    >
+                      <b>{headingParts.weekday}</b>
+                      <span>{headingParts.rest}</span>
                     </div>
                   </div>
                   <div
@@ -559,7 +606,9 @@ export function Timeline({ gutter: gutterProp }: { gutter?: ReactNode } = {}) {
                               data-lane={l.key}
                               title={l.label}
                             >
-                              {laneMode === 'type' && <EventIcon type={l.key as EventType} />}
+                              {laneMode === 'type' && (
+                                <EventIcon type={l.key as EventType} size={14} />
+                              )}
                               <span className={styles.laneName}>{l.label}</span>
                             </div>
                           ))}
@@ -576,7 +625,7 @@ export function Timeline({ gutter: gutterProp }: { gutter?: ReactNode } = {}) {
                         <Ticks list={tickList} scale={scale} />
                       </div>
                       <div className={styles.axis} aria-hidden="true">
-                        <TickLabels list={tickList} scale={scale} />
+                        <TickLabels list={tickList} scale={scale} zone={zone} endMs={range.toMs} />
                       </div>
                       <div className={styles.lanes}>
                         {layout.lanes.map((l) => (
@@ -597,6 +646,7 @@ export function Timeline({ gutter: gutterProp }: { gutter?: ReactNode } = {}) {
                               <Blocks
                                 blocks={blocksByLane.get(l.key) ?? NO_BLOCKS}
                                 byId={byId}
+                                selectedId={openId}
                                 onOpen={setOpenId}
                               />
                             )}
@@ -627,11 +677,12 @@ export function Timeline({ gutter: gutterProp }: { gutter?: ReactNode } = {}) {
                           data-testid="unscheduled-item"
                           onClick={() => setOpenId(e.id)}
                         >
-                          <EventIcon event={e} /> {e.name}
+                          <EventIcon event={e} />
+                          <span className={styles.unscheduledName}>{e.name}</span>
                           {e.needsReview && (
-                            <span className={styles.review} role="img" aria-label="Needs review">
+                            <Badge tone="warning" role="img" aria-label="Needs review">
                               !
-                            </span>
+                            </Badge>
                           )}
                           {e.status === 'cancelled' && (
                             <span className={styles.srOnly}> (cancelled)</span>
@@ -646,7 +697,10 @@ export function Timeline({ gutter: gutterProp }: { gutter?: ReactNode } = {}) {
           </VisibleRangeProvider>
         </TimeScaleProvider>
       }
-      <div className={styles.tzCorner}>
+      <div
+        className={styles.tzCorner}
+        style={{ left: cornerLeft, width: AXIS_PX, height: HEADING_PX }}
+      >
         <TimeZonePicker
           compact
           zone={zone}
@@ -666,6 +720,7 @@ export function Timeline({ gutter: gutterProp }: { gutter?: ReactNode } = {}) {
         <button
           type="button"
           className={styles.todayPill}
+          style={{ top: topPx + 8 }}
           data-testid="today-pill"
           onClick={() => scrollToMs(todayTarget)}
         >
