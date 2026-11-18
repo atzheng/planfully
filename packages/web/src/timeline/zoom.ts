@@ -139,7 +139,7 @@ export function fitPx(
 ): number {
   if (!(toMs > fromMs) || !(viewportPx > 0)) return DEFAULT_PX_PER_HOUR;
   if (gaps.length === 0) return clampPx(viewportPx / ((toMs - fromMs) / HOUR_MS));
-  const heightAt =(px: number) => condensedPx(gaps, fromMs, toMs, px);
+  const heightAt = (px: number) => condensedPx(gaps, fromMs, toMs, px);
   if (heightAt(MIN_PX_PER_HOUR) >= viewportPx) return MIN_PX_PER_HOUR;
   if (heightAt(MAX_PX_PER_HOUR) <= viewportPx) return MAX_PX_PER_HOUR;
   let lo = MIN_PX_PER_HOUR;
