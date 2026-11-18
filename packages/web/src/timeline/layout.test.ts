@@ -215,8 +215,14 @@ test('expand: overlapping blocks never overlap visually (property)', () => {
 });
 
 test('expand: lanes by type and by person are laid out independently', () => {
-  const a = ev('2026-06-01T09:00', '2026-06-01T12:00', { type: 'stay', participants: ['alice'] });
-  const b = ev('2026-06-01T10:00', '2026-06-01T11:00', { type: 'activity', participants: ['alice'] });
+  const a = ev('2026-06-01T09:00', '2026-06-01T12:00', {
+    type: 'lodging',
+    participants: ['alice'],
+  });
+  const b = ev('2026-06-01T10:00', '2026-06-01T11:00', {
+    type: 'activity',
+    participants: ['alice'],
+  });
   const byType = layoutEvents([a, b], scale, { mode: 'type', roster: [] }).blocks;
   expect(byType.every((x) => x.columns === 1 && x.span === 1)).toBe(true);
   const byPerson = layoutEvents([a, b], scale, { mode: 'participant', roster }).blocks;
