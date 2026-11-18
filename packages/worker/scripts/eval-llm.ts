@@ -12,7 +12,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import type { RosterMember } from '@planfully/shared';
 import PostalMime from 'postal-mime';
 import type { ParsedEmail } from '../src/email/types';
-import { PARSE_MODEL, ParseError, parseEmail, type LlmClient } from '../src/llm/parse';
+import { PARSE_MODEL, ParseError, parseEmailDetailed, type LlmClient } from '../src/llm/parse';
 
 const roster: RosterMember[] = [
   { id: 'alice', name: 'Alice Smith', aliases: ['SMITH/ALICE MS'] },
@@ -47,7 +47,8 @@ function apiKey(): string {
   const path = fileURLToPath(new URL('../.dev.vars', import.meta.url));
   if (existsSync(path)) {
     const m = /^ANTHROPIC_API_KEY=(.*)$/m.exec(readFileSync(path, 'utf8'));
-    if (m?.[1]?.trim()) return m[1].trim();
+    const v = m?.[1]?.trim().replace(/^(['"])(.*)\1$/, '$2');
+    if (v) return v;
   }
   console.error('eval: no ANTHROPIC_API_KEY (environment or packages/worker/.dev.vars)');
   process.exit(1);
@@ -99,7 +100,7 @@ function looseContains(actual: string | undefined, want: string): boolean {
     .every((w) => a.includes(w));
 }
 
-type Actual = Awaited<ReturnType<typeof parseEmail>>[number];
+type Actual = Awaited<ReturnType<typeof parseEmailDetailed>>['events'][number];
 
 function compareEvent(want: ExpectedEvent, got: Actual): string[] {
   const bad: string[] = [];
@@ -191,8 +192,14 @@ async function main(): Promise<void> {
       let problems: string[];
       try {
         const today = (email.date ? new Date(email.date) : new Date()).toISOString().slice(0, 10);
-        const events = await parseEmail(email, { roster, today, apiKey: key, client });
+        const { events, dropped } = await parseEmailDetailed(email, {
+          roster,
+          today,
+          apiKey: key,
+          client,
+        });
         problems = compare(expected, events);
+        if (dropped) problems.push(`${dropped} invalid event(s) dropped`);
       } catch (err) {
         problems = [
           err instanceof ParseError

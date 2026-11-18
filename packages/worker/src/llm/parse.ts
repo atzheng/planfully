@@ -85,13 +85,13 @@ function toBase64(bytes: Uint8Array): string {
   return btoa(bin);
 }
 
-/** A text/plain part shorter than this is treated as a possible "view in browser" stub. */
+/** A text/plain part shorter than this may be a "view in browser" stub, so the HTML is sent too. */
 const STUB_TEXT_CHARS = 200;
 
 /**
- * Best-effort body text: text/plain when it has real content. When the plain part is empty or a
- * short stub ("View this email in your browser: ..."), the rendered HTML is used instead if it
- * says more.
+ * Best-effort body text: text/plain when it has real content. When the plain part is short (or
+ * empty) and an HTML part exists, both are sent, plain first and the rendered HTML clearly
+ * delimited, so neither a stub nor a short real booking in plain text is lost.
  */
 export function bodyText(email: Pick<ParsedEmail, 'text' | 'html'>): string {
   return bodyTextLimited(email).text;
@@ -104,8 +104,13 @@ function bodyTextLimited(email: Pick<ParsedEmail, 'text' | 'html'>): {
   const plain = email.text?.trim() ?? '';
   if (plain.length >= STUB_TEXT_CHARS || !email.html) return { text: plain, truncated: false };
   const rendered = htmlToTextLimited(email.html);
-  if (rendered.text.trim().length > plain.length) return rendered;
-  return { text: plain, truncated: false };
+  const html = rendered.text.trim();
+  if (!html) return { text: plain, truncated: false };
+  if (!plain) return rendered;
+  return {
+    text: `${plain}\n\n--- HTML version of the same email ---\n${html}`,
+    truncated: rendered.truncated,
+  };
 }
 
 type Built = { params: Anthropic.MessageCreateParamsNonStreaming; attachedIndexes: Set<number> };
@@ -187,13 +192,13 @@ export function buildRequest(
 }
 
 /**
- * Returns the valid events, or a short content-free description of what was wrong. Elements are
- * validated one by one: invalid ones are dropped as long as at least one element is valid (or the
- * array is empty), so a single bad event does not discard the rest of the email.
+ * Returns the valid events and how many elements were invalid, or a short content-free
+ * description of what was wrong. Elements are validated one by one; the caller decides what a
+ * partial result is worth.
  */
 function readResponse(
   msg: Anthropic.Message,
-): { events: ParsedEvent[] } | { problem: string; refusal?: true } {
+): { events: ParsedEvent[]; dropped: number } | { problem: string; refusal?: true } {
   if (msg.stop_reason === 'refusal') return { problem: 'refusal', refusal: true };
   if (msg.stop_reason === 'max_tokens') return { problem: 'max_tokens' };
   const text = msg.content
@@ -220,7 +225,7 @@ function readResponse(
     }
   }
   if (events.length === 0 && json.length > 0) return { problem: firstIssue };
-  return { events };
+  return { events, dropped: json.length - events.length };
 }
 
 /** Drop ids not on the roster and attachment indexes that were not sent. Never invent either. */
@@ -237,12 +242,20 @@ function sanitize(
   }));
 }
 
+/** Events plus the number of model-returned events that failed validation and were dropped. */
+export type ParseResult = { events: ParsedEvent[]; dropped: number };
+
 /**
- * One Claude call (plus at most one retry on invalid output; none after max_tokens) turning an email into events.
+ * One Claude call (plus at most one retry on invalid or partly invalid output; none after
+ * max_tokens) turning an email into events. If the retry is still partly invalid, the valid
+ * events are returned with `dropped` > 0 so the caller can flag the email for review.
  * Throws ParseError; see ParseErrorReason. With an empty apiKey it throws `no_api_key` without
  * creating a client or sending anything.
  */
-export async function parseEmail(email: ParsedEmail, opts: ParseOptions): Promise<ParsedEvent[]> {
+export async function parseEmailDetailed(
+  email: ParsedEmail,
+  opts: ParseOptions,
+): Promise<ParseResult> {
   if (!opts.apiKey && !opts.client) {
     throw new ParseError('no_api_key', 'ANTHROPIC_API_KEY is not set');
   }
@@ -250,6 +263,7 @@ export async function parseEmail(email: ParsedEmail, opts: ParseOptions): Promis
   const { params, attachedIndexes } = buildRequest(email, opts);
 
   let problem = '';
+  let partial: ParseResult | undefined;
   for (let attempt = 0; attempt < 2; attempt++) {
     let msg: Anthropic.Message;
     try {
@@ -261,10 +275,24 @@ export async function parseEmail(email: ParsedEmail, opts: ParseOptions): Promis
     }
     const result = readResponse(msg);
     if ('refusal' in result) throw new ParseError('refusal', 'model refused the request');
-    if ('events' in result) return sanitize(result.events, opts.roster, attachedIndexes);
+    if ('events' in result) {
+      const events = sanitize(result.events, opts.roster, attachedIndexes);
+      if (result.dropped === 0) return { events, dropped: 0 };
+      // Keep the better of the partial answers and ask once more.
+      if (!partial || events.length > partial.events.length)
+        partial = { events, dropped: result.dropped };
+      problem = 'some events invalid';
+      continue;
+    }
     problem = result.problem;
     // The same request would overflow again: retrying it identically only wastes a call.
     if (problem === 'max_tokens') break;
   }
+  if (partial) return partial;
   throw new ParseError('invalid_output', `model output invalid after retry: ${problem}`);
+}
+
+/** Like parseEmailDetailed, returning only the events. */
+export async function parseEmail(email: ParsedEmail, opts: ParseOptions): Promise<ParsedEvent[]> {
+  return (await parseEmailDetailed(email, opts)).events;
 }

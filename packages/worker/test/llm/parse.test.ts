@@ -2,7 +2,13 @@ import type Anthropic from '@anthropic-ai/sdk';
 import { eventsJsonSchema, type RosterMember } from '@planfully/shared';
 import { describe, expect, test, vi } from 'vitest';
 import type { ParsedEmail } from '../../src/email/types';
-import { MAX_IMAGE_BYTES, ParseError, parseEmail, type LlmClient } from '../../src/llm/parse';
+import {
+  MAX_IMAGE_BYTES,
+  ParseError,
+  parseEmail,
+  parseEmailDetailed,
+  type LlmClient,
+} from '../../src/llm/parse';
 
 const roster: RosterMember[] = [
   { id: 'alice', name: 'Alice Smith', aliases: ['SMITH/ALICE MS'] },
@@ -129,11 +135,27 @@ describe('parseEmail', () => {
     expect(create).toHaveBeenCalledTimes(1);
   });
 
-  test('one invalid element is dropped, valid ones are kept', async () => {
+  test('partly invalid then valid on retry returns all events', async () => {
     const bad = { ...validEvent, type: 'spaceship' };
-    const { client, create } = fakeClient(reply(JSON.stringify([bad, validEvent])));
-    expect(await parseEmail(email(), { ...base, client })).toEqual([validEvent]);
-    expect(create).toHaveBeenCalledTimes(1);
+    const { client, create } = fakeClient(
+      reply(JSON.stringify([bad, validEvent])),
+      reply(JSON.stringify([validEvent, validEvent])),
+    );
+    const r = await parseEmailDetailed(email(), { ...base, client });
+    expect(r).toEqual({ events: [validEvent, validEvent], dropped: 0 });
+    expect(create).toHaveBeenCalledTimes(2);
+  });
+
+  test('partly invalid twice keeps the valid events and reports the drop', async () => {
+    const bad = { ...validEvent, type: 'spaceship' };
+    const { client, create } = fakeClient(
+      reply(JSON.stringify([bad, validEvent])),
+      reply(JSON.stringify([validEvent, validEvent, bad])),
+    );
+    const r = await parseEmailDetailed(email(), { ...base, client });
+    expect(r.events).toEqual([validEvent, validEvent]);
+    expect(r.dropped).toBe(1);
+    expect(create).toHaveBeenCalledTimes(2);
   });
 
   test('prefers HTML when text/plain is a short stub', async () => {
@@ -148,6 +170,23 @@ describe('parseEmail', () => {
     );
     const content = firstCall(create).messages[0]?.content as Anthropic.ContentBlockParam[];
     expect((content[0] as Anthropic.TextBlockParam).text).toContain('timed entry 10:30');
+  });
+
+  test('a short real text/plain is sent together with the HTML, not replaced by it', async () => {
+    const { client, create } = fakeClient(reply('[]'));
+    await parseEmail(
+      email({
+        text: 'Table for 4 at Chez Nous, 14 June 20:00. Code TB-1.',
+        html: '<p>Chez Nous newsletter: win a free dinner, new menu, gift cards and much more.</p>',
+        attachments: [],
+      }),
+      { ...base, client },
+    );
+    const content = firstCall(create).messages[0]?.content as Anthropic.ContentBlockParam[];
+    const text = (content[0] as Anthropic.TextBlockParam).text;
+    expect(text).toContain('Table for 4 at Chez Nous');
+    expect(text).toContain('win a free dinner');
+    expect(text.indexOf('Table for 4')).toBeLessThan(text.indexOf('win a free dinner'));
   });
 
   test('keeps a substantial text/plain over HTML', async () => {
