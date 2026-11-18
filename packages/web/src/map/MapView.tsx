@@ -7,7 +7,7 @@ import { useFilteredEvents } from '../filters/filter';
 import { MapPinOff } from 'lucide-react';
 import { Badge } from '../ui/Badge';
 import { EventIcon } from '../ui/EventIcon';
-import { boundsKey, buildMapModel, locatedEvents, type MapModel } from './markers';
+import { boundsKey, buildMapModel, clusterHasEvent, locatedEvents, type MapModel } from './markers';
 import { LocateControl } from './LocateControl';
 import { cssVar } from './cssVar';
 import { mapColorScheme } from '../theme/theme';
@@ -22,21 +22,35 @@ const FIT_MAX_ZOOM = 15;
 type Env = { VITE_GOOGLE_MAPS_KEY?: string; VITE_GOOGLE_MAP_ID?: string };
 const env = import.meta.env as Env;
 
-/** Cluster marker: an accent disc with a surface ring and the count; size steps up with the count. */
-export const clusterRenderer: Renderer = {
-  render({ count, position }) {
-    const el = document.createElement('div');
-    el.className = styles.cluster ?? '';
-    el.dataset.size = count >= 100 ? 'lg' : count >= 10 ? 'md' : 'sm';
-    el.textContent = String(count);
-    el.setAttribute('aria-label', `${count} events`);
-    return new google.maps.marker.AdvancedMarkerElement({
-      position,
-      content: el,
-      zIndex: 1000 + count,
-    });
-  },
-};
+/**
+ * Cluster marker: an accent disc with a surface ring and the count; size steps up with the count.
+ * A cluster holding the selected event gets an accent halo (`data-selected`), like a selected pin.
+ * `eventIdOf` maps a member marker to its event id; `selected` is read at render time.
+ */
+export function makeClusterRenderer(
+  selected: () => string,
+  eventIdOf: (m: google.maps.marker.AdvancedMarkerElement) => string | undefined,
+): Renderer {
+  return {
+    render({ count, position, markers }) {
+      const el = document.createElement('div');
+      el.className = styles.cluster ?? '';
+      el.dataset.size = count >= 100 ? 'lg' : count >= 10 ? 'md' : 'sm';
+      el.textContent = String(count);
+      const has = clusterHasEvent(
+        (markers ?? []).map((m) => eventIdOf(m as google.maps.marker.AdvancedMarkerElement)),
+        selected(),
+      );
+      if (has) el.dataset.selected = '';
+      el.setAttribute('aria-label', `${count} events${has ? ', includes the selected event' : ''}`);
+      return new google.maps.marker.AdvancedMarkerElement({
+        position,
+        content: el,
+        zIndex: has ? 1900 : 1000 + count,
+      });
+    },
+  };
+}
 
 function usePrefersDark(): boolean {
   return useTheme().resolved === 'dark';
@@ -285,10 +299,19 @@ function ClusteredMarkers({ model, onOpen }: { model: MapModel; onOpen: (id: str
   const [selected] = useQueryState('e', stringCodec, '');
   const [els, setEls] = useState<Record<string, MarkerEl>>({});
   const clusterer = useRef<MarkerClusterer | null>(null);
+  const selectedRef = useRef(selected);
+  selectedRef.current = selected;
+  const idsByEl = useRef(new WeakMap<MarkerEl, string>());
 
   useEffect(() => {
     if (!map) return;
-    clusterer.current ??= new MarkerClusterer({ map, renderer: clusterRenderer });
+    clusterer.current ??= new MarkerClusterer({
+      map,
+      renderer: makeClusterRenderer(
+        () => selectedRef.current,
+        (m) => idsByEl.current.get(m),
+      ),
+    });
     return () => {
       clusterer.current?.clearMarkers();
       clusterer.current?.onRemove();
@@ -296,10 +319,12 @@ function ClusteredMarkers({ model, onOpen }: { model: MapModel; onOpen: (id: str
     };
   }, [map]);
 
+  // Re-adding also on a selection change: the clusterer keeps unchanged clusters' markers on a plain
+  // render(), so clearing is what makes the halo follow ?e=.
   useEffect(() => {
     clusterer.current?.clearMarkers();
     clusterer.current?.addMarkers(Object.values(els));
-  }, [els]);
+  }, [els, selected]);
 
   // One stable callback per key: a new ref function each render would be called with null then the
   // element again, setting state on every render.
@@ -311,7 +336,10 @@ function ClusteredMarkers({ model, onOpen }: { model: MapModel; onOpen: (id: str
         setEls((prev) => {
           if (el ? prev[key] === el : !(key in prev)) return prev;
           const next = Object.fromEntries(Object.entries(prev).filter(([k]) => k !== key));
-          if (el) next[key] = el;
+          if (el) {
+            next[key] = el;
+            idsByEl.current.set(el, key.slice(0, key.lastIndexOf(':')));
+          }
           return next;
         });
       refs.current.set(key, cb);

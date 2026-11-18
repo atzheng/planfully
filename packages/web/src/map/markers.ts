@@ -132,3 +132,11 @@ export function buildMapModel(events: readonly Event[]): MapModel {
 export function boundsKey(b: Bounds | null): string {
   return b ? [b.north, b.south, b.east, b.west].join(',') : '';
 }
+
+/** True when one of a cluster's member event ids is the selected one (empty selection never matches). */
+export function clusterHasEvent(
+  memberIds: readonly (string | undefined)[],
+  selected: string,
+): boolean {
+  return selected !== '' && memberIds.includes(selected);
+}

@@ -146,6 +146,14 @@
     0 2px 8px rgb(15 23 42 / 0.4);
   cursor: pointer;
 }
+/* Holds the selected event: accent halo outside the surface ring, like a selected pin. */
+.cluster[data-selected] {
+  transform: scale(1.12);
+  box-shadow:
+    0 0 0 3px var(--surface),
+    0 0 0 6px var(--accent),
+    0 3px 10px rgb(15 23 42 / 0.45);
+}
 .cluster[data-size='md'] {
   width: 42px;
   height: 42px;
