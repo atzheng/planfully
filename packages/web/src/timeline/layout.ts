@@ -157,12 +157,14 @@ export function layoutEvents(
     let cluster: Block[] = [];
     let clusterEnd = -Infinity;
     let colEnds: number[] = [];
+    let shares: number[] = [];
     const flush = () => {
       for (const b of cluster) b.columns = colEnds.length;
       expandSpans(cluster);
       blocks.push(...cluster);
       cluster = [];
       colEnds = [];
+      shares = [];
       clusterEnd = -Infinity;
     };
     for (const it of items) {
@@ -172,7 +174,14 @@ export function layoutEvents(
         if (colEnds.length < maxColumns) col = colEnds.length;
         else {
           // Column cap reached: share the column that frees up first (blocks stack, none is dropped).
-          col = colEnds.indexOf(Math.min(...colEnds));
+          let best = 0;
+          for (let c = 1; c < colEnds.length; c++) {
+            const bc = colEnds[best] ?? 0;
+            const cc = colEnds[c] ?? 0;
+            if (cc < bc || (cc === bc && (shares[c] ?? 0) < (shares[best] ?? 0))) best = c;
+          }
+          col = best;
+          shares[col] = (shares[col] ?? 0) + 1;
         }
       }
       colEnds[col] = Math.max(colEnds[col] ?? -Infinity, it.top + it.height);

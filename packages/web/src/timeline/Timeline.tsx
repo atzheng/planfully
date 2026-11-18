@@ -10,7 +10,7 @@ import { blockTier, initialScrollMs, layoutEvents, withoutEmptyLanes } from './l
 import type { Layout } from './layout';
 import { laneModeCodec } from './lanes';
 import { useRegisterFit, useTimelineControls } from './controls';
-import { localStartLabel, roundRangeToHours, timelineRange, validZone } from './model';
+import { roundRangeToHours, timelineRange, validZone } from './model';
 import { axisHourLabel, dayHeadingParts, localTimeRange, placeLabel, prefers12h } from './labels';
 import { Badge } from '../ui/Badge';
 import { anchorMsAt, scrollTopForAnchor } from './model';

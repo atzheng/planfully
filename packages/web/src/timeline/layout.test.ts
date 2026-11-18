@@ -206,7 +206,7 @@ test('expand: overlapping blocks never overlap visually (property)', () => {
     const s = Math.floor(rnd() * 600);
     evs.push(ev(f(s), f(s + 15 + Math.floor(rnd() * 240))));
   }
-  const { blocks } = layoutEvents(evs, scale, none);
+  const { blocks } = layoutEvents(evs, scale, none, 1000); // uncapped: the cap deliberately overlaps
   for (const x of blocks) {
     expect(x.span).toBeGreaterThanOrEqual(1);
     expect(x.column + x.span).toBeLessThanOrEqual(x.columns);
