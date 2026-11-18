@@ -95,7 +95,14 @@ async function run(a: TripApi, fragment = '#' + frag) {
   await vi.waitFor(() => expect(store.getState().status).not.toBe('loading'));
   return store;
 }
+// Only for "nothing happened" checks; to wait for a cache write, use cacheHolds() instead.
 const flush = () => new Promise((r) => setTimeout(r, 30));
+// Cache writes are fire-and-forget, so wait for them to land rather than sleeping a fixed time.
+const cacheHolds = (seqs: number[], lastSeq: number) =>
+  vi.waitFor(async () => {
+    expect((await db.loadRecords('t1')).map((r) => r.seq)).toEqual(seqs);
+    expect((await db.getTrip('t1'))?.lastSeq).toBe(lastSeq);
+  });
 
 describe('store cache', () => {
   test('round-trip: first load is cached; a new store shows it with no network, then syncs since lastSeq', async () => {
@@ -103,7 +110,7 @@ describe('store cache', () => {
     const r2 = await stored(2, put('e2', 'Museum'));
     const first = api([{ records: [r1, r2], latestSeq: 7, more: false }]);
     const s1 = await run(first.api);
-    await flush();
+    await cacheHolds([1, 2], 7);
     s1.stop();
     expect(await db.getTrip('t1')).toMatchObject({ secret: frag, lastSeq: 7 });
     expect((await db.loadRecords('t1')).map((r) => r.seq)).toEqual([1, 2]);
@@ -125,7 +132,7 @@ describe('store cache', () => {
   test('ordering: cached data renders before the network answers, then sync adds new records', async () => {
     const r1 = await stored(1, put('e1', 'Dinner'));
     const s1 = await run(api([{ records: [r1], latestSeq: 1, more: false }]).api);
-    await flush();
+    await cacheHolds([1], 1);
     s1.stop();
 
     const r2 = await stored(2, put('e2', 'Museum'));
@@ -144,7 +151,7 @@ describe('store cache', () => {
     expect(second.getRecords.mock.calls[0]?.[1]).toBe(1);
     release();
     await vi.waitFor(() => expect(s2.getState().events).toHaveLength(2));
-    await flush();
+    await cacheHolds([1, 2], 2);
     s2.stop();
     expect((await db.loadRecords('t1')).map((r) => r.seq)).toEqual([1, 2]);
     expect((await db.getTrip('t1'))?.lastSeq).toBe(2);
@@ -154,10 +161,10 @@ describe('store cache', () => {
   test('lastSeq follows the cursor, not appended records; appended real records are cached, temp ones are not', async () => {
     const r1 = await stored(1, put('e1', 'Dinner'));
     const s = await run(api([{ records: [r1], latestSeq: 4, more: false }]).api);
-    await flush();
+    await cacheHolds([1], 4);
     s.getState().append([{ seq: 9, dedupe: null, createdAt: 'x', body: put('e9', 'Own') }]);
     s.getState().addOptimistic(put('tmp', 'Temp'));
-    await flush();
+    await cacheHolds([1, 9], 4);
     s.stop();
     expect((await db.getTrip('t1'))?.lastSeq).toBe(4);
     expect((await db.loadRecords('t1')).map((r) => r.seq)).toEqual([1, 9]);
@@ -167,9 +174,9 @@ describe('store cache', () => {
   test('removeRecords (compaction) is applied to the cache', async () => {
     const recs = [await stored(1, put('e1', 'A')), await stored(2, put('e2', 'B'))];
     const s = await run(api([{ records: recs, latestSeq: 2, more: false }]).api);
-    await flush();
+    await cacheHolds([1, 2], 2);
     s.getState().removeRecords([1]);
-    await flush();
+    await cacheHolds([2], 2);
     s.stop();
     expect((await db.loadRecords('t1')).map((r) => r.seq)).toEqual([2]);
   });
@@ -178,7 +185,7 @@ describe('store cache', () => {
     const good = await stored(1, put('e1', 'A'));
     const bad: StoredRecord = { ...good, seq: 2, ciphertext: toBase64(new Uint8Array(80)) };
     const s1 = await run(api([{ records: [good, bad], latestSeq: 2, more: false }]).api);
-    await flush();
+    await cacheHolds([1, 2], 2);
     s1.stop();
     expect((await db.loadRecords('t1')).map((r) => r.seq)).toEqual([1, 2]);
     const s2 = await run(api([{ records: [], latestSeq: 2, more: false }]).api);
@@ -190,7 +197,7 @@ describe('store cache', () => {
   test('a different secret ignores the old cache and replaces it', async () => {
     const r1 = await stored(1, put('e1', 'Old'));
     const s1 = await run(api([{ records: [r1], latestSeq: 1, more: false }]).api);
-    await flush();
+    await cacheHolds([1], 1);
     s1.stop();
 
     const secret2 = generateSecret();
@@ -203,7 +210,7 @@ describe('store cache', () => {
     };
     const second = api([{ records: [r2], latestSeq: 5, more: false }]);
     const s2 = await run(second.api, '#' + encodeSecret(secret2));
-    await flush();
+    await cacheHolds([5], 5);
     s2.stop();
     expect(second.getRecords.mock.calls[0]?.[1]).toBe(0);
     expect(s2.getState().events.map((e) => e.name)).toEqual(['New']);
@@ -311,7 +318,7 @@ describe('review fixes', () => {
       api([{ records: recs, latestSeq: 4, more: false }], { postRecord, deleteRecord }).api,
     );
     await vi.waitFor(() => expect(deleteRecord).toHaveBeenCalledTimes(4));
-    await flush();
+    await cacheHolds([100], 4);
     s.stop();
     expect(s.getState().events.map((e) => e.name)).toEqual(['Dinner 4']);
     const cached = await db.loadRecords('t1');
@@ -350,7 +357,7 @@ describe('review fixes', () => {
     const s = await run(a.api);
     await vi.waitFor(() => expect(a.getRecords).toHaveBeenCalled());
     await vi.waitFor(() => expect(s.getState().events.map((e) => e.name)).toEqual(['Keep']));
-    await flush();
+    await cacheHolds([1], 2);
     s.stop();
     expect(a.getRecords.mock.calls[0]?.[1]).toBe(0);
     expect((await db.loadRecords('t1')).map((r) => r.seq)).toEqual([1]);
@@ -385,7 +392,7 @@ describe('review fixes', () => {
     });
     const s = await run(api([new ApiError(404, 'no')]).api);
     await vi.waitFor(() => expect(s.getState().status).toBe('error'));
-    await flush();
+    await vi.waitFor(async () => expect((await db.getTrip('t1'))?.revokedAt).toBeTruthy());
     s.stop();
     expect((await db.getTrip('t1'))?.revokedAt).toBeTruthy();
     expect((await db.loadRecords('t1')).map((r) => r.seq)).toEqual([1]);

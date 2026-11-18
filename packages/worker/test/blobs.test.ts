@@ -17,6 +17,11 @@ async function trip(token: string) {
 const put = (u: string, headers: Record<string, string>, body: BodyInit | null) =>
   exports.default.fetch(u, { method: 'PUT', headers, body });
 
+const sha256Hex = async (b: ArrayBuffer | Uint8Array) =>
+  Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', b)), (x) =>
+    x.toString(16).padStart(2, '0'),
+  ).join('');
+
 describe('blobs API', () => {
   test('PUT then GET returns identical 1 MB', async () => {
     const t = await trip('tok-a');
@@ -27,7 +32,11 @@ describe('blobs API', () => {
     const res = await exports.default.fetch(url(t.id, id), { headers: t.auth });
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toBe('application/octet-stream');
-    expect(new Uint8Array(await res.arrayBuffer())).toEqual(bytes);
+    // Compare via a digest: toEqual on a 1 MB typed array walks it element by element and
+    // takes seconds under parallel load.
+    const got = await res.arrayBuffer();
+    expect(got.byteLength).toBe(bytes.length);
+    expect(await sha256Hex(got)).toBe(await sha256Hex(bytes));
   });
 
   test('second PUT to the same id is 409 and keeps the original', async () => {
