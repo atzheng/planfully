@@ -166,3 +166,70 @@ test('few hundred events lay out quickly', () => {
   layoutEvents(evs, scale, none);
   expect(performance.now() - t).toBeLessThan(200);
 });
+
+test('expand: a block with nothing to its right spans to the lane edge', () => {
+  const a = ev('2026-06-01T09:00', '2026-06-01T12:00'); // col 0
+  const b = ev('2026-06-01T09:00', '2026-06-01T10:00'); // col 1
+  const c = ev('2026-06-01T09:00', '2026-06-01T10:00'); // col 2
+  const e = ev('2026-06-01T10:30', '2026-06-01T12:00'); // reuses col 1; col 2 is free beside it
+  const { blocks } = layoutEvents([a, b, c, e], scale, none);
+  const by = (x: Event) => need(blocks.find((y) => y.eventId === x.id));
+  expect(by(a)).toMatchObject({ column: 0, columns: 3, span: 1 });
+  expect(by(b)).toMatchObject({ column: 1, span: 1 });
+  expect(by(c)).toMatchObject({ column: 2, span: 1 });
+  expect(by(e)).toMatchObject({ column: 1, columns: 3, span: 2 });
+});
+
+test('expand: chain A overlaps B overlaps C but A not C', () => {
+  const a = ev('2026-06-01T09:00', '2026-06-01T10:00');
+  const b = ev('2026-06-01T09:30', '2026-06-01T10:30');
+  const c = ev('2026-06-01T10:15', '2026-06-01T11:00');
+  const { blocks } = layoutEvents([a, b, c], scale, none);
+  const by = (x: Event) => need(blocks.find((y) => y.eventId === x.id));
+  expect(by(a)).toMatchObject({ column: 0, columns: 2, span: 1 });
+  expect(by(b)).toMatchObject({ column: 1, columns: 2, span: 1 });
+  expect(by(c)).toMatchObject({ column: 0, columns: 2, span: 1 });
+});
+
+test('expand: overlapping blocks never overlap visually (property)', () => {
+  let seed = 7;
+  const rnd = () => (seed = (seed * 1664525 + 1013904223) % 4294967296) / 4294967296;
+  const f = (m: number) =>
+    `2026-06-01T${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+  const evs: Event[] = [];
+  for (let i = 0; i < 60; i++) {
+    const s = Math.floor(rnd() * 600);
+    evs.push(ev(f(s), f(s + 15 + Math.floor(rnd() * 240))));
+  }
+  const { blocks } = layoutEvents(evs, scale, none);
+  for (const x of blocks) {
+    expect(x.span).toBeGreaterThanOrEqual(1);
+    expect(x.column + x.span).toBeLessThanOrEqual(x.columns);
+    for (const y of blocks) {
+      if (x === y) continue;
+      const timeOverlap = x.top < y.top + y.height && y.top < x.top + x.height;
+      const colOverlap = x.column < y.column + y.span && y.column < x.column + x.span;
+      expect(timeOverlap && colOverlap).toBe(false);
+    }
+  }
+});
+
+test('expand: lanes by type and by person are laid out independently', () => {
+  const a = ev('2026-06-01T09:00', '2026-06-01T12:00', {
+    type: 'lodging',
+    participants: ['alice'],
+  });
+  const b = ev('2026-06-01T10:00', '2026-06-01T11:00', {
+    type: 'activity',
+    participants: ['alice'],
+  });
+  const byType = layoutEvents([a, b], scale, { mode: 'type', roster: [] }).blocks;
+  expect(byType.every((x) => x.columns === 1 && x.span === 1)).toBe(true);
+  const byPerson = layoutEvents([a, b], scale, { mode: 'participant', roster }).blocks;
+  const alice = byPerson.filter((x) => x.laneKey === 'alice');
+  expect(alice.map((x) => [x.columns, x.span])).toEqual([
+    [2, 1],
+    [2, 1],
+  ]);
+  expect(byPerson.filter((x) => x.laneKey === 'bob')).toEqual([]);
+});

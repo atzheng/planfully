@@ -89,7 +89,7 @@ const Blocks = memo(function Blocks({
               top: b.top,
               height: b.height,
               left: `calc(${(b.column / b.columns) * 100}% + 1px)`,
-              width: `calc(${100 / b.columns}% - 2px)`,
+              width: `calc(${(b.span / b.columns) * 100}% - 2px)`,
             }}
             onClick={() => onOpen(e.id)}
           >
@@ -626,6 +626,9 @@ export function Timeline({ gutter: gutterProp }: { gutter?: ReactNode } = {}) {
                       </div>
                       <div className={styles.axis} aria-hidden="true">
                         <TickLabels list={tickList} scale={scale} zone={zone} endMs={range.toMs} />
+                        {showNow && (
+                          <div className={styles.nowTick} style={{ top: scale.toY(nowMs) }} />
+                        )}
                       </div>
                       <div className={styles.lanes}>
                         {layout.lanes.map((l) => (

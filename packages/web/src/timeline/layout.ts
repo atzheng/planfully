@@ -20,6 +20,8 @@ export type Block = {
   column: number;
   /** Total columns in the overlap cluster this block belongs to (block width = 1 / columns). */
   columns: number;
+  /** Columns this block occupies (>= 1): it extends right over columns with no time-overlapping block. */
+  span: number;
 };
 export type Layout = { lanes: Lane[]; blocks: Block[]; unscheduled: Event[] };
 
@@ -44,6 +46,26 @@ function laneKeys(e: Event, spec: LaneSpec, rosterIds: Set<string>): string[] {
           : [...new Set(e.participants.map((p) => (rosterIds.has(p) ? p : OTHER_LANE_KEY)))];
       return spec.only?.length ? all.filter((k) => spec.only?.includes(k)) : all;
     }
+  }
+}
+
+/**
+ * Expand-to-fill: each block extends right until the nearest column (to its right) holding a block
+ * that overlaps it in time, or to the cluster edge. Overlapping blocks keep their own columns, so
+ * expanded blocks never overlap visually. Blocks arrive sorted by top, so each block only scans the
+ * blocks that start before it ends.
+ */
+function expandSpans(cluster: Block[]): void {
+  const columns = cluster[0]?.columns ?? 1;
+  if (columns === 1) return;
+  for (const b of cluster) {
+    const bottom = b.top + b.height;
+    let nearest = columns;
+    for (const o of cluster) {
+      if (o.top >= bottom) break;
+      if (o.column > b.column && o.column < nearest && o.top + o.height > b.top) nearest = o.column;
+    }
+    b.span = nearest - b.column;
   }
 }
 
@@ -106,6 +128,7 @@ export function layoutEvents(events: Event[], scale: TimeScale, spec: LaneSpec):
     let colEnds: number[] = [];
     const flush = () => {
       for (const b of cluster) b.columns = colEnds.length;
+      expandSpans(cluster);
       blocks.push(...cluster);
       cluster = [];
       colEnds = [];
@@ -124,6 +147,7 @@ export function layoutEvents(events: Event[], scale: TimeScale, spec: LaneSpec):
         height: it.height,
         column: col,
         columns: 1,
+        span: 1,
       });
     }
     flush();
