@@ -14,6 +14,7 @@ import {
   formatSize,
   isEmailAttachment,
   mapsUrl,
+  canOpenInline,
   opensInline,
   participantNames,
 } from './format';
@@ -70,7 +71,10 @@ function useOpenAttachment(a: Attachment) {
     try {
       const blob = await fetchAttachment(a, { tripId, ...keys });
       const url = URL.createObjectURL(blob);
-      if (win) {
+      // Magic-byte check: only open inline if the content really is the allowlisted type.
+      const inline = win && (await canOpenInline(blob, a.mime));
+      if (win && !inline) win.close();
+      if (win && inline) {
         win.location.href = url;
       } else {
         const link = document.createElement('a');

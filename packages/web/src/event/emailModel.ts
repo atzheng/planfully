@@ -25,6 +25,7 @@ export type ParsedEmail = {
 /** Never include allow-scripts or allow-same-origin: the email is untrusted and must stay inert. */
 export const EMAIL_IFRAME_SANDBOX = 'allow-popups allow-popups-to-escape-sandbox';
 
+import { MAGIC_BYTES, matchesMagic } from './format';
 export { isEmailAttachment } from './format';
 
 export function formatAddress(a: ParsedAddress | undefined): string {
@@ -77,6 +78,14 @@ function toBase64(bytes: Uint8Array): string {
   return btoa(s);
 }
 
+/** Largest .eml the in-app viewer will parse; above this only a download is offered. */
+export const MAX_EMAIL_BYTES = 5 * 1024 * 1024;
+/** Inline (cid:) images larger than this, or beyond the total budget, are left out of the srcdoc. */
+export const MAX_INLINE_IMAGE_BYTES = 2 * 1024 * 1024;
+export const MAX_INLINE_TOTAL_BYTES = 8 * 1024 * 1024;
+/** Bytes of a too-large .eml read to show its headers. */
+export const HEADER_PEEK_BYTES = 64 * 1024;
+
 const RASTER = /^image\/(png|jpe?g|gif|webp)$/i;
 
 /** Replace `cid:` references (img src and CSS url()) with data: URLs of the matching inline parts. */
@@ -87,6 +96,8 @@ export function rewriteCid(html: string, attachments: ParsedAttachment[]): strin
     byCid.set(a.contentId.replace(/^<|>$/g, '').toLowerCase(), a);
   }
   if (byCid.size === 0) return html;
+  let budget = MAX_INLINE_TOTAL_BYTES;
+  const done = new Map<ParsedAttachment, string | null>();
   return html.replace(/cid:([^\s"'()<>]+)/gi, (whole, id: string) => {
     let key = id;
     try {
@@ -95,9 +106,23 @@ export function rewriteCid(html: string, attachments: ParsedAttachment[]): strin
       // keep the raw id
     }
     const a = byCid.get(key.toLowerCase());
-    return a
-      ? `data:${a.mimeType.toLowerCase()};base64,${toBase64(contentBytes(a.content))}`
-      : whole;
+    if (!a) return whole;
+    let uri = done.get(a);
+    if (uri === undefined) {
+      const bytes = contentBytes(a.content);
+      if (
+        bytes.byteLength > MAX_INLINE_IMAGE_BYTES ||
+        bytes.byteLength > budget ||
+        !matchesMagic(a.mimeType, bytes.subarray(0, MAGIC_BYTES))
+      ) {
+        uri = null;
+      } else {
+        budget -= bytes.byteLength;
+        uri = `data:${a.mimeType.toLowerCase()};base64,${toBase64(bytes)}`;
+      }
+      done.set(a, uri);
+    }
+    return uri ?? whole;
   });
 }
 
