@@ -207,14 +207,21 @@ export function buildSampleTrip(
   };
 
   // --- transport -------------------------------------------------------------------------
-  put('flight', 'TP204 New York to Lisbon', {
+  // Written in the pre-merge shape (type 'flight', no mode) on purpose: proves that records
+  // stored before the transit merge still read as Transit + plane icon.
+  const legacy = put('transit', 'TP204 New York to Lisbon', {
+    mode: 'flight',
     start: t(-2, '19:35', NY),
     end: t(-1, '07:30', LIS),
     location: loc('John F. Kennedy International Airport', 40.6413, -73.7781),
     endLocation: loc('Lisbon Humberto Delgado Airport', 38.7742, -9.1342),
     confirmation: 'XK4P7Q',
   });
-  put('train', 'Alfa Pendular Lisbon to Porto', {
+  const legacyRaw: { type: string; mode?: string } = legacy;
+  legacyRaw.type = 'flight';
+  delete legacyRaw.mode;
+  put('transit', 'Alfa Pendular Lisbon to Porto', {
+    mode: 'train',
     start: t(4, '10:04', LIS),
     end: t(4, '12:59', LIS),
     location: loc('Lisboa Santa Apolonia', 38.7141, -9.1226),
@@ -222,7 +229,8 @@ export function buildSampleTrip(
     confirmation: 'CP88213',
     participants: [ALEX, SAM],
   });
-  put('car', 'Rental car (Porto)', {
+  put('transit', 'Rental car (Porto)', {
+    mode: 'car',
     start: t(5, '09:30', LIS),
     end: t(8, '18:00', LIS),
     location: loc('Porto Airport Rent-a-car', 41.2481, -8.6814),
@@ -230,7 +238,8 @@ export function buildSampleTrip(
     confirmation: 'RC-559012',
     participants: [ALEX, JO],
   });
-  put('flight', 'TP209 Porto to New York', {
+  put('transit', 'TP209 Porto to New York', {
+    mode: 'flight',
     start: t(10, '11:20', LIS),
     end: t(10, '14:05', NY),
     location: loc('Porto Airport', 41.2481, -8.6814),

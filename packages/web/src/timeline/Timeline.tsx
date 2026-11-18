@@ -22,6 +22,7 @@ import {
   timelineRange,
   TYPE_HUE,
   TYPE_ICON,
+  eventIcon,
   validZone,
 } from './model';
 import { anchorMsAt, scrollTopForAnchor } from './model';
@@ -101,7 +102,7 @@ const Blocks = memo(function Blocks({
           >
             <span className={styles.blockLabel}>
               <span className={styles.blockIcon} aria-hidden="true">
-                {TYPE_ICON[e.type]}
+                {eventIcon(e)}
               </span>
               <span className={styles.blockText}>
                 <span className={styles.blockName}>{e.name}</span>
@@ -221,7 +222,7 @@ const Chips = memo(function Chips({
                           onOpen(id);
                         }}
                       >
-                        <span aria-hidden="true">{TYPE_ICON[e.type]}</span>
+                        <span aria-hidden="true">{eventIcon(e)}</span>
                         <span className={styles.chipItemName}>{e.name}</span>
                         {time && <span className={styles.blockTime}>{time}</span>}
                         {e.status === 'cancelled' && (
@@ -696,7 +697,7 @@ export function Timeline({ gutter: gutterProp }: { gutter?: ReactNode } = {}) {
                           data-testid="unscheduled-item"
                           onClick={() => setOpenId(e.id)}
                         >
-                          <span aria-hidden="true">{TYPE_ICON[e.type]}</span> {e.name}
+                          <span aria-hidden="true">{eventIcon(e)}</span> {e.name}
                           {e.needsReview && (
                             <span className={styles.review} role="img" aria-label="Needs review">
                               !

@@ -252,6 +252,13 @@ describe('identity and history', () => {
     expect(result.current.e).toBe(first.e);
   });
 
+  test('legacy ?type=flight,train URLs map to the transit chip', () => {
+    const { result } = renderHook(() => useFilter(), {
+      wrapper: wrap('/t/x?type=flight,train,dining,car'),
+    });
+    expect(result.current.types).toEqual(['transit', 'dining']);
+  });
+
   test('from after to is swapped', () => {
     const { result } = renderHook(() => useFilter(), {
       wrapper: wrap('/t/x?from=2026-05-09&to=2026-05-02'),

@@ -55,7 +55,8 @@ function emailPut(id: string): RecordBody {
     kind: 'put',
     event: {
       id,
-      type: 'flight',
+      type: 'transit',
+      mode: 'flight',
       name: 'TP123',
       status: 'confirmed',
       attachments: [],

@@ -11,6 +11,7 @@ import {
 } from '@planfully/shared';
 import { createTripStore, TripProvider } from '../trip/store';
 import { EventSheet } from './EventSheet';
+import { MAX_EMAIL_BYTES } from './emailModel';
 
 afterEach(() => {
   cleanup();
@@ -122,6 +123,16 @@ describe('EmailViewer', () => {
     expect(await screen.findByRole('button', { name: 'Download .eml' })).toBeTruthy();
   });
 
+  test('over the size cap: headers and a download offer, no body parsing', async () => {
+    const big = TEXT_EML + 'x'.repeat(MAX_EMAIL_BYTES);
+    await setup(big);
+    fireEvent.click(await screen.findByTestId('view-email'));
+    expect(await screen.findByText(/too large to view here/)).toBeTruthy();
+    expect(screen.getByText('Plain')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Download .eml' })).toBeTruthy();
+    expect(document.querySelector('pre, iframe')).toBeNull();
+  }, 30_000);
+
   test('text email: linkified, markup shown as text', async () => {
     await setup(TEXT_EML);
     fireEvent.click(await screen.findByTestId('view-email'));
@@ -129,5 +140,27 @@ describe('EmailViewer', () => {
     expect(link.getAttribute('rel')).toBe('noopener noreferrer');
     expect(screen.getByText(/<b>details<\/b>/)).toBeTruthy();
     expect(document.querySelector('pre b')).toBeNull();
+  });
+});
+
+describe('openOrDownload', () => {
+  test('opens a valid PDF synchronously in the click tick, downloads a fake one', async () => {
+    const { openOrDownload } = await import('./EmailViewer');
+    URL.createObjectURL = vi.fn(() => 'blob:x');
+    URL.revokeObjectURL = vi.fn();
+    const open = vi.fn();
+    vi.stubGlobal('open', open);
+    const base = {
+      filename: 'a.pdf',
+      mimeType: 'application/pdf',
+      disposition: 'attachment' as const,
+    };
+    openOrDownload({ ...base, content: new TextEncoder().encode('%PDF-1.7 x') });
+    expect(open).toHaveBeenCalledTimes(1); // no await before it
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    openOrDownload({ ...base, content: new TextEncoder().encode('<script>') });
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(click).toHaveBeenCalledTimes(1);
+    click.mockRestore();
   });
 });

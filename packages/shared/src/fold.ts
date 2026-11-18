@@ -161,6 +161,11 @@ function mergePinned(a: string[] | undefined, b: Iterable<string>): string[] | u
   return s.size === 0 ? undefined : [...s].sort();
 }
 
+/** `mode` only exists on transit events: a type change must not leave a stale one behind. */
+function dropStaleMode(e: Event): void {
+  if (e.type !== 'transit') delete e.mode;
+}
+
 function applyPut(state: Event | undefined, ev: Event): Event {
   if (!state) {
     const first: Event = { ...ev, attachments: unionAttachments([], ev.attachments) };
@@ -186,6 +191,7 @@ function applyPut(state: Event | undefined, ev: Event): Event {
   // createdAt stays the earliest put's
   const p = mergePinned(state.pinned, ev.pinned ?? []);
   if (p) out.pinned = p;
+  dropStaleMode(out);
   return out;
 }
 
@@ -203,6 +209,7 @@ function applyPatch(state: Event, fields: Record<string, unknown>): Event {
   const extra = Array.isArray(fields.pinned) ? (fields.pinned as string[]) : [];
   const p = mergePinned(state.pinned, [...names, ...extra]);
   if (p) out.pinned = p;
+  dropStaleMode(out);
   return out;
 }
 

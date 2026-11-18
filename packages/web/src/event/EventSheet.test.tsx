@@ -17,7 +17,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const PDF = new Uint8Array([37, 80, 68, 70, 1, 2, 3]);
+const PDF = new Uint8Array([37, 80, 68, 70, 45, 1, 2, 3]);
 
 async function setup(search: string) {
   const secret = generateSecret();

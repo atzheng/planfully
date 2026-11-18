@@ -7,6 +7,7 @@ import { PlaceSearch } from './PlaceSearch';
 import {
   buildFields,
   EVENT_TYPES,
+  TRANSIT_MODES,
   geoOf,
   initialValues,
   isTransport,
@@ -152,6 +153,22 @@ export function EventForm({
             ))}
           </select>
         </Field>
+        {isTransport(v.type) && (
+          <Field label="Mode" id={id('mode')}>
+            <select
+              {...attrs('mode')}
+              value={v.mode}
+              onChange={(e) => set('mode', e.target.value as FormValues['mode'])}
+            >
+              <option value="">(unspecified)</option>
+              {TRANSIT_MODES.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+            </select>
+          </Field>
+        )}
         <Field label="Status" id={id('status')}>
           <select
             {...attrs('status')}

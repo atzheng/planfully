@@ -14,9 +14,11 @@ import {
   formatSize,
   isEmailAttachment,
   mapsUrl,
+  canOpenInline,
   opensInline,
   participantNames,
 } from './format';
+import { eventKindLabel } from '../timeline/model';
 import { diffFields } from './formModel';
 import { EventForm } from './EventForm';
 import { AttachButton } from './UploadButtons';
@@ -69,7 +71,10 @@ function useOpenAttachment(a: Attachment) {
     try {
       const blob = await fetchAttachment(a, { tripId, ...keys });
       const url = URL.createObjectURL(blob);
-      if (win) {
+      // Magic-byte check: only open inline if the content really is the allowlisted type.
+      const inline = win && (await canOpenInline(blob, a.mime));
+      if (win && !inline) win.close();
+      if (win && inline) {
         win.location.href = url;
       } else {
         const link = document.createElement('a');
@@ -254,7 +259,7 @@ function Details({
   return (
     <>
       <div className={styles.badges}>
-        <span className={styles.badge}>{event.type}</span>
+        <span className={styles.badge}>{eventKindLabel(event)}</span>
         {event.status === 'cancelled' && (
           <span className={`${styles.badge} ${styles.warn}`}>Cancelled</span>
         )}
