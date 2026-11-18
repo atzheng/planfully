@@ -122,7 +122,7 @@ const Blocks = memo(function Blocks({
               <span className={styles.railFace}>
                 {b.height >= RAIL_LABEL_MIN_PX && (
                   <span className={styles.railLabel} aria-hidden="true">
-                    <EventIcon event={e} size={12} />
+                    <EventIcon event={e} size={14} />
                     <span className={styles.railName}>{e.name}</span>
                   </span>
                 )}
