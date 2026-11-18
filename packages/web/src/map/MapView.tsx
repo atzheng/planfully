@@ -6,6 +6,7 @@ import { stringCodec, useQueryState } from '../lib/queryState';
 import { useFilteredEvents } from '../filters/filter';
 import { TYPE_HUE, TYPE_ICON } from '../timeline/model';
 import { boundsKey, buildMapModel, locatedEvents, type MapModel } from './markers';
+import { LocateControl } from './LocateControl';
 import styles from './MapView.module.css';
 
 /** Google's demo map id enables advanced markers without a Cloud-styled map. */
@@ -102,6 +103,7 @@ function MapCanvas({
         <Paths model={model} />
         <ClusteredMarkers model={model} onOpen={onOpen} />
         <AddAtPoint />
+        <LocateControl />
         {children}
       </Map>
       {model.markers.length === 0 && (
