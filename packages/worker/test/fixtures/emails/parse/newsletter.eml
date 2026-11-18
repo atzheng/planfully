@@ -1,0 +1,19 @@
+From: Skyhop Deals <deals@skyhop.example>
+To: trip@trips.example.com
+Subject: Summer flash sale: Paris from $389 - ends Sunday!
+Date: Tue, 12 May 2026 07:00:00 +0000
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="n1"
+
+--n1
+Content-Type: text/plain; charset=utf-8
+
+SUMMER FLASH SALE
+Fly to Paris on 12 June from $389 round trip. Lisbon from $329. Book by Sunday!
+Hotels from $79 a night. Use code SUMMER26.
+Unsubscribe: https://skyhop.example/u/123
+--n1
+Content-Type: text/html; charset=utf-8
+
+<html><body><h1>SUMMER FLASH SALE</h1><p>Fly to Paris on 12 June from <b>$389</b> round trip. Lisbon from $329.</p><p>Book by Sunday! Hotels from $79 a night. Use code SUMMER26.</p><p><a href="https://skyhop.example/u/123">Unsubscribe</a></p></body></html>
+--n1--

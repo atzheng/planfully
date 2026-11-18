@@ -1,0 +1,13 @@
+{
+  "events": [
+    {
+      "type": "attraction",
+      "name": "Musee des Arts",
+      "start": { "local": "2026-06-21T10:30", "tz": "Europe/Paris" },
+      "confirmation": "MA-2290718",
+      "location": "Musee des Arts",
+      "participants": [],
+      "status": "confirmed"
+    }
+  ]
+}

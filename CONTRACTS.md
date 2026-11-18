@@ -244,6 +244,8 @@ type EmailRoute = (ctx: { env: Env; trip: TripRow; email: ParsedEmail }) => Prom
 type ParsedEvent = Omit<Event, 'id'|'attachments'|'source'|'createdAt'|'pinned'|'deleted'>
                  & { attachmentIndexes: number[] }    // indexes into email.attachments
 parseEmail(email: ParsedEmail, opts: { roster: RosterMember[]; today: string; apiKey: string }): Promise<ParsedEvent[]>
+// Behaviour: invalid array elements are dropped when at least one is valid; invalid output is retried once, max_tokens is not;
+// text/plain shorter than 200 chars yields to richer HTML. Flights: location.name is 'City Airport Name (IATA)'. Real-API evaluation: `pnpm --filter @planfully/worker eval` (opt-in, never in `pnpm test`).
 
 // geo/geocode.ts — returns the input unchanged when no key is set or the match is weak
 geocode(env: Env, loc: Location, session?: { blocked?: boolean; bias?: GeoBias }): Promise<Location>

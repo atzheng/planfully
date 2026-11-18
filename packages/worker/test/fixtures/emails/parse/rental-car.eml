@@ -1,0 +1,23 @@
+From: Drivia Rentals <booking@drivia.example>
+To: trip@trips.example.com
+Subject: Rental confirmation DR-7741920
+Date: Fri, 08 May 2026 11:20:45 +0000
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+Your car is reserved.
+
+Confirmation number: DR-7741920
+Driver: Alice Smith
+
+Vehicle: Compact (Peugeot 208 or similar), manual, 5 doors
+
+PICK-UP
+  Lyon Part-Dieu Railway Station, Avenue Georges Pompidou, 69003 Lyon
+  Tuesday 16 June 2026 at 12:00
+
+DROP-OFF
+  Lyon-Saint Exupery Airport (LYS), Terminal 1 car rental area
+  Friday 19 June 2026 at 10:00
+
+Estimated total: EUR 187.40, payable at pick-up. Bring your driving licence and a credit card.

@@ -121,12 +121,47 @@ describe('parseEmail', () => {
     expect(create).toHaveBeenCalledTimes(1);
   });
 
-  test('max_tokens counts as invalid and is retried once', async () => {
-    const { client, create } = fakeClient(reply('[', 'max_tokens'), reply('[]', 'max_tokens'));
+  test('max_tokens is not retried with the identical request', async () => {
+    const { client, create } = fakeClient(reply('[', 'max_tokens'), reply('[]'));
     await expect(parseEmail(email(), { ...base, client })).rejects.toMatchObject({
       reason: 'invalid_output',
     });
-    expect(create).toHaveBeenCalledTimes(2);
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  test('one invalid element is dropped, valid ones are kept', async () => {
+    const bad = { ...validEvent, type: 'spaceship' };
+    const { client, create } = fakeClient(reply(JSON.stringify([bad, validEvent])));
+    expect(await parseEmail(email(), { ...base, client })).toEqual([validEvent]);
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  test('prefers HTML when text/plain is a short stub', async () => {
+    const { client, create } = fakeClient(reply('[]'));
+    await parseEmail(
+      email({
+        text: 'View this email in your browser: https://x.example/v/1',
+        html: '<p>Order MA-1 confirmed. Visit date 21 June 2026, timed entry 10:30, 2 adult tickets.</p>',
+        attachments: [],
+      }),
+      { ...base, client },
+    );
+    const content = firstCall(create).messages[0]?.content as Anthropic.ContentBlockParam[];
+    expect((content[0] as Anthropic.TextBlockParam).text).toContain('timed entry 10:30');
+  });
+
+  test('keeps a substantial text/plain over HTML', async () => {
+    const { client, create } = fakeClient(reply('[]'));
+    await parseEmail(
+      email({
+        text: 'Flight details. '.repeat(20),
+        html: '<p>HTML-ONLY-MARKER</p>',
+        attachments: [],
+      }),
+      { ...base, client },
+    );
+    const content = firstCall(create).messages[0]?.content as Anthropic.ContentBlockParam[];
+    expect((content[0] as Anthropic.TextBlockParam).text).not.toContain('HTML-ONLY-MARKER');
   });
 
   test('image is limited by its base64 size: 4.5 MiB raw is skipped', async () => {

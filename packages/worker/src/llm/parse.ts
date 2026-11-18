@@ -5,7 +5,6 @@ import {
   type ParsedEvent,
   type RosterMember,
 } from '@planfully/shared';
-import { z } from 'zod';
 import type { ParsedEmail } from '../email/types';
 import { htmlToTextLimited } from './html';
 import {
@@ -86,7 +85,14 @@ function toBase64(bytes: Uint8Array): string {
   return btoa(bin);
 }
 
-/** Best-effort body text: text/plain when it has content, otherwise HTML rendered to text. */
+/** A text/plain part shorter than this is treated as a possible "view in browser" stub. */
+const STUB_TEXT_CHARS = 200;
+
+/**
+ * Best-effort body text: text/plain when it has real content. When the plain part is empty or a
+ * short stub ("View this email in your browser: ..."), the rendered HTML is used instead if it
+ * says more.
+ */
 export function bodyText(email: Pick<ParsedEmail, 'text' | 'html'>): string {
   return bodyTextLimited(email).text;
 }
@@ -95,9 +101,11 @@ function bodyTextLimited(email: Pick<ParsedEmail, 'text' | 'html'>): {
   text: string;
   truncated: boolean;
 } {
-  const plain = email.text?.trim();
-  if (plain) return { text: plain, truncated: false };
-  return email.html ? htmlToTextLimited(email.html) : { text: '', truncated: false };
+  const plain = email.text?.trim() ?? '';
+  if (plain.length >= STUB_TEXT_CHARS || !email.html) return { text: plain, truncated: false };
+  const rendered = htmlToTextLimited(email.html);
+  if (rendered.text.trim().length > plain.length) return rendered;
+  return { text: plain, truncated: false };
 }
 
 type Built = { params: Anthropic.MessageCreateParamsNonStreaming; attachedIndexes: Set<number> };
@@ -178,9 +186,11 @@ export function buildRequest(
   return { params, attachedIndexes };
 }
 
-const EventsSchema = z.array(ParsedEventSchema);
-
-/** Returns the validated events, or a short content-free description of what was wrong. */
+/**
+ * Returns the valid events, or a short content-free description of what was wrong. Elements are
+ * validated one by one: invalid ones are dropped as long as at least one element is valid (or the
+ * array is empty), so a single bad event does not discard the rest of the email.
+ */
 function readResponse(
   msg: Anthropic.Message,
 ): { events: ParsedEvent[] } | { problem: string; refusal?: true } {
@@ -196,15 +206,21 @@ function readResponse(
   } catch {
     return { problem: 'not valid JSON' };
   }
-  const parsed = EventsSchema.safeParse(json);
-  if (!parsed.success) {
-    // Paths and codes only: zod messages can echo values.
-    const first = parsed.error.issues[0];
-    return {
-      problem: `schema mismatch at ${first ? first.path.join('.') : '?'} (${first?.code ?? '?'})`,
-    };
+  if (!Array.isArray(json)) return { problem: 'not an array' };
+  const events: ParsedEvent[] = [];
+  let firstIssue = '';
+  for (const [i, item] of json.entries()) {
+    const parsed = ParsedEventSchema.safeParse(item);
+    if (parsed.success) {
+      events.push(parsed.data);
+    } else if (!firstIssue) {
+      // Paths and codes only: zod messages can echo values.
+      const issue = parsed.error.issues[0];
+      firstIssue = `schema mismatch at ${[i, ...(issue?.path ?? [])].join('.')} (${issue?.code ?? '?'})`;
+    }
   }
-  return { events: parsed.data };
+  if (events.length === 0 && json.length > 0) return { problem: firstIssue };
+  return { events };
 }
 
 /** Drop ids not on the roster and attachment indexes that were not sent. Never invent either. */
@@ -222,7 +238,7 @@ function sanitize(
 }
 
 /**
- * One Claude call (plus at most one retry on invalid output) turning an email into events.
+ * One Claude call (plus at most one retry on invalid output; none after max_tokens) turning an email into events.
  * Throws ParseError; see ParseErrorReason. With an empty apiKey it throws `no_api_key` without
  * creating a client or sending anything.
  */
@@ -247,6 +263,8 @@ export async function parseEmail(email: ParsedEmail, opts: ParseOptions): Promis
     if ('refusal' in result) throw new ParseError('refusal', 'model refused the request');
     if ('events' in result) return sanitize(result.events, opts.roster, attachedIndexes);
     problem = result.problem;
+    // The same request would overflow again: retrying it identically only wastes a call.
+    if (problem === 'max_tokens') break;
   }
   throw new ParseError('invalid_output', `model output invalid after retry: ${problem}`);
 }

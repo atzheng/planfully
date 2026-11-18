@@ -1,0 +1,15 @@
+{
+  "events": [
+    {
+      "type": "lodging",
+      "name": "Le Marais",
+      "start": { "local": "2026-06-13T15:00", "tz": "Europe/Paris" },
+      "end": { "local": "2026-06-22T11:00", "tz": "Europe/Paris" },
+      "confirmation": "HM-884213",
+      "location": "Le Marais",
+      "participants": ["alice"],
+      "status": "confirmed",
+      "attachmentIndexes": [0]
+    }
+  ]
+}

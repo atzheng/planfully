@@ -1,0 +1,20 @@
+From: Alfama Bay Hotel <reservations@alfamabay.example>
+To: trip@trips.example.com
+Subject: Cancellation confirmed - reservation LIS-55102
+Date: Tue, 09 Jun 2026 09:30:00 +0100
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+Dear Mr Jones,
+
+As requested, we have cancelled your reservation. No cancellation fee applies.
+
+Reservation: LIS-55102
+Hotel: Alfama Bay Hotel, Rua dos Remedios 41, 1100-448 Lisboa, Portugal
+Guest: Bob Jones
+Original stay: check-in 3 July 2026 (from 15:00), check-out 6 July 2026 (until 11:00)
+Room: Superior Double
+Status: CANCELLED
+
+We hope to welcome you another time.
+Alfama Bay Hotel

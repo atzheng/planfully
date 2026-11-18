@@ -1,0 +1,18 @@
+From: Le Comptoir du Relais <noreply@tablebook.example>
+To: trip@trips.example.com
+Subject: Your table is booked - Le Comptoir du Relais, Sunday 14 June
+Date: Thu, 07 May 2026 18:03:12 +0000
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+Reservation confirmed!
+
+Restaurant: Le Comptoir du Relais
+Address: 9 Carrefour de l'Odeon, 75006 Paris, France
+Date: Sunday 14 June
+Time: 8:00 PM
+Party size: 4
+Name on booking: Dupont
+Booking code: TB-48213
+
+Tables are held for 15 minutes. To cancel, use the link in your account.
