@@ -199,10 +199,10 @@ export function EventForm({
         </Field>
         <Field label="Address" id={id('locationAddress')}>
           <input
-              type="text"
-              {...text('locationAddress')}
-              onChange={(e) => setAddress('location', e.target.value)}
-            />
+            type="text"
+            {...text('locationAddress')}
+            onChange={(e) => setAddress('location', e.target.value)}
+          />
         </Field>
       </fieldset>
       {isTransport(v.type) && (

@@ -97,7 +97,8 @@ export function PlaceSearch({
             setActive((i) => (i <= 0 ? results.length - 1 : i - 1));
           } else if (e.key === 'Enter' && active >= 0) {
             e.preventDefault();
-            pick(results[active]!);
+            const r = results[active];
+            if (r) pick(r);
           } else if (e.key === 'Escape') {
             // Close the list, not the surrounding sheet (Sheet listens on window).
             e.stopPropagation();

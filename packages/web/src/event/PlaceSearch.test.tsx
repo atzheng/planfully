@@ -10,7 +10,13 @@ vi.mock('../trip/store', () => ({
   useTrip: (sel: (s: unknown) => unknown) => sel({ tripId: 't1', keys: { accessToken: 'tok' } }),
 }));
 
-const CDG: Location = { name: 'Louvre', address: 'Rue de Rivoli, Paris', lat: 48.86, lng: 2.33, placeId: 'p1' };
+const CDG: Location = {
+  name: 'Louvre',
+  address: 'Rue de Rivoli, Paris',
+  lat: 48.86,
+  lng: 2.33,
+  placeId: 'p1',
+};
 
 function Harness({ onPick }: { onPick: (p: Location) => void }) {
   const [v, setV] = useState('');

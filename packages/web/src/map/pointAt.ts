@@ -12,7 +12,7 @@ function toWorld({ lat, lng }: LatLng): { x: number; y: number } {
 
 function fromWorld(x: number, y: number): LatLng {
   const lat = (Math.atan(Math.sinh(Math.PI * (1 - 2 * y))) * 180) / Math.PI;
-  const lng = (((x * 360 - 180 + 180) % 360) + 360) % 360 - 180;
+  const lng = ((((x * 360 - 180 + 180) % 360) + 360) % 360) - 180;
   return { lat, lng };
 }
 
