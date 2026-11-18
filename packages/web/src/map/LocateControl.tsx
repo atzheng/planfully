@@ -1,6 +1,9 @@
 import { AdvancedMarker, useMap } from '@vis.gl/react-google-maps';
 import { useEffect, useReducer, useRef } from 'react';
+import { LocateFixed, Navigation } from 'lucide-react';
+import { IconButton } from '../ui/IconButton';
 import { locateReducer, showAccuracyCircle } from './locate';
+import { cssVar } from './cssVar';
 import styles from './LocateControl.module.css';
 
 const LOCATE_ZOOM = 14;
@@ -76,16 +79,18 @@ export function LocateControl() {
 
   useEffect(() => {
     if (!map || lat === undefined || lng === undefined || !showAccuracyCircle(accuracy)) return;
+    // Maps overlays take colour strings; resolve the token now (the map remounts on a theme change).
+    const accent = cssVar('--accent', '#2f5fe0');
     const c = new google.maps.Circle({
       map,
       center: { lat, lng },
       radius: accuracy,
       clickable: false,
       strokeWeight: 1,
-      strokeColor: '#2a6df4',
-      strokeOpacity: 0.5,
-      fillColor: '#2a6df4',
-      fillOpacity: 0.15,
+      strokeColor: accent,
+      strokeOpacity: 0.55,
+      fillColor: accent,
+      fillOpacity: 0.14,
     });
     return () => c.setMap(null);
   }, [map, lat, lng, accuracy]);
@@ -93,35 +98,28 @@ export function LocateControl() {
   return (
     <>
       <div className={styles.control}>
-        <button
-          type="button"
+        <IconButton
+          variant={watching ? 'primary' : 'secondary'}
           className={styles.btn}
           data-active={watching || undefined}
           aria-pressed={watching}
-          aria-label="Show my location"
+          label="Show my location"
           title={watching ? 'Turn off current location' : 'Show my location'}
           data-testid="locate-toggle"
           onClick={() => dispatch({ type: watching ? 'stop' : 'start' })}
         >
-          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
-            <circle cx="12" cy="12" r="3.5" fill="currentColor" />
-            <circle cx="12" cy="12" r="7.5" fill="none" stroke="currentColor" strokeWidth="2" />
-            <path d="M12 1v4M12 19v4M1 12h4M19 12h4" stroke="currentColor" strokeWidth="2" />
-          </svg>
-        </button>
+          <LocateFixed size={18} aria-hidden="true" />
+        </IconButton>
         {lat !== undefined && lng !== undefined && (
-          <button
-            type="button"
+          <IconButton
+            variant="secondary"
             className={styles.btn}
-            aria-label="Re-centre on my location"
-            title="Re-centre on my location"
+            label="Re-centre on my location"
             data-testid="locate-recentre"
             onClick={() => goTo(lat, lng)}
           >
-            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
-              <path d="M12 3l7 17-7-4-7 4z" fill="currentColor" />
-            </svg>
-          </button>
+            <Navigation size={18} aria-hidden="true" />
+          </IconButton>
         )}
         <p
           className={styles.msg}
