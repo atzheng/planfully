@@ -1,0 +1,84 @@
+.bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-2) 0;
+}
+.headers {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-1) var(--space-3);
+  margin: var(--space-3) 0;
+  font-size: var(--text-sm);
+}
+.headers dt {
+  color: var(--text-muted);
+}
+.headers dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.subject {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-md);
+  overflow-wrap: anywhere;
+}
+/* Scripts cannot run inside the frame, so it cannot size itself to its content: fixed scrollable viewport. */
+.frame {
+  display: block;
+  width: 100%;
+  height: clamp(320px, 60dvh, 720px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: #fff;
+}
+.text {
+  margin: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font: inherit;
+  font-size: var(--text-sm);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.text a {
+  color: var(--accent);
+}
+.notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-2) 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+.inner {
+  list-style: none;
+  margin: var(--space-2) 0 0;
+  padding: 0;
+}
+.inner button {
+  min-height: var(--tap);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  cursor: pointer;
+  text-align: left;
+  text-decoration: underline;
+  overflow-wrap: anywhere;
+}
+.h3 {
+  margin: var(--space-4) 0 0;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.error {
+  color: var(--danger);
+  font-size: var(--text-sm);
+}
