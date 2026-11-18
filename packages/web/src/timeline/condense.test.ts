@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { BACKGROUND_EVENT_MS, condensedSpan, findGaps, formatGap, GAP_MARGIN_MS } from './condense';
+import { BACKGROUND_EVENT_MS, condensedPx, findGaps, formatGap, GAP_MARGIN_MS } from './condense';
 import { fitPx } from './zoom';
 import { GAP_PX, makeScale, MIN_PX_PER_HOUR, ticks } from './scale';
 import type { Gap } from './scale';
@@ -87,7 +87,7 @@ test('property: toY and toMs are inverse and strictly increasing for random scal
   const rand = rng(42);
   for (let run = 0; run < 200; run++) {
     const origin = Math.floor(rand() * 1e12);
-    const px = 0.5 + rand() * 119;
+    const px = 0.5 * 240 ** rand(); // log-uniform 0.5..120, so low zoom is well covered
     const n = Math.floor(rand() * 6);
     const gaps: Gap[] = [];
     for (let i = 0; i < n; i++) {
@@ -112,7 +112,9 @@ test('property: toY and toMs are inverse and strictly increasing for random scal
     for (const g of s.gaps) {
       expect(s.toY(g.fromMs)).toBeCloseTo(g.fromY, 6);
       expect(s.toY(g.toMs)).toBeCloseTo(g.toY, 6);
-      expect(g.toY - g.fromY).toBeCloseTo(GAP_PX, 6);
+      const linear = ((g.toMs - g.fromMs) / H) * px;
+      expect(g.toY - g.fromY).toBeCloseTo(Math.min(GAP_PX, linear), 6);
+      expect(g.toY - g.fromY).toBeLessThanOrEqual(linear + 1e-9);
     }
   }
 });
@@ -142,19 +144,60 @@ test('ticks skip the inside of a gap but keep its edges', () => {
   expect(list).toEqual([0, 1, 2, 20, 21, 22, 23, 24]);
 });
 
-test('condensedSpan and fitPx count gaps as a fixed height', () => {
+test('an overnight gap still yields a day tick for the next day; a multi-day gap yields the last day', () => {
+  const day = (iso: string) => Date.parse(`${iso}T00:00:00Z`);
+  // Gap 21:00 Mon to 08:00 Tue (midnight inside).
+  const night = { fromMs: day('2026-03-02') + 21 * H, toMs: day('2026-03-03') + 8 * H };
+  const s = makeScale(day('2026-03-02'), 48, [night]);
+  const list = ticks(s, day('2026-03-02'), day('2026-03-04'), 'UTC');
+  const at = list.find((t) => t.ms === night.toMs);
+  expect(at).toMatchObject({ kind: 'day', label: 'Tue Mar 3' });
+  expect(list.filter((t) => t.ms > night.fromMs && t.ms < night.toMs)).toEqual([]);
+  expect(list.map((t) => t.ms)).toEqual([...list.map((t) => t.ms)].sort((a, b) => a - b));
+  expect(new Set(list.map((t) => t.ms)).size).toBe(list.length);
+  // Gap 21:00 Mon to 08:00 Thu: the last day wins.
+  const long = { fromMs: night.fromMs, toMs: day('2026-03-05') + 8 * H };
+  const s2 = makeScale(day('2026-03-02'), 48, [long]);
+  const l2 = ticks(s2, day('2026-03-02'), day('2026-03-06'), 'UTC');
+  expect(l2.find((t) => t.ms === long.toMs)).toMatchObject({ kind: 'day', label: 'Thu Mar 5' });
+  // Day density too (zoomed out).
+  const s3 = makeScale(day('2026-03-02'), 10, [night]);
+  const l3 = ticks(s3, day('2026-03-02'), day('2026-03-04'), 'UTC');
+  expect(l3.find((t) => t.ms === night.toMs)).toMatchObject({ kind: 'day', label: 'Tue Mar 3' });
+});
+
+test('a short gap at low zoom is not taller than the time it replaces', () => {
+  const s = makeScale(0, 2, [{ fromMs: 10 * H, toMs: 15 * H }]); // 5 h at 2 px/h = 10 px < 24
+  expect(s.gaps[0]?.toY).toBeCloseTo(20 + 10, 6);
+  expect(s.toY(15 * H)).toBeCloseTo(30, 6);
+  expect(s.toY(20 * H)).toBeCloseTo(40, 6); // same as the linear scale
+  expect(s.toMs(s.toY(12 * H))).toBeCloseTo(12 * H, 0);
+});
+
+test('condensedPx and fitPx use the same gap height rule', () => {
   const gaps = [{ fromMs: 10 * H, toMs: 34 * H }];
-  expect(condensedSpan(gaps, 0, 48 * H)).toEqual({ busyHours: 24, fixedPx: GAP_PX });
+  expect(condensedPx(gaps, 0, 48 * H, 20)).toBeCloseTo(24 * 20 + GAP_PX);
   // Half of the gap is in range: half of its height.
-  expect(condensedSpan(gaps, 0, 22 * H)).toEqual({ busyHours: 10, fixedPx: GAP_PX / 2 });
-  expect(condensedSpan(gaps, 40 * H, 50 * H)).toEqual({ busyHours: 10, fixedPx: 0 });
-  // 48 h range, 24 h of it collapsed: the rest shares viewport - 24 px.
-  expect(fitPx(0, 48 * H, 504, gaps)).toBe(20);
+  expect(condensedPx(gaps, 0, 22 * H, 20)).toBeCloseTo(10 * 20 + GAP_PX / 2);
+  expect(condensedPx(gaps, 40 * H, 50 * H, 20)).toBeCloseTo(200);
+  // Low zoom: the 24 h gap at 0.5 px/h is 12 px, not 24.
+  expect(condensedPx(gaps, 0, 48 * H, 0.5)).toBeCloseTo(24);
+  expect(fitPx(0, 48 * H, 504, gaps)).toBeCloseTo(20, 4);
   // Without gaps it is the plain fit.
   expect(fitPx(0, 48 * H, 480)).toBe(10);
-  // The fitted scale really fits.
-  const s = makeScale(0, fitPx(0, 48 * H, 504, gaps), gaps);
-  expect(s.toY(48 * H)).toBeCloseTo(504, 6);
+  // The fitted scale really fits, at several zoom levels (including low, where gaps are short).
+  const many = [
+    { fromMs: 10 * H, toMs: 15 * H },
+    { fromMs: 30 * H, toMs: 50 * H },
+    { fromMs: 100 * H, toMs: 104 * H },
+  ];
+  for (const vp of [60, 120, 300, 504, 2000]) {
+    for (const g of [gaps, many]) {
+      const px = fitPx(0, 150 * H, vp, g);
+      if (px <= MIN_PX_PER_HOUR || px >= 120) continue;
+      expect(makeScale(0, px, g).toY(150 * H)).toBeCloseTo(vp, 3);
+    }
+  }
   // A viewport smaller than the gaps alone falls back to the minimum zoom.
   expect(fitPx(0, 48 * H, 10, gaps)).toBe(MIN_PX_PER_HOUR);
 });

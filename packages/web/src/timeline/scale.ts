@@ -23,8 +23,8 @@ export type TimeScale = {
 };
 
 /**
- * Time to y. With no `gaps` this is linear (`pxPerHour`). Each gap is drawn `GAP_PX` tall instead of
- * its length, so the scale is piecewise linear, strictly increasing, and `toMs` is the exact inverse
+ * Time to y. With no `gaps` this is linear (`pxPerHour`). Each gap is drawn a fixed height instead of
+ * its length (`GAP_PX`, or its linear height when that is smaller: `min(GAP_PX, hours * pxPerHour)`), so the scale is piecewise linear, strictly increasing, and `toMs` is the exact inverse
  * of `toY`. Gaps are sorted, clipped to start at or after `originMs`, and overlapping or empty ones
  * are dropped. Zoom (`pxPerHour`) only stretches the busy segments; gaps stay `GAP_PX`.
  */
@@ -46,10 +46,11 @@ export function makeScale(
     const from = Math.max(g.fromMs, ms[i] ?? originMs);
     if (!(g.toMs > from)) continue;
     const fromY = (ys[i] ?? 0) + (from - (ms[i] ?? 0)) * busy;
-    const toY = fromY + GAP_PX;
+    // Never taller than the time it replaces (at low zoom a short gap would otherwise grow).
+    const toY = fromY + Math.min(GAP_PX, ((g.toMs - from) / HOUR_MS) * pxPerHour);
     ms.push(from, g.toMs);
     ys.push(fromY, toY);
-    slopes.push(GAP_PX / (g.toMs - from), busy);
+    slopes.push((toY - fromY) / (g.toMs - from), busy);
     out.push({ fromMs: from, toMs: g.toMs, fromY, toY });
   }
   const last = ms.length - 1;
@@ -118,6 +119,7 @@ export function ticks(scale: TimeScale, fromMs: number, toMs: number, tz: string
   if (!start.isValid) throw new Error(`invalid zone: ${tz}`);
   const unit = density === 'hour' ? 'hour' : density === 'day' ? 'day' : 'week';
   const out: Tick[] = [];
+  const dayGaps = new Set<ScaleGap>();
   const base = start.startOf(unit);
   // Each tick is derived from the base (not chained from the previous tick) so a skipped local
   // midnight cannot shift later ticks off midnight; startOf('day') re-resolves to the day's first moment.
@@ -127,21 +129,34 @@ export function ticks(scale: TimeScale, fromMs: number, toMs: number, tz: string
     const ms = cur.toMillis();
     if (ms > toMs) break;
     if (ms < fromMs) continue;
-    // Inside a collapsed gap there is no room for ticks (the gap marker labels it).
-    if (scale.gaps.some((g) => ms > g.fromMs && ms < g.toMs)) continue;
-    if (density === 'hour') {
-      // The first moment of a local date is the day tick (also when DST skipped midnight).
-      out.push(
-        ms === cur.startOf('day').toMillis()
+    const tick: Tick =
+      density === 'hour'
+        ? // The first moment of a local date is the day tick (also when DST skipped midnight).
+          ms === cur.startOf('day').toMillis()
           ? { ms, label: dayLabel(cur), kind: 'day' }
-          : { ms, label: cur.toFormat('h a'), kind: 'hour' },
-      );
-    } else if (density === 'day') {
-      out.push({ ms, label: dayLabel(cur), kind: 'day' });
-    } else {
-      out.push({ ms, label: `Week of ${cur.toFormat('LLL d')}`, kind: 'week' });
+          : { ms, label: cur.toFormat('h a'), kind: 'hour' }
+        : density === 'day'
+          ? { ms, label: dayLabel(cur), kind: 'day' }
+          : { ms, label: `Week of ${cur.toFormat('LLL d')}`, kind: 'week' };
+    // Inside a collapsed gap there is no room for ticks. A day boundary in there is not lost: the
+    // gap's end edge becomes a day tick for the day the busy segment after it starts (below).
+    const gap = scale.gaps.find((g) => ms > g.fromMs && ms < g.toMs);
+    if (gap) {
+      if (tick.kind === 'day') dayGaps.add(gap);
+      continue;
     }
+    out.push(tick);
   }
+  for (const g of dayGaps) {
+    if (g.toMs < fromMs || g.toMs > toMs) continue;
+    const label = dayLabel(DateTime.fromMillis(g.toMs, { zone: tz }));
+    const at = out.find((t) => t.ms === g.toMs);
+    if (at) {
+      at.kind = 'day';
+      at.label = label;
+    } else out.push({ ms: g.toMs, label, kind: 'day' });
+  }
+  out.sort((x, y) => x.ms - y.ms);
   return out;
 }
 

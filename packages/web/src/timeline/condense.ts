@@ -61,21 +61,24 @@ export function formatGap(ms: number): string {
 }
 
 /**
- * What [fromMs, toMs] costs on a condensed scale: `busyHours` drawn at the zoom's px/h plus
- * `fixedPx` of collapsed gap (a partly covered gap counts proportionally).
+ * Height of [fromMs, toMs] on a condensed scale at `pxPerHour`: busy hours at the zoom's px/h plus
+ * each gap at `min(GAP_PX, length * pxPerHour)` (a partly covered gap counts proportionally).
+ * Same rule as `makeScale`. Increasing in `pxPerHour`.
  */
-export function condensedSpan(
+export function condensedPx(
   gaps: readonly Gap[],
   fromMs: number,
   toMs: number,
-): { busyHours: number; fixedPx: number } {
+  pxPerHour: number,
+): number {
   let busyMs = toMs - fromMs;
-  let fixedPx = 0;
+  let px = 0;
   for (const g of gaps) {
     const overlap = Math.min(toMs, g.toMs) - Math.max(fromMs, g.fromMs);
     if (overlap <= 0) continue;
+    const len = g.toMs - g.fromMs;
     busyMs -= overlap;
-    fixedPx += (GAP_PX * overlap) / (g.toMs - g.fromMs);
+    px += (Math.min(GAP_PX, (len / HOUR_MS) * pxPerHour) * overlap) / len;
   }
-  return { busyHours: busyMs / HOUR_MS, fixedPx };
+  return px + (busyMs / HOUR_MS) * pxPerHour;
 }

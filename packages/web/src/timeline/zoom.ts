@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { numberCodec, useQueryState } from '../lib/queryState';
 import type { Codec } from '../lib/queryState';
-import { condensedSpan } from './condense';
+import { condensedPx } from './condense';
 import { DEFAULT_PX_PER_HOUR, MAX_PX_PER_HOUR, MIN_PX_PER_HOUR } from './scale';
 import type { Gap } from './scale';
 
@@ -128,7 +128,8 @@ export function attachGestureZoom(
 
 /**
  * pxPerHour that fits [fromMs, toMs] into `viewportPx`. With condensed `gaps`, the collapsed part has
- * a fixed height, so only the remaining (busy) hours share what is left of the viewport.
+ * a height capped at GAP_PX, so the height is no longer proportional to the zoom; it is solved by
+ * bisection (the height is increasing in px/h).
  */
 export function fitPx(
   fromMs: number,
@@ -137,9 +138,18 @@ export function fitPx(
   gaps: readonly Gap[] = [],
 ): number {
   if (!(toMs > fromMs) || !(viewportPx > 0)) return DEFAULT_PX_PER_HOUR;
-  const { busyHours, fixedPx } = condensedSpan(gaps, fromMs, toMs);
-  if (!(busyHours > 0) || viewportPx <= fixedPx) return MIN_PX_PER_HOUR;
-  return clampPx((viewportPx - fixedPx) / busyHours);
+  if (gaps.length === 0) return clampPx(viewportPx / ((toMs - fromMs) / HOUR_MS));
+  const heightAt =(px: number) => condensedPx(gaps, fromMs, toMs, px);
+  if (heightAt(MIN_PX_PER_HOUR) >= viewportPx) return MIN_PX_PER_HOUR;
+  if (heightAt(MAX_PX_PER_HOUR) <= viewportPx) return MAX_PX_PER_HOUR;
+  let lo = MIN_PX_PER_HOUR;
+  let hi = MAX_PX_PER_HOUR;
+  for (let i = 0; i < 60; i++) {
+    const mid = (lo + hi) / 2;
+    if (heightAt(mid) < viewportPx) lo = mid;
+    else hi = mid;
+  }
+  return clampPx((lo + hi) / 2);
 }
 
 /** scrollTop that puts `ms` at `y` px below the top of the scroller. */
