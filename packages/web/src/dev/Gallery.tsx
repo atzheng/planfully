@@ -190,6 +190,11 @@ export default function Gallery() {
             )}
           </Field>
           <Field label="Notes">{(p) => <Textarea {...p} />}</Field>
+          <Field label="Date">
+            {(p) => <Input {...p} type="date" defaultValue="2026-05-14" />}
+          </Field>
+          <Field label="Time">{(p) => <Input {...p} type="time" defaultValue="09:30" />}</Field>
+          <Field label="Empty date">{(p) => <Input {...p} type="date" />}</Field>
           <Input aria-label="Disabled" disabled defaultValue="Disabled" />
         </div>
       </Section>
