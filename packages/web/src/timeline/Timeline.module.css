@@ -357,15 +357,24 @@
   height: 16px;
   padding: 0 4px;
 }
+/* The line sits beneath the lanes (and so beneath event blocks) so it never strikes through block
+   text; the dot and tick live in the pinned axis column, above nothing else (planfully-zbj.13). */
 .now {
   position: absolute;
   left: 0;
   right: 0;
-  z-index: 4;
+  z-index: 0;
   border-top: 1.5px solid var(--accent);
   pointer-events: none;
 }
-.now::before {
+.nowTick {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 1.5px solid var(--accent);
+  pointer-events: none;
+}
+.nowTick::before {
   content: '';
   position: absolute;
   left: 2px;
