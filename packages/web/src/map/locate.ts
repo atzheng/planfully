@@ -2,8 +2,8 @@
 
 export type LocateState =
   | { status: 'off' }
-  | { status: 'requesting' }
-  | { status: 'on'; lat: number; lng: number; accuracy: number }
+  | { status: 'requesting'; note?: string }
+  | { status: 'on'; lat: number; lng: number; accuracy: number; note?: string }
   | { status: 'denied'; message: string };
 
 export type LocateAction =
@@ -11,6 +11,8 @@ export type LocateAction =
   | { type: 'stop' }
   | { type: 'position'; lat: number; lng: number; accuracy: number }
   | { type: 'error'; code: number | 'unsupported' };
+
+export const SEARCHING = 'Searching for location…';
 
 /** Codes are GeolocationPositionError: 1 permission denied, 2 unavailable, 3 timeout. */
 export function errorMessage(code: number | 'unsupported'): string {
@@ -38,8 +40,15 @@ export function locateReducer(state: LocateState, a: LocateAction): LocateState 
         ? state
         : { status: 'on', lat: a.lat, lng: a.lng, accuracy: sanitizeAccuracy(a.accuracy) };
     case 'error':
-      // Any failure returns the control to off, with a short message.
-      return state.status === 'off' ? state : { status: 'denied', message: errorMessage(a.code) };
+      if (state.status === 'off') return state;
+      // Unavailable (2) and timeout (3) are transient: keep watching and keep the last dot.
+      if (a.code === 2 || a.code === 3) {
+        return state.status === 'requesting' || state.status === 'on'
+          ? { ...state, note: SEARCHING }
+          : state;
+      }
+      // Permission denied or unsupported: the control returns to off, with a short message.
+      return { status: 'denied', message: errorMessage(a.code) };
   }
 }
 

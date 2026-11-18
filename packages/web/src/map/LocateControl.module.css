@@ -54,3 +54,6 @@
     0 1px 4px rgb(0 0 0 / 0.5);
   pointer-events: none;
 }
+.msg[data-empty] {
+  display: none;
+}

@@ -1,7 +1,12 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
-const map = { panTo: vi.fn(), setZoom: vi.fn(), getZoom: vi.fn(() => 3) };
+const map = {
+  panTo: vi.fn(),
+  setZoom: vi.fn(),
+  getZoom: vi.fn(() => 3),
+  addListener: vi.fn(() => ({ remove: vi.fn() })),
+};
 vi.mock('@vis.gl/react-google-maps', () => ({
   useMap: () => map,
   AdvancedMarker: ({ children }: { children: unknown }) => (
@@ -55,6 +60,18 @@ describe('LocateControl', () => {
     fireEvent.click(screen.getByTestId('locate-toggle'));
     expect(clearWatch).toHaveBeenCalledWith(7);
     expect(screen.queryByTestId('locate-dot')).toBeNull();
+  });
+
+  test('timeout keeps the dot and watch, shows a note', () => {
+    render(<LocateControl />);
+    fireEvent.click(screen.getByTestId('locate-toggle'));
+    act(() => ok({ coords: { latitude: 10, longitude: 20, accuracy: 3 } }));
+    act(() => err({ code: 3 }));
+    expect(screen.getByTestId('locate-dot')).toBeTruthy();
+    expect(screen.getByTestId('locate-message').textContent).toMatch(/Searching/);
+    expect(clearWatch).not.toHaveBeenCalled();
+    act(() => ok({ coords: { latitude: 11, longitude: 21, accuracy: 3 } }));
+    expect(screen.getByTestId('locate-message').textContent).toBe('');
   });
 
   test('denied: message shown, control off, stops watching', () => {

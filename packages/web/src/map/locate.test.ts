@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { errorMessage, locateReducer, sanitizeAccuracy, showAccuracyCircle } from './locate';
+import {
+  SEARCHING,
+  errorMessage,
+  locateReducer,
+  sanitizeAccuracy,
+  showAccuracyCircle,
+} from './locate';
 
 describe('locateReducer', () => {
   it('goes off -> requesting -> on -> off', () => {
@@ -19,6 +25,24 @@ describe('locateReducer', () => {
     expect(s).toEqual({ status: 'denied', message: 'Location permission denied' });
     s = locateReducer(s, { type: 'start' });
     expect(s.status).toBe('requesting');
+  });
+  it('unavailable/timeout keep watching and keep the last dot', () => {
+    const on = { status: 'on', lat: 1, lng: 2, accuracy: 9 } as const;
+    for (const code of [2, 3]) {
+      const s = locateReducer(on, { type: 'error', code });
+      expect(s).toMatchObject({ status: 'on', lat: 1, lng: 2, note: SEARCHING });
+      const back = locateReducer(s, { type: 'position', lat: 3, lng: 4, accuracy: 9 });
+      expect(back).toEqual({ status: 'on', lat: 3, lng: 4, accuracy: 9 });
+    }
+    expect(locateReducer({ status: 'requesting' }, { type: 'error', code: 3 })).toEqual({
+      status: 'requesting',
+      note: SEARCHING,
+    });
+  });
+  it('unsupported goes to denied', () => {
+    expect(
+      locateReducer({ status: 'requesting' }, { type: 'error', code: 'unsupported' }).status,
+    ).toBe('denied');
   });
   it('ignores an error after stop', () => {
     expect(locateReducer({ status: 'off' }, { type: 'error', code: 2 }).status).toBe('off');

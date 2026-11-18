@@ -8,7 +8,7 @@ const LOCATE_ZOOM = 14;
 /**
  * Current-location control. Nothing asks for geolocation until the button is pressed. While on,
  * it watches the position and draws a dot plus accuracy circle (both non-interactive, so map
- * gestures and long-press-to-add pass through them). The position never feeds the markers model,
+ * drags and pans pass through them; checked in headless Chrome: a long press on the dot itself does not start an Add, because AddAtPoint ignores events from the advanced-marker element, while one beside it does). The position never feeds the markers model,
  * so it never triggers a refit.
  */
 export function LocateControl() {
@@ -33,11 +33,19 @@ export function LocateControl() {
           accuracy: p.coords.accuracy,
         }),
       (e) => dispatch({ type: 'error', code: e.code }),
-      { enableHighAccuracy: true, maximumAge: 10_000, timeout: 30_000 },
+      // High accuracy for a useful dot while the user has asked for it; maximumAge lets the first
+      // fix come from a recent cached position, and the timeout only raises a transient note.
+      { enableHighAccuracy: true, maximumAge: 30_000, timeout: 30_000 },
     );
     return () => navigator.geolocation.clearWatch(id);
   }, [watching]);
 
+  const liveText =
+    state.status === 'denied'
+      ? state.message
+      : state.status === 'requesting' || state.status === 'on'
+        ? (state.note ?? (state.status === 'requesting' ? 'Locating…' : ''))
+        : '';
   const on = state.status === 'on';
   const lat = on ? state.lat : undefined;
   const lng = on ? state.lng : undefined;
@@ -48,6 +56,15 @@ export function LocateControl() {
     map.panTo({ lat: la, lng: ln });
     if ((map.getZoom() ?? 0) < LOCATE_ZOOM) map.setZoom(LOCATE_ZOOM);
   };
+
+  // A drag while locating means the user is steering: skip the first-fix auto-centre.
+  useEffect(() => {
+    if (!map || !watching) return;
+    const l = map.addListener('dragstart', () => {
+      centred.current = true;
+    });
+    return () => l.remove();
+  }, [map, watching]);
 
   // Centre once on the first fix after turning on; after that the user drives, via re-centre.
   useEffect(() => {
@@ -81,7 +98,7 @@ export function LocateControl() {
           className={styles.btn}
           data-active={watching || undefined}
           aria-pressed={watching}
-          aria-label={watching ? 'Turn off current location' : 'Show my location'}
+          aria-label="Show my location"
           title={watching ? 'Turn off current location' : 'Show my location'}
           data-testid="locate-toggle"
           onClick={() => dispatch({ type: watching ? 'stop' : 'start' })}
@@ -106,16 +123,15 @@ export function LocateControl() {
             </svg>
           </button>
         )}
-        {state.status === 'denied' && (
-          <p className={styles.msg} role="status" data-testid="locate-message">
-            {state.message}
-          </p>
-        )}
-        {state.status === 'requesting' && (
-          <p className={styles.msg} role="status">
-            Locating…
-          </p>
-        )}
+        <p
+          className={styles.msg}
+          role="status"
+          aria-live="polite"
+          data-empty={!liveText || undefined}
+          data-testid="locate-message"
+        >
+          {liveText}
+        </p>
       </div>
       {lat !== undefined && lng !== undefined && (
         <AdvancedMarker position={{ lat, lng }} clickable={false} zIndex={1000}>
