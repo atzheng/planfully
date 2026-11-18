@@ -108,3 +108,12 @@
     flex: 1;
   }
 }
+@media (pointer: coarse) {
+  .actions > *,
+  .zone {
+    min-height: var(--tap);
+  }
+  .zone {
+    min-width: var(--tap);
+  }
+}

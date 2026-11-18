@@ -351,6 +351,9 @@ function Details({
                   <Copy size={14} aria-hidden="true" />
                 )}
               </IconButton>
+              <span role="status" className={styles.srOnly}>
+                {copied === 'ok' ? 'Copied' : copied === 'failed' ? 'Copy failed' : ''}
+              </span>
             </span>
           </Row>
         )}

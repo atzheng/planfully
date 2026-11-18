@@ -1,7 +1,11 @@
 // Human-readable labels for enum values shown in the sheet and form.
 import type { Event, EventType, TransitMode } from '@planfully/shared';
 
-export const capitalize = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
+/** 'premium_economy' -> 'Premium economy'. */
+export const capitalize = (s: string): string => {
+  const t = s.replace(/[_-]+/g, ' ').trim();
+  return t.charAt(0).toUpperCase() + t.slice(1);
+};
 
 export const typeLabel = (t: EventType): string => capitalize(t);
 

@@ -211,6 +211,21 @@
   cursor: pointer;
 }
 
+/* 16px on phones and touch screens so iOS does not zoom on focus (the module classes outrank theme.css's element rule). */
+@media (max-width: 719px), (pointer: coarse) {
+  .input,
+  .select,
+  .textarea {
+    font-size: 16px;
+  }
+}
+@media (pointer: coarse) {
+  .input,
+  .select {
+    min-height: var(--tap);
+  }
+}
+
 /* ---- Field ---- */
 .field {
   display: flex;

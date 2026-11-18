@@ -72,7 +72,20 @@ function ZoneButton({
       >
         {zoneCity(value)}
       </button>
-      <Popover open={open} onClose={() => setOpen(false)} anchorRef={ref} label={label} align="end">
+      <Popover
+        open={open}
+        onClose={() => setOpen(false)}
+        anchorRef={ref}
+        label={label}
+        align="end"
+        onKeyDown={(e) => {
+          if (e.key !== 'Tab') return;
+          // Close and return focus to the trigger; keep the key from the Sheet's focus trap.
+          e.preventDefault();
+          e.stopPropagation();
+          setOpen(false);
+        }}
+      >
         <Select
           aria-label={label}
           className={styles.zoneSelect}

@@ -103,6 +103,18 @@ describe('edit and delete', () => {
     expect(screen.getAllByText(/21:00/).length).toBeGreaterThan(0);
   });
 
+  test('Tab in the zone popover closes it, returns focus to its trigger and keeps the sheet open', async () => {
+    await setup();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    const trigger = screen.getByRole('button', { name: /Start time zone/ });
+    fireEvent.click(trigger);
+    const select = await screen.findByRole('combobox', { name: 'Start time zone' });
+    fireEvent.keyDown(select, { key: 'Tab' });
+    expect(screen.queryByRole('combobox', { name: 'Start time zone' })).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+    expect(screen.getByRole('dialog')).toBeTruthy();
+  });
+
   test('invalid input shows field errors and sends nothing', async () => {
     const { posted } = await setup();
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
