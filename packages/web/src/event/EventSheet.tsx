@@ -336,7 +336,11 @@ function Details({
               <code>{event.confirmation}</code>
               <IconButton
                 label={
-                  copied === 'ok' ? 'Copied' : copied === 'failed' ? 'Copy failed' : 'Copy confirmation'
+                  copied === 'ok'
+                    ? 'Copied'
+                    : copied === 'failed'
+                      ? 'Copy failed'
+                      : 'Copy confirmation'
                 }
                 size="sm"
                 onClick={copy}

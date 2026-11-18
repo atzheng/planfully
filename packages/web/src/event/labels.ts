@@ -1,7 +1,7 @@
 // Human-readable labels for enum values shown in the sheet and form.
 import type { Event, EventType, TransitMode } from '@planfully/shared';
 
-export const capitalize = (s: string): string => (s ? s[0]!.toUpperCase() + s.slice(1) : s);
+export const capitalize = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
 
 export const typeLabel = (t: EventType): string => capitalize(t);
 
@@ -19,10 +19,9 @@ export function kindLabel(e: Pick<Event, 'type' | 'mode'>): string {
 /** Up to two initials of a name, upper-cased. */
 export function initials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return '?';
-  const first = parts[0]![0]!;
-  const last = parts.length > 1 ? parts[parts.length - 1]![0]! : '';
-  return (first + last).toUpperCase();
+  const first = parts[0]?.charAt(0) ?? '';
+  const last = parts.length > 1 ? (parts[parts.length - 1]?.charAt(0) ?? '') : '';
+  return (first + last).toUpperCase() || '?';
 }
 
 /** 'Lisbon' for 'Europe/Lisbon'; the quiet label on the zone button. */
