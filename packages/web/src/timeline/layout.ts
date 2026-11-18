@@ -26,6 +26,15 @@ export type Block = {
   span: number;
   /** Cascade level (0..MAX_DEPTH) among time-overlapping blocks sharing this column; inset by depth * DEPTH_STEP_PX. */
   depth: number;
+  /** True for a side-rail block (lodging, or any event of >= RAIL_MIN_MS): outside column allocation. */
+  rail: boolean;
+  /** Rail blocks: slot from the lane's right edge (0 = outermost); slot * RAIL_PX is the right offset. 0 otherwise. */
+  railSlot: number;
+  /**
+   * Non-rail blocks: rail slots reserved at the lane's right edge (0..MAX_RAILS) because a rail overlaps this
+   * block in time; the block's width stops short of them. 0 elsewhere, so the full lane width is used.
+   */
+  railInset: number;
 };
 export type Layout = { lanes: Lane[]; blocks: Block[]; unscheduled: Event[] };
 
@@ -41,6 +50,13 @@ export const LINE_MIN_PX_PER_HOUR = 5;
 export const LINE_BLOCK_MIN_PX = 16;
 /** Most columns an overlap cluster may use; further blocks share columns (stack) instead of narrowing. */
 export const MAX_COLUMNS = 5;
+
+/** Events at least this long (and all lodging) render as a side rail instead of taking an overlap column. */
+export const RAIL_MIN_MS = 24 * 3600_000;
+/** Width (and hit area) of one rail slot. */
+export const RAIL_PX = 24;
+/** Most rail slots at a lane edge; further overlapping rails share the innermost slot. */
+export const MAX_RAILS = 2;
 
 /** Narrowest a column may get before the cluster stops adding columns and cascades instead. */
 export const MIN_COLUMN_PX = 90;
@@ -75,6 +91,14 @@ export function blockTier(heightPx: number, fullMinPx: number): BlockTier {
 
 /** Lane for participant ids that are not in the roster. Only present when some event needs it. */
 export const OTHER_LANE_KEY = '_other';
+
+/** Lodging and 24h+ events leave the column allocation for the lane-edge rail (not in type lanes, which isolate them already). */
+export function isRailEvent(e: Event, mode: LaneMode): boolean {
+  if (mode === 'type') return false;
+  const iv = eventInterval(e);
+  if (!iv) return false;
+  return e.type === 'lodging' || iv.end - iv.start >= RAIL_MIN_MS;
+}
 
 function laneKeys(e: Event, spec: LaneSpec, rosterIds: Set<string>): string[] {
   switch (spec.mode) {
@@ -132,7 +156,10 @@ export function layoutEvents(
   const minHeight = minBlockHeight(scale.pxPerHour);
   const unscheduled: Event[] = [];
   const rosterIds = new Set(spec.roster.map((m) => m.id));
-  const byLane = new Map<string, { eventId: string; top: number; height: number }[]>();
+  const byLane = new Map<
+    string,
+    { eventId: string; top: number; height: number; rail: boolean }[]
+  >();
   const present = new Set<string>();
 
   for (const e of events) {
@@ -143,11 +170,12 @@ export function layoutEvents(
     }
     const top = scale.toY(iv.start);
     const height = Math.max(minHeight, scale.toY(iv.end) - top);
+    const rail = isRailEvent(e, spec.mode);
     for (const key of laneKeys(e, spec, rosterIds)) {
       present.add(key);
       let list = byLane.get(key);
       if (!list) byLane.set(key, (list = []));
-      list.push({ eventId: e.id, top, height });
+      list.push({ eventId: e.id, top, height, rail });
     }
   }
 
@@ -174,7 +202,37 @@ export function layoutEvents(
 
   const blocks: Block[] = [];
   for (const lane of lanes) {
-    const items = (byLane.get(lane.key) ?? []).sort((a, b) => a.top - b.top || b.height - a.height);
+    const all = (byLane.get(lane.key) ?? []).sort((a, b) => a.top - b.top || b.height - a.height);
+    const items = all.filter((i) => !i.rail);
+    // Rails: first free slot from the lane edge (interval colouring), capped at MAX_RAILS.
+    const rails: Block[] = [];
+    const slotEnds: number[] = [];
+    for (const it of all) {
+      if (!it.rail) continue;
+      let slot = slotEnds.findIndex((end) => end <= it.top);
+      if (slot === -1) slot = slotEnds.length < MAX_RAILS ? slotEnds.length : MAX_RAILS - 1;
+      slotEnds[slot] = Math.max(slotEnds[slot] ?? -Infinity, it.top + it.height);
+      rails.push({
+        eventId: it.eventId,
+        laneKey: lane.key,
+        top: it.top,
+        height: it.height,
+        column: 0,
+        columns: 1,
+        span: 1,
+        depth: 0,
+        rail: true,
+        railSlot: slot,
+        railInset: 0,
+      });
+    }
+    const insetFor = (top: number, height: number): number => {
+      let n = 0;
+      for (const r of rails) {
+        if (r.top < top + height && r.top + r.height > top) n = Math.max(n, r.railSlot + 1);
+      }
+      return n;
+    };
     let cluster: Block[] = [];
     let clusterEnd = -Infinity;
     let colEnds: number[] = [];
@@ -183,6 +241,7 @@ export function layoutEvents(
     const flush = () => {
       for (const b of cluster) b.columns = colEnds.length;
       expandSpans(cluster);
+      for (const b of cluster) b.railInset = insetFor(b.top, b.height);
       blocks.push(...cluster);
       cluster = [];
       colEnds = [];
@@ -221,9 +280,13 @@ export function layoutEvents(
         columns: 1,
         span: 1,
         depth,
+        rail: false,
+        railSlot: 0,
+        railInset: 0,
       });
     }
     flush();
+    blocks.push(...rails);
   }
   return { lanes, blocks, unscheduled };
 }

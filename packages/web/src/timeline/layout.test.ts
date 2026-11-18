@@ -2,6 +2,8 @@ import type { Event, RosterMember } from '@planfully/shared';
 import { expect, test } from 'vitest';
 import {
   initialScrollMs,
+  isRailEvent,
+  MAX_RAILS,
   layoutEvents,
   blockTier,
   DEPTH_STEP_PX,
@@ -224,7 +226,7 @@ test('expand: overlapping blocks never overlap visually (property)', () => {
 
 test('expand: lanes by type and by person are laid out independently', () => {
   const a = ev('2026-06-01T09:00', '2026-06-01T12:00', {
-    type: 'lodging',
+    type: 'dining',
     participants: ['alice'],
   });
   const b = ev('2026-06-01T10:00', '2026-06-01T11:00', {
@@ -347,4 +349,73 @@ test('capped columns: every block keeps an uncovered, tappable region', () => {
   const crowd = lay(Array.from({ length: 40 }, () => ev('2026-06-01T09:00', '2026-06-01T10:00')));
   expect(crowd).toHaveLength(40);
   expect(crowd.every((b) => b.column < b.columns && b.columns <= cap)).toBe(true);
+});
+
+test('lodging leaves the column allocation: others keep one full-width column and reserve the rail', () => {
+  const hotel = ev('2026-06-01T15:00', '2026-06-04T11:00', { type: 'lodging' });
+  const a = ev('2026-06-02T09:00', '2026-06-02T12:00');
+  const b = ev('2026-06-02T10:00', '2026-06-02T13:00');
+  const after = ev('2026-06-05T09:00', '2026-06-05T10:00');
+  const { blocks } = layoutEvents([hotel, a, b, after], scale, none);
+  const h = need(blocks.find((x) => x.eventId === hotel.id));
+  expect(h).toMatchObject({ rail: true, railSlot: 0, column: 0, columns: 1, railInset: 0 });
+  expect(need(blocks.find((x) => x.eventId === a.id))).toMatchObject({
+    rail: false,
+    columns: 2,
+    railInset: 1,
+  });
+  expect(need(blocks.find((x) => x.eventId === after.id))).toMatchObject({
+    columns: 1,
+    railInset: 0,
+  });
+});
+
+test('a lone event beside a hotel stays a single column', () => {
+  const hotel = ev('2026-06-01T15:00', '2026-06-04T11:00', { type: 'lodging' });
+  const a = ev('2026-06-02T09:00', '2026-06-02T12:00');
+  const { blocks } = layoutEvents([hotel, a], scale, none);
+  expect(blocks.find((x) => x.eventId === a.id)).toMatchObject({
+    columns: 1,
+    span: 1,
+    railInset: 1,
+  });
+});
+
+test('24h+ non-lodging events become rails; shorter ones and type lanes do not', () => {
+  const long = ev('2026-06-01T09:00', '2026-06-02T09:00');
+  const short = ev('2026-06-01T09:00', '2026-06-02T08:59');
+  expect(isRailEvent(long, 'none')).toBe(true);
+  expect(isRailEvent(short, 'none')).toBe(false);
+  expect(isRailEvent(ev('2026-06-01T09:00', '2026-06-01T10:00', { type: 'lodging' }), 'none')).toBe(
+    true,
+  );
+  expect(isRailEvent(long, 'type')).toBe(false);
+  expect(isRailEvent(ev(null, null), 'none')).toBe(false);
+});
+
+test('back-to-back hotels share rail slot 0; overlapping stays take slots 0 and 1, capped', () => {
+  const h1 = ev('2026-06-01T15:00', '2026-06-03T11:00', { type: 'lodging' });
+  const h2 = ev('2026-06-03T15:00', '2026-06-05T11:00', { type: 'lodging' });
+  const { blocks } = layoutEvents([h1, h2], scale, none);
+  expect(blocks.map((b) => b.railSlot)).toEqual([0, 0]);
+  const o1 = ev('2026-06-01T15:00', '2026-06-05T11:00', { type: 'lodging' });
+  const o2 = ev('2026-06-02T15:00', '2026-06-05T11:00', { type: 'lodging' });
+  const o3 = ev('2026-06-03T15:00', '2026-06-05T11:00', { type: 'lodging' });
+  const r = layoutEvents([o1, o2, o3], scale, none).blocks;
+  expect(r.map((b) => b.railSlot)).toEqual([0, 1, MAX_RAILS - 1]);
+});
+
+test('participant lanes: each person has own rail; exclude still hides lanes', () => {
+  const ha = ev('2026-06-01T15:00', '2026-06-04T11:00', {
+    type: 'lodging',
+    participants: ['alice'],
+  });
+  const hb = ev('2026-06-01T15:00', '2026-06-04T11:00', { type: 'lodging', participants: ['bob'] });
+  const spec: LaneSpec = { mode: 'participant', roster };
+  const { blocks } = layoutEvents([ha, hb], scale, spec);
+  expect(blocks.every((b) => b.rail && b.railSlot === 0)).toBe(true);
+  expect(new Set(blocks.map((b) => b.laneKey))).toEqual(new Set(['alice', 'bob']));
+  const ex = layoutEvents([ha, hb], scale, { ...spec, exclude: ['bob'] });
+  expect(ex.lanes.map((l) => l.key)).toEqual(['alice']);
+  expect(ex.blocks.map((b) => b.laneKey)).toEqual(['alice']);
 });

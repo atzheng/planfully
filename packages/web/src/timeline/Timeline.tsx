@@ -12,6 +12,7 @@ import {
   initialScrollMs,
   layoutEvents,
   maxColumnsForWidth,
+  RAIL_PX,
   withoutEmptyLanes,
 } from './layout';
 import type { Layout } from './layout';
@@ -57,6 +58,8 @@ const SCROLL_LEAD_PX = 48;
 const PLACE_MIN_PX = 60;
 /** Minimum lane width (matches --lane-min in Timeline.module.css). */
 const LANE_MIN_PX = 140;
+/** Rail height from which the vertical name label is shown. */
+const RAIL_LABEL_MIN_PX = 48;
 const NO_ROSTER: readonly RosterMember[] = [];
 const NO_BLOCKS: Layout['blocks'] = [];
 const browserZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
@@ -84,6 +87,39 @@ const Blocks = memo(function Blocks({
         const secondary = tier === 'full';
         const bar = tier === 'bar';
         const selected = e.id === selectedId;
+        if (b.rail) {
+          const name = `${e.name}${time ? `, ${time}` : ''}${cancelled ? ' (cancelled)' : ''}${e.needsReview ? ' (needs review)' : ''}`;
+          return (
+            <button
+              key={`${b.laneKey}:${b.eventId}`}
+              type="button"
+              className={`${styles.rail} ${cancelled ? styles.cancelled : ''} ${selected ? styles.selected : ''}`}
+              aria-current={selected ? 'true' : undefined}
+              data-testid="block"
+              data-rail="true"
+              data-event-id={e.id}
+              data-type={e.type}
+              title={name}
+              aria-label={name}
+              style={{
+                top: b.top,
+                height: b.height,
+                right: b.railSlot * RAIL_PX,
+                width: RAIL_PX,
+              }}
+              onClick={() => onOpen(e.id)}
+            >
+              <span className={styles.railFace}>
+                {b.height >= RAIL_LABEL_MIN_PX && (
+                  <span className={styles.railLabel} aria-hidden="true">
+                    <EventIcon event={e} size={12} />
+                    <span className={styles.railName}>{e.name}</span>
+                  </span>
+                )}
+              </span>
+            </button>
+          );
+        }
         return (
           <button
             key={`${b.laneKey}:${b.eventId}`}
@@ -104,7 +140,7 @@ const Blocks = memo(function Blocks({
               top: b.top,
               height: b.height,
               left: `calc(${(b.column / b.columns) * 100}% + ${1 + b.depth * DEPTH_STEP_PX}px)`,
-              width: `calc(${(b.span / b.columns) * 100}% - ${2 + b.depth * DEPTH_STEP_PX}px)`,
+              width: `calc(${(b.span / b.columns) * 100}% - ${2 + b.depth * DEPTH_STEP_PX}px - ${b.railInset * RAIL_PX}px)`,
             }}
             onClick={() => onOpen(e.id)}
           >
