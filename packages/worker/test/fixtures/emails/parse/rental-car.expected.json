@@ -1,7 +1,8 @@
 {
   "events": [
     {
-      "type": "car",
+      "type": "transit",
+      "mode": "car",
       "name": "",
       "start": { "local": "2026-06-16T12:00", "tz": "Europe/Paris" },
       "end": { "local": "2026-06-19T10:00", "tz": "Europe/Paris" },

@@ -1,4 +1,4 @@
-import { EVENT_TYPES, type RosterMember } from '@planfully/shared';
+import { EVENT_TYPES, TRANSIT_MODES, type RosterMember } from '@planfully/shared';
 
 /** Model used for parsing (CONTRACTS.md section 6). */
 export const PARSE_MODEL = 'claude-haiku-5-5';
@@ -10,11 +10,11 @@ Return a JSON array of events, each following the provided schema.
 
 Rules:
 - One event per flight leg, per train/bus/ferry segment, per lodging stay, per reservation or ticket (restaurant, tour, show, car rental, etc.). A round-trip flight is two events (or more with connections).
-- Event types: ${EVENT_TYPES.join(', ')}.
+- Event types: ${EVENT_TYPES.join(', ')}. All transport (flights, trains, buses, ferries, rental cars, other) is type 'transit'; for it also set mode to one of ${TRANSIT_MODES.join(', ')} ('other' for taxis, transfers, shuttles and anything else). Do not use mode for non-transit events.
 - Times are LOCAL wall-clock times at the place where they happen, formatted YYYY-MM-DDTHH:mm, together with the IANA time zone of that place, a valid name from the IANA database (for example Europe/Paris for anywhere in France, Europe/London for the UK, America/New_York for Boston). Zone names are not city names: never invent one from the city in the email (there is no Europe/Lyon). Never convert between zones. A flight's start uses the origin's zone and its end uses the destination's zone. For lodging, start is check-in and end is check-out, in the lodging's zone.
 - When the email gives a date without a year, choose the year that puts it on or after today's date and closest to it.
-- Flights and other transport: location is the origin and endLocation is the destination. For flights, location.name and endLocation.name are the airport as "City Airport Name (IATA)", always with the 3-letter IATA code in parentheses, for example "Paris Charles de Gaulle Airport (CDG)" or "San Francisco International Airport (SFO)"; use the same form in every email so the same airport always reads the same. Give the IATA code even when the email only names the airport, if you are certain of it. For trains, buses and ferries use the official station or terminal name, for example "Paris Gare de Lyon" or "Lyon Part-Dieu", without a city prefix the operator does not use. The event name should be short and recognisable (for example "AF 123 CDG to JFK" or "TGV 6609 Paris to Lyon").
-- Car rental: one event; location is the pick-up place and endLocation the drop-off place, start is pick-up and end is drop-off.
+- Transit (any mode): location is the origin and endLocation is the destination. For flights, location.name and endLocation.name are the airport as "City Airport Name (IATA)", always with the 3-letter IATA code in parentheses, for example "Paris Charles de Gaulle Airport (CDG)" or "San Francisco International Airport (SFO)"; use the same form in every email so the same airport always reads the same. Give the IATA code even when the email only names the airport, if you are certain of it. For trains, buses and ferries use the official station or terminal name, for example "Paris Gare de Lyon" or "Lyon Part-Dieu", without a city prefix the operator does not use. The event name should be short and recognisable (for example "AF 123 CDG to JFK" or "TGV 6609 Paris to Lyon").
+- Car rental: one transit event with mode 'car'; location is the pick-up place and endLocation the drop-off place, start is pick-up and end is drop-off.
 - Today's date (given in the message) is the day the email was sent.
 - participants: map each named traveller onto a roster id using the roster names and aliases. Airline names appear as 'SURNAME/GIVEN MR' and may be abbreviated or reordered. Use only ids that appear in the roster; never invent ids. If no traveller is named, or none match, use [].
 - confirmation: the booking reference / PNR / reservation code only. Not ticket numbers, loyalty numbers or order totals.

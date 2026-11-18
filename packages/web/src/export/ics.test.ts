@@ -50,7 +50,8 @@ describe('buildIcs', () => {
       [
         ev({
           id: 'f1',
-          type: 'flight',
+          type: 'transit',
+          mode: 'flight',
           start: { local: '2026-07-14T09:30', tz: 'Europe/Paris' },
           end: { local: '2026-07-14T11:45', tz: 'America/New_York' },
         }),

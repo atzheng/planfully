@@ -5,7 +5,8 @@ import { buildFields, buildLocalTime, defaultZones, diffFields, initialValues } 
 const base: Event = {
   id: 'e1',
   name: 'Flight to Lisbon',
-  type: 'flight',
+  type: 'transit',
+  mode: 'flight',
   start: { local: '2026-07-14T09:30', tz: 'Europe/Paris' },
   end: { local: '2026-07-14T11:00', tz: 'Europe/Lisbon' },
   confirmation: 'XYZ789',
@@ -104,6 +105,30 @@ describe('diffFields', () => {
     const r = build({ confirmation: '', notes: '' });
     expect(r.ok).toBe(true);
     if (r.ok) expect(diffFields(base, r.fields)).toEqual({ confirmation: null, notes: null });
+  });
+});
+
+describe('transit mode', () => {
+  test('mode round-trips through the form and is unchanged when untouched', () => {
+    expect(initialValues(base).mode).toBe('flight');
+    const r = build({});
+    if (!r.ok) throw new Error('invalid');
+    expect(r.fields.mode).toBe('flight');
+    expect(diffFields(base, r.fields)).toEqual({});
+  });
+  test('changing the mode patches only the mode', () => {
+    const r = build({ mode: 'train' });
+    if (!r.ok) throw new Error('invalid');
+    expect(diffFields(base, r.fields)).toEqual({ mode: 'train' });
+  });
+  test('switching to a non-transit type clears the mode', () => {
+    const r = build({ type: 'activity' });
+    if (!r.ok) throw new Error('invalid');
+    expect(diffFields(base, r.fields)).toEqual({ type: 'activity', mode: null });
+  });
+  test('a new non-transit event has no mode', () => {
+    const r = buildFields(initialValues({}), {});
+    expect(r.ok && 'mode' in r.fields).toBe(false);
   });
 });
 

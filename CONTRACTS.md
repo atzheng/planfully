@@ -50,17 +50,20 @@ Libraries, fixed: pnpm, TypeScript, vitest, zod, luxon (time), `@noble/curves` +
 
 ```ts
 type EventType =
-  | 'flight'
-  | 'train'
-  | 'bus'
-  | 'ferry'
-  | 'car'
+  | 'transit'
   | 'lodging'
   | 'dining'
   | 'activity'
   | 'attraction'
   | 'receipt'
   | 'other';
+// Sub-type of a 'transit' event; drives the icon (plane/train/bus/ferry/car) and label text.
+type TransitMode = 'flight' | 'train' | 'bus' | 'ferry' | 'car' | 'other';
+// Legacy: records stored before the merge use type 'flight' | 'train' | 'bus' | 'ferry' | 'car'.
+// EventSchema / ParsedEventSchema / the patch `fields` schema preprocess them (normalizeLegacyType)
+// to { type: 'transit', mode: <old type> }, so fold, UI and exports only ever see the new shape;
+// an explicit `mode` on the record wins. New writes (LLM output, edits, compaction) use the new shape.
+// Old ?type=flight,train,... filter URLs map to ?type=transit. An old client cannot read new records.
 type LocalTime = { local: string; tz: string }; // local: 'YYYY-MM-DDTHH:mm', tz: IANA zone
 type Location = { name?: string; address?: string; lat?: number; lng?: number; placeId?: string };
 type Attachment = {
@@ -74,6 +77,7 @@ type Event = {
   id: string; // uuid
   name: string;
   type: EventType;
+  mode?: TransitMode; // only meaningful when type is 'transit'; a patch clears it with null
   start?: LocalTime;
   end?: LocalTime;
   confirmation?: string;
@@ -166,7 +170,7 @@ Version skew (old client reading logs written by a new client):
 - Snapshot tombstones: `RecordBodySchema` and its `compaction` object are strict (no length or format limit on `aliases` entries), so a new `compaction.tombstones` field would make every old client reject the snapshot. The originals are deleted, so those clients would lose the event from view (and `compactTrip` would refuse to run) until they update. Hence tombstones are encoded as prefixed `aliases` entries, which old clients accept. Old clients treat them as real aliases (they join the union-find), so each entry includes the group's canonical id: sibling events from one email share the source attachment id, and a shared alias would merge them. With per-group entries nothing else carries the same string, so they stay inert; the only residual case is a hand-crafted patch whose target equals such a string (none is written by the app). Old clients ignore the tombstone itself, so an email can re-add a removed attachment for them, as before.
 - A patch with a `null` field fails the old `RecordBodySchema` (strict), so an old client counts it as a skipped (unopenable) record: it does not see the clear, and `compactTrip` refuses to compact while any record is skipped. Nothing else is lost. Old logs fold identically under the new rules except where a patch removed an attachment before a later put re-listed it, or a put bridged groups after patches that named a not-yet-existing id.
 
-**Dedupe tag input (email ingest, `routes/default.ts`).** Events without a `confirmation` get no tag. Otherwise `dedupeTag(dedupeKey, type, input)` where `input` is the confirmation for non-transport types, and for `flight|train|bus|ferry|car` `${confirmation}|${placeKey(location)}|${placeKey(endLocation)}|${start ? dayKey(start) : ''}` (each leg of a multi-leg booking, and each day of a repeated route, gets its own tag; `dedupeTag` strips non-alphanumerics). `placeKey(loc.name)`: a 3-letter capital code counts only if parenthesised `(CDG)`, the whole trimmed name (`CDG`), or next to an airport marker (`Airport`, `Aeroporto`, `Aéroport`, `Aeropuerto`, `Flughafen`, `Terminal`, `T<digit>`), e.g. `SFO Terminal 2`, `Airport JFK`; otherwise the name lowercased with diacritics stripped and non-alphanumerics removed (`NEW YORK` stays `newyork`; `NYC JFK` gives `nycjfk`). Trade-offs: a schedule change that moves a leg to a different day creates a new event instead of updating the old one (a visible duplicate the user can delete beats silently hiding a leg); same-day time changes and cancellations fold in. Code-less names worded differently ("San Francisco International" vs "SFO") also duplicate. When some events or attachments of an email fail, ingest additionally appends one needs-review `other` event (no tag, source email attached) named `Not everything from "<subject>" could be added`.
+**Dedupe tag input (email ingest, `routes/default.ts`).** Events without a `confirmation` get no tag. Otherwise `dedupeTag(dedupeKey, dedupeTypeFor(type, mode), input)` where `dedupeTypeFor` keeps tags stable across the transit merge: for `transit` it returns the legacy type string, i.e. the `mode` when it is `flight|train|bus|ferry|car`, otherwise (`other` or missing) `'transit'`; every other type is unchanged. `input` is the confirmation for non-transit types, and for `transit` `${confirmation}|${placeKey(location)}|${placeKey(endLocation)}|${start ? dayKey(start) : ''}` (each leg of a multi-leg booking, and each day of a repeated route, gets its own tag; `dedupeTag` strips non-alphanumerics). `placeKey(loc.name)`: a 3-letter capital code counts only if parenthesised `(CDG)`, the whole trimmed name (`CDG`), or next to an airport marker (`Airport`, `Aeroporto`, `Aéroport`, `Aeropuerto`, `Flughafen`, `Terminal`, `T<digit>`), e.g. `SFO Terminal 2`, `Airport JFK`; otherwise the name lowercased with diacritics stripped and non-alphanumerics removed (`NEW YORK` stays `newyork`; `NYC JFK` gives `nycjfk`). Trade-offs: a schedule change that moves a leg to a different day creates a new event instead of updating the old one (a visible duplicate the user can delete beats silently hiding a leg); same-day time changes and cancellations fold in. Code-less names worded differently ("San Francisco International" vs "SFO") also duplicate. When some events or attachments of an email fail, ingest additionally appends one needs-review `other` event (no tag, source email attached) named `Not everything from "<subject>" could be added`.
 
 ## 4. Crypto (`crypto.ts`)
 
@@ -246,7 +250,7 @@ type ParsedEvent = Omit<Event, 'id'|'attachments'|'source'|'createdAt'|'pinned'|
 parseEmail(email: ParsedEmail, opts: { roster: RosterMember[]; today: string; apiKey: string }): Promise<ParsedEvent[]>
 // parseEmailDetailed(...): Promise<{ events: ParsedEvent[]; dropped: number }> is the same call plus the count of invalid events dropped; parseEmail returns only events.
 // Behaviour: output with any invalid element is retried once; if still partly invalid the valid events are returned with dropped > 0 (default.ts then notifies needs-review);
-// max_tokens is not retried. text/plain shorter than 200 chars is sent together with the rendered HTML. Flights: location.name is 'City Airport Name (IATA)'.
+// max_tokens is not retried. text/plain shorter than 200 chars is sent together with the rendered HTML. Flights (type 'transit', mode 'flight'): location.name is 'City Airport Name (IATA)'. The LLM emits type 'transit' plus `mode`; `mode` is last in `eventsJsonSchema` on purpose (right after `type`, Haiku skipped the other optional fields), and `sanitize` drops it from non-transit events.
 // Real-API evaluation: `pnpm --filter @planfully/worker eval` (opt-in, never in `pnpm test`).
 
 // geo/geocode.ts — returns the input unchanged when no key is set or the match is weak

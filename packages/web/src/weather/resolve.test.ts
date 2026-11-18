@@ -43,7 +43,8 @@ test('travel day switches from origin to destination at departure', () => {
   const events = [
     ev('2026-06-01T09:00', '2026-06-01T10:00', { location: paris }),
     ev('2026-06-01T14:00', '2026-06-01T16:00', {
-      type: 'flight',
+      type: 'transit',
+      mode: 'flight',
       location: paris,
       endLocation: rome,
     }),
@@ -91,7 +92,9 @@ test('an in-progress event beats a more recent ended one', () => {
 });
 
 test('transport without endLocation falls back to its location', () => {
-  const events = [ev('2026-06-01T09:00', '2026-06-01T11:00', { type: 'train', location: paris })];
+  const events = [
+    ev('2026-06-01T09:00', '2026-06-01T11:00', { type: 'transit', mode: 'train', location: paris }),
+  ];
   const segs = hourlyLocations(events, t('2026-06-01T10:00'), t('2026-06-01T13:00'));
   expect(segs).toHaveLength(1);
   expect(segs[0]?.label).toBe('Paris');

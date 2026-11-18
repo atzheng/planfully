@@ -1,7 +1,8 @@
 {
   "events": [
     {
-      "type": "flight",
+      "type": "transit",
+      "mode": "flight",
       "name": "AI 433",
       "start": { "local": "2026-07-03T07:25", "tz": "Europe/Paris" },
       "end": { "local": "2026-07-03T08:55", "tz": "Europe/Lisbon" },

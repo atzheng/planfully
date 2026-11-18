@@ -1,7 +1,7 @@
 // Pure helpers for the timeline view.
 import { DateTime, IANAZone } from 'luxon';
 import { eventInterval } from '@planfully/shared';
-import type { Event, EventType } from '@planfully/shared';
+import type { Event, EventType, TransitMode } from '@planfully/shared';
 
 const HOUR_MS = 3_600_000;
 
@@ -55,11 +55,7 @@ export function localStartLabel(e: Pick<Event, 'start'>): string {
 }
 
 export const TYPE_ICON: Record<EventType, string> = {
-  flight: '✈',
-  train: '🚆',
-  bus: '🚌',
-  ferry: '⛴',
-  car: '🚗',
+  transit: '🧭',
   lodging: '🛏',
   dining: '🍽',
   activity: '🎟',
@@ -68,13 +64,29 @@ export const TYPE_ICON: Record<EventType, string> = {
   other: '•',
 };
 
+/** Icon per transit mode; the mode picks the icon of a transit event (TYPE_ICON.transit when unset). */
+export const MODE_ICON: Record<TransitMode, string> = {
+  flight: '✈',
+  train: '🚆',
+  bus: '🚌',
+  ferry: '⛴',
+  car: '🚗',
+  other: '🧭',
+};
+
+/** Icon of an event: by mode for transit, by type otherwise. */
+export function eventIcon(e: Pick<Event, 'type' | 'mode'>): string {
+  return e.type === 'transit' && e.mode ? MODE_ICON[e.mode] : TYPE_ICON[e.type];
+}
+
+/** Label text of an event's kind: the mode for transit ('flight', 'train', ...), the type otherwise. */
+export function eventKindLabel(e: Pick<Event, 'type' | 'mode'>): string {
+  return e.type === 'transit' && e.mode && e.mode !== 'other' ? e.mode : e.type;
+}
+
 /** Hue (0-360) per type; CSS turns it into light and dark block colours. */
 export const TYPE_HUE: Record<EventType, number> = {
-  flight: 215,
-  train: 270,
-  bus: 170,
-  ferry: 195,
-  car: 30,
+  transit: 215,
   lodging: 145,
   dining: 15,
   activity: 330,

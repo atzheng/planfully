@@ -16,6 +16,7 @@ import {
   opensInline,
   participantNames,
 } from './format';
+import { eventKindLabel } from '../timeline/model';
 import { diffFields } from './formModel';
 import { EventForm } from './EventForm';
 import { AttachButton } from './UploadButtons';
@@ -203,7 +204,7 @@ function Details({
   return (
     <>
       <div className={styles.badges}>
-        <span className={styles.badge}>{event.type}</span>
+        <span className={styles.badge}>{eventKindLabel(event)}</span>
         {event.status === 'cancelled' && (
           <span className={`${styles.badge} ${styles.warn}`}>Cancelled</span>
         )}

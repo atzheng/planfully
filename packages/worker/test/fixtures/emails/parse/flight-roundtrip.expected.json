@@ -1,7 +1,8 @@
 {
   "events": [
     {
-      "type": "flight",
+      "type": "transit",
+      "mode": "flight",
       "name": "NW 1",
       "start": { "local": "2026-06-12T08:10", "tz": "America/Los_Angeles" },
       "end": { "local": "2026-06-12T14:05", "tz": "America/Chicago" },
@@ -12,7 +13,8 @@
       "status": "confirmed"
     },
     {
-      "type": "flight",
+      "type": "transit",
+      "mode": "flight",
       "name": "NW 2",
       "start": { "local": "2026-06-12T16:45", "tz": "America/Chicago" },
       "end": { "local": "2026-06-13T07:55", "tz": "Europe/Paris" },
@@ -23,7 +25,8 @@
       "status": "confirmed"
     },
     {
-      "type": "flight",
+      "type": "transit",
+      "mode": "flight",
       "name": "NW 3",
       "start": { "local": "2026-06-22T11:20", "tz": "Europe/Paris" },
       "end": { "local": "2026-06-22T13:50", "tz": "America/Los_Angeles" },

@@ -1,4 +1,4 @@
-import { dayKey, dedupeTag, fromBase64 } from '@planfully/shared';
+import { dayKey, dedupeTag, dedupeTypeFor, fromBase64 } from '@planfully/shared';
 import type { Attachment, Event, Location, ParsedEvent } from '@planfully/shared';
 import type { TripRow } from '../../db/trips';
 import type { Env } from '../../env';
@@ -28,8 +28,6 @@ export function todayFor(dateHeader: string): string {
   const t = Date.parse(dateHeader);
   return new Date(Number.isNaN(t) ? Date.now() : t).toISOString().slice(0, 10);
 }
-
-const TRANSPORT = new Set(['flight', 'train', 'bus', 'ferry', 'car']);
 
 const AIRPORT_WORD =
   '(?:[Aa]irport|[Aa]eroporto|[Aa]éroport|[Aa]eropuerto|[Ff]lughafen|[Tt]erminal)';
@@ -64,13 +62,14 @@ export function placeKey(loc: Location | undefined): string {
 /** Dedupe tag for a parsed event; null without a confirmation. See CONTRACTS.md section 3. */
 export async function tagFor(
   dedupeKey: Uint8Array,
-  e: Pick<ParsedEvent, 'type' | 'confirmation' | 'location' | 'endLocation' | 'start'>,
+  e: Pick<ParsedEvent, 'type' | 'mode' | 'confirmation' | 'location' | 'endLocation' | 'start'>,
 ): Promise<string | null> {
   if (!e.confirmation) return null;
-  const leg = TRANSPORT.has(e.type)
-    ? `|${placeKey(e.location)}|${placeKey(e.endLocation)}|${e.start ? dayKey(e.start) : ''}`
-    : '';
-  return dedupeTag(dedupeKey, e.type, e.confirmation + leg);
+  const leg =
+    e.type === 'transit'
+      ? `|${placeKey(e.location)}|${placeKey(e.endLocation)}|${e.start ? dayKey(e.start) : ''}`
+      : '';
+  return dedupeTag(dedupeKey, dedupeTypeFor(e.type, e.mode), e.confirmation + leg);
 }
 
 async function parse(

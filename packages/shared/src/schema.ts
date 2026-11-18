@@ -2,11 +2,7 @@ import { IANAZone } from 'luxon';
 import { z } from 'zod';
 
 export const EVENT_TYPES = [
-  'flight',
-  'train',
-  'bus',
-  'ferry',
-  'car',
+  'transit',
   'lodging',
   'dining',
   'activity',
@@ -17,6 +13,37 @@ export const EVENT_TYPES = [
 
 export const EventTypeSchema = z.enum(EVENT_TYPES);
 export type EventType = z.infer<typeof EventTypeSchema>;
+
+/** Sub-type of a 'transit' event; drives the icon and label. */
+export const TRANSIT_MODES = ['flight', 'train', 'bus', 'ferry', 'car', 'other'] as const;
+export const TransitModeSchema = z.enum(TRANSIT_MODES);
+export type TransitMode = z.infer<typeof TransitModeSchema>;
+
+/** Event types that were merged into 'transit' (records stored before the merge still use them). */
+const LEGACY_TRANSIT_TYPES: readonly string[] = ['flight', 'train', 'bus', 'ferry', 'car'];
+
+/**
+ * Backward compatibility: a stored record or parsed event with a legacy transport type
+ * ('flight' | 'train' | 'bus' | 'ferry' | 'car') reads as { type: 'transit', mode: <old type> }.
+ * An explicit `mode` already on the object wins. Anything else passes through untouched.
+ */
+export function normalizeLegacyType(input: unknown): unknown {
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) return input;
+  const o = input as Record<string, unknown>;
+  if (typeof o.type !== 'string' || !LEGACY_TRANSIT_TYPES.includes(o.type)) return input;
+  return { ...o, type: 'transit', mode: o.mode ?? o.type };
+}
+
+/**
+ * The type string fed into the email dedupe tag. Tags were computed from the legacy type
+ * ('flight', 'train', ...), so for transit it is derived from the mode to keep tags of
+ * bookings ingested before the merge stable. A missing or 'other' mode gives 'transit'
+ * (no legacy record can have had it). Non-transit types are unchanged.
+ */
+export function dedupeTypeFor(type: string, mode?: string | null): string {
+  if (type !== 'transit') return type;
+  return mode && mode !== 'other' && LEGACY_TRANSIT_TYPES.includes(mode) ? mode : 'transit';
+}
 
 const LOCAL_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/;
 
@@ -58,10 +85,13 @@ export type Attachment = z.infer<typeof AttachmentSchema>;
 export const EventStatusSchema = z.enum(['confirmed', 'cancelled']);
 export const EventSourceSchema = z.enum(['email', 'manual']);
 
-export const EventSchema = z.strictObject({
+/** The strict object shape, without the legacy-type preprocess; use for .shape/.omit/.partial. */
+export const EventObjectSchema = z.strictObject({
   id: z.string().min(1),
   name: z.string().min(1),
   type: EventTypeSchema,
+  /** transport mode; meaningful only when type is 'transit' */
+  mode: TransitModeSchema.optional(),
   start: LocalTimeSchema.optional(),
   end: LocalTimeSchema.optional(),
   confirmation: z.string().optional(),
@@ -82,7 +112,9 @@ export const EventSchema = z.strictObject({
   /** tombstone */
   deleted: z.boolean().optional(),
 });
-export type Event = z.infer<typeof EventSchema>;
+/** Reads legacy transport types as transit + mode (see normalizeLegacyType). */
+export const EventSchema = z.preprocess(normalizeLegacyType, EventObjectSchema);
+export type Event = z.infer<typeof EventObjectSchema>;
 
 export const RosterMemberSchema = z.strictObject({
   id: z.string().min(1),
@@ -105,8 +137,8 @@ export const TripMetaSchema = z.strictObject({
 export type TripMeta = z.infer<typeof TripMetaSchema>;
 
 /** What the LLM parser returns per event (CONTRACTS.md section 6). */
-export const ParsedEventSchema = z.strictObject({
-  ...EventSchema.omit({
+export const ParsedEventObjectSchema = z.strictObject({
+  ...EventObjectSchema.omit({
     id: true,
     attachments: true,
     source: true,
@@ -117,7 +149,8 @@ export const ParsedEventSchema = z.strictObject({
   /** indexes into email.attachments */
   attachmentIndexes: z.array(z.number().int().nonnegative()),
 });
-export type ParsedEvent = z.infer<typeof ParsedEventSchema>;
+export const ParsedEventSchema = z.preprocess(normalizeLegacyType, ParsedEventObjectSchema);
+export type ParsedEvent = z.infer<typeof ParsedEventObjectSchema>;
 
 // JSON Schema for ParsedEvent[], for LLM structured output. Hand-written to use only
 // widely supported keywords (type, properties, required, items, enum, additionalProperties:false).
@@ -161,6 +194,12 @@ export const eventsJsonSchema = {
       notes: str,
       needsReview: { type: 'boolean' },
       attachmentIndexes: { type: 'array', items: { type: 'integer' } },
+      // Last on purpose: with it right after type, Haiku skipped the other optional fields.
+      mode: {
+        type: 'string',
+        enum: [...TRANSIT_MODES],
+        description: "Only for type 'transit'; omit for every other type",
+      },
     },
     required: ['name', 'type', 'participants', 'status', 'attachmentIndexes'],
     additionalProperties: false,

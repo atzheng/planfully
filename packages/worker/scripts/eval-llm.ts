@@ -26,6 +26,8 @@ const PRICE_OUT = 0.5;
 type ExpectedTime = { local: string; tz: string };
 type ExpectedEvent = {
   type: string;
+  /** Transit mode (flight, train, bus, ferry, car, other); compared only when given. */
+  mode?: string;
   /** Loose: every word of this must appear in the actual name (case and accents ignored). */
   name?: string;
   start?: ExpectedTime;
@@ -112,6 +114,8 @@ function compareEvent(want: ExpectedEvent, got: Actual): string[] {
     if (g?.local !== w.local || g?.tz !== w.tz)
       bad.push(`${k} ${g ? `${g.local} ${g.tz}` : 'missing'} (want ${w.local} ${w.tz})`);
   }
+  if (want.mode && got.mode !== want.mode)
+    bad.push(`mode ${got.mode ?? 'missing'} (want ${want.mode})`);
   if (want.confirmation && norm(got.confirmation ?? '') !== norm(want.confirmation))
     bad.push(`confirmation "${got.confirmation ?? ''}"`);
   for (const k of ['location', 'endLocation'] as const) {
