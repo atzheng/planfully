@@ -1,6 +1,13 @@
 import { describe, expect, test } from 'vitest';
 import type { Event } from '@planfully/shared';
-import { boundsKey, boundsOf, buildMapModel, locatedEvents, SPREAD_DEG } from './markers';
+import {
+  boundsKey,
+  boundsOf,
+  buildMapModel,
+  clusterHasEvent,
+  locatedEvents,
+  SPREAD_DEG,
+} from './markers';
 
 const mk = (id: string, over: Partial<Event> = {}): Event => ({
   id,
@@ -128,5 +135,13 @@ describe('helpers', () => {
       mk('c', { type: 'transit', mode: 'bus', endLocation: { lat: 1, lng: 2 } }),
     ];
     expect(locatedEvents(es).map((e) => e.id)).toEqual(['a', 'c']);
+  });
+});
+
+describe('clusterHasEvent', () => {
+  test('matches a member id', () => expect(clusterHasEvent(['a', 'b'], 'b')).toBe(true));
+  test('no match for another or empty selection', () => {
+    expect(clusterHasEvent(['a', undefined], 'c')).toBe(false);
+    expect(clusterHasEvent(['a', ''], '')).toBe(false);
   });
 });
