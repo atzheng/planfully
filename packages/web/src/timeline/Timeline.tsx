@@ -1,8 +1,8 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { Event, EventType, RosterMember } from '@planfully/shared';
-import { useFilteredEvents } from '../filters/filter';
-import { booleanCodec, stringCodec, stringListCodec, useQueryState } from '../lib/queryState';
+import { useFilteredEvents, useWhoSelection } from '../filters/filter';
+import { booleanCodec, stringCodec, useQueryState } from '../lib/queryState';
 import { useRegisterCentre } from '../event/AddEvent';
 import { useTrip } from '../trip/store';
 import { bucketLabel, compactBuckets, isCompact } from './compact';
@@ -51,7 +51,6 @@ const SCROLL_LEAD_PX = 48;
 /** Block height at which the place line joins the title and time. */
 const PLACE_MIN_PX = 60;
 const NO_ROSTER: readonly RosterMember[] = [];
-const NO_WHO: string[] = [];
 const NO_BLOCKS: Layout['blocks'] = [];
 const browserZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 
@@ -302,7 +301,7 @@ export function Timeline({ gutter: gutterProp }: { gutter?: ReactNode } = {}) {
   const allEvents = useTrip((s) => s.events);
   const [tzRaw, setTzRaw] = useQueryState('tz', stringCodec, '');
   const [openId, setOpenId] = useQueryState('e', stringCodec, '');
-  const [who] = useQueryState('who', stringListCodec, NO_WHO);
+  const { include: who, exclude: whoOut } = useWhoSelection();
   const [laneMode] = useQueryState('lanes', laneModeCodec, 'none');
   const [wxOn] = useQueryState('wx', booleanCodec, false);
   const { pxPerHour, setPx } = useZoom();
@@ -331,10 +330,10 @@ export function Timeline({ gutter: gutterProp }: { gutter?: ReactNode } = {}) {
   const layout = useMemo(
     () =>
       withoutEmptyLanes(
-        layoutEvents(events, scale, { mode: laneMode, roster, only: who }),
+        layoutEvents(events, scale, { mode: laneMode, roster, only: who, exclude: whoOut }),
         laneMode,
       ),
-    [events, scale, roster, laneMode, who],
+    [events, scale, roster, laneMode, who, whoOut],
   );
   const blocksByLane = useMemo(() => {
     const m = new Map<string, Layout['blocks']>();

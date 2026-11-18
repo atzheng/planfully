@@ -9,6 +9,8 @@ export type LaneSpec = {
   roster: readonly RosterMember[];
   /** Participant mode: show only these participants' lanes (the `who` filter); empty/absent = all. */
   only?: readonly string[];
+  /** Participant mode: participants whose lanes are hidden (the `who` exclude list). */
+  exclude?: readonly string[];
 };
 export type Lane = { key: string; label: string };
 export type Block = {
@@ -44,7 +46,8 @@ function laneKeys(e: Event, spec: LaneSpec, rosterIds: Set<string>): string[] {
             ? [OTHER_LANE_KEY]
             : spec.roster.map((m) => m.id)
           : [...new Set(e.participants.map((p) => (rosterIds.has(p) ? p : OTHER_LANE_KEY)))];
-      return spec.only?.length ? all.filter((k) => spec.only?.includes(k)) : all;
+      const kept = spec.exclude?.length ? all.filter((k) => !spec.exclude?.includes(k)) : all;
+      return spec.only?.length ? kept.filter((k) => spec.only?.includes(k)) : kept;
     }
   }
 }
@@ -107,7 +110,7 @@ export function layoutEvents(events: Event[], scale: TimeScale, spec: LaneSpec):
   } else {
     const only = spec.only?.length ? new Set(spec.only) : null;
     lanes = spec.roster
-      .filter((m) => !only || only.has(m.id))
+      .filter((m) => (!only || only.has(m.id)) && !spec.exclude?.includes(m.id))
       .map((m) => ({ key: m.id, label: m.name }));
     if (
       (!only && (present.has(OTHER_LANE_KEY) || lanes.length === 0)) ||
