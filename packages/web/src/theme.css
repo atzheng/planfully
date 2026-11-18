@@ -29,11 +29,13 @@
   /* Text */
   --text: var(--gray-10);
   --text-muted: var(--gray-8);
-  --text-subtle: var(--gray-7);
+  --text-subtle: #646c7b;
 
   /* Hairlines */
   --border: var(--gray-4);
   --border-strong: var(--gray-6);
+  /* Form-control outlines: >= 3:1 against bg and surface (WCAG 1.4.11). */
+  --border-control: #7a8291;
 
   /* The one accent */
   --accent: #2f5fe0;
@@ -115,6 +117,9 @@
   --gray-8: #9aa2b1;
   --gray-9: #c9cfd9;
   --gray-10: #eceff4;
+
+  --text-subtle: #8b93a3;
+  --border-control: #6b7383;
 
   --raised: #20242b;
   --overlay: rgb(0 0 0 / 0.6);

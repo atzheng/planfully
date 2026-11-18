@@ -45,6 +45,16 @@ describe('Button', () => {
   });
 });
 
+describe('Button types', () => {
+  it('fab and iconOnly require an aria-label at the type level', () => {
+    // @ts-expect-error fab without aria-label
+    const a = <Button fab>+</Button>;
+    // @ts-expect-error iconOnly without aria-label
+    const b = <Button iconOnly>x</Button>;
+    expect([a, b]).toHaveLength(2);
+  });
+});
+
 describe('Chip and Badge', () => {
   it('chip toggles aria-pressed', () => {
     const onClick = vi.fn();
@@ -263,6 +273,28 @@ describe('Menu', () => {
     render(<Harness />);
     fireEvent.keyDown(screen.getByTestId('trigger'), { key: 'ArrowDown' });
     expect(screen.getByRole('menu')).toBeTruthy();
+  });
+
+  it('aria-controls points at the menu element', () => {
+    render(<Harness />);
+    const t = open();
+    expect(t.getAttribute('aria-controls')).toBe(screen.getByRole('menu').id);
+    expect(screen.getByRole('menu').id).not.toBe('');
+  });
+
+  it('Tab inside a Sheet closes the menu, focuses the trigger and keeps the Sheet open', () => {
+    const onClose = vi.fn();
+    render(
+      <Sheet open onClose={onClose} label="Sheet">
+        <Harness />
+      </Sheet>,
+    );
+    const t = open();
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Tab' });
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(document.activeElement).toBe(t);
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog')).toBeTruthy();
   });
 
   it('Escape inside a Sheet closes only the menu', () => {

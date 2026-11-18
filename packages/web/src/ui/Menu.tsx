@@ -79,6 +79,9 @@ export function Menu({
 
   function onListKeyDown(e: KeyboardEvent<HTMLDivElement>) {
     if (e.key === 'Tab') {
+      // Close and return focus to the trigger; keep the key from an enclosing Sheet's focus trap.
+      e.preventDefault();
+      e.stopPropagation();
       close();
       return;
     }
@@ -116,17 +119,18 @@ export function Menu({
         anchorRef={anchorRef}
         label={label}
         role="menu"
+        id={`${id}-menu`}
         align={align}
         padded={false}
         onKeyDown={onListKeyDown}
       >
-        <div ref={listRef} id={`${id}-menu`} role="none">
+        <div ref={listRef} role="none">
           {items.map((item, i) =>
             'separator' in item ? (
               <div key={`sep-${i}`} role="separator" className={styles.menuSep} />
             ) : (
               <button
-                key={item.label}
+                key={`${i}-${item.label}`}
                 type="button"
                 role={item.checked === undefined ? 'menuitem' : 'menuitemcheckbox'}
                 aria-checked={item.checked}

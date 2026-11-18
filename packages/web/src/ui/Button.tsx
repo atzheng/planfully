@@ -9,13 +9,13 @@ type Base = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'aria-label'> & {
   size?: ButtonSize;
   /** Legacy shorthand for variant="primary". */
   primary?: boolean;
-  /** Floating action button: round, raised, fixed bottom-right (override position with className). Needs an aria-label. */
-  fab?: boolean;
 };
+/** Icon-only and fab buttons have no text, so the accessible name is required by type. */
 export type ButtonProps =
-  | (Base & { iconOnly?: false; 'aria-label'?: string })
-  /** Icon-only buttons have no text, so the accessible name is required. */
-  | (Base & { iconOnly: true; 'aria-label': string });
+  | (Base & { iconOnly?: false; fab?: false; 'aria-label'?: string })
+  | (Base & { iconOnly: true; fab?: boolean; 'aria-label': string })
+  /** Floating action button: round, raised, fixed bottom-right (override position with className). */
+  | (Base & { fab: true; iconOnly?: boolean; 'aria-label': string });
 
 const VARIANT_CLASS: Record<ButtonVariant, string> = {
   primary: styles.primary ?? '',

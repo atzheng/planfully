@@ -46,6 +46,7 @@ export function Popover({
   anchorRef,
   label,
   role = 'dialog',
+  id,
   align = 'start',
   autoFocus = true,
   padded = true,
@@ -59,6 +60,8 @@ export function Popover({
   /** Accessible name. */
   label: string;
   role?: 'dialog' | 'menu';
+  /** DOM id of the popover element (for aria-controls on the trigger). */
+  id?: string;
   align?: Align;
   autoFocus?: boolean;
   /** Inner padding for free-form content (menus turn it off). */
@@ -138,6 +141,7 @@ export function Popover({
   return createPortal(
     <div
       ref={ref}
+      id={id}
       role={role}
       aria-label={label}
       tabIndex={-1}

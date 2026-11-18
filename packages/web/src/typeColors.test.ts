@@ -83,11 +83,48 @@ describe('per-type colour tokens', () => {
       }
     });
   }
+});
 
-  it('text and accent pairs of the base theme meet AA', () => {
-    for (const rules of [block(theme, ':root'), block(theme, ":root[data-theme='dark']")]) {
-      const get = (n: string) => hex(token(rules, n));
-      expect(contrast(get('accent-text'), get('accent'))).toBeGreaterThanOrEqual(4.5);
+describe('base token contrast', () => {
+  const lightRules = block(theme, ':root');
+  const darkRules = block(theme, ":root[data-theme='dark']");
+  /** Resolve a token to rgb, following var(--x) through the theme's rules (dark first, then light). */
+  function color(rules: string, name: string): [number, number, number] {
+    let v: string;
+    try {
+      v = token(rules, name).trim();
+    } catch {
+      v = token(lightRules, name).trim();
     }
-  });
+    const ref = /^var\(--([\w-]+)\)$/.exec(v);
+    return ref?.[1] ? color(rules, ref[1]) : hex(v);
+  }
+  for (const [name, rules] of [
+    ['light', lightRules],
+    ['dark', darkRules],
+  ] as const) {
+    describe(name, () => {
+      it('text, text-muted and text-subtle are >= 4.5:1 on bg, surface and surface-2', () => {
+        for (const fg of ['text', 'text-muted', 'text-subtle'])
+          for (const bg of ['bg', 'surface', 'surface-2'])
+            expect(
+              contrast(color(rules, fg), color(rules, bg)),
+              `${fg} on ${bg}`,
+            ).toBeGreaterThanOrEqual(4.5);
+      });
+      it('control borders are >= 3:1 on bg and surface', () => {
+        for (const bg of ['bg', 'surface'])
+          expect(
+            contrast(color(rules, 'border-control'), color(rules, bg)),
+            bg,
+          ).toBeGreaterThanOrEqual(3);
+      });
+      it('accent text on accent and on danger is >= 4.5:1', () => {
+        for (const bgName of ['accent', 'danger'])
+          expect(
+            contrast(color(rules, 'accent-text'), color(rules, bgName)),
+          ).toBeGreaterThanOrEqual(4.5);
+      });
+    });
+  }
 });
