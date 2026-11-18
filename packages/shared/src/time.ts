@@ -32,11 +32,43 @@ export function dayKey(t: LocalTime): string {
 type AbbrRow = readonly [string, number, string?];
 const eu = (std: string, dst: string, off: number): AbbrRow => [std, off, dst];
 const cet = [
-  'Paris', 'Berlin', 'Madrid', 'Rome', 'Amsterdam', 'Brussels', 'Vienna', 'Zurich', 'Prague',
-  'Warsaw', 'Budapest', 'Stockholm', 'Oslo', 'Copenhagen', 'Belgrade', 'Zagreb', 'Luxembourg',
-  'Monaco', 'Malta', 'Bratislava', 'Ljubljana', 'Sarajevo', 'Skopje', 'Tirane', 'Andorra',
+  'Paris',
+  'Berlin',
+  'Madrid',
+  'Rome',
+  'Amsterdam',
+  'Brussels',
+  'Vienna',
+  'Zurich',
+  'Prague',
+  'Warsaw',
+  'Budapest',
+  'Stockholm',
+  'Oslo',
+  'Copenhagen',
+  'Belgrade',
+  'Zagreb',
+  'Luxembourg',
+  'Monaco',
+  'Malta',
+  'Bratislava',
+  'Ljubljana',
+  'Sarajevo',
+  'Skopje',
+  'Tirane',
+  'Andorra',
 ];
-const eet = ['Athens', 'Helsinki', 'Kiev', 'Kyiv', 'Bucharest', 'Sofia', 'Riga', 'Tallinn', 'Vilnius'];
+const eet = [
+  'Athens',
+  'Helsinki',
+  'Kiev',
+  'Kyiv',
+  'Bucharest',
+  'Sofia',
+  'Riga',
+  'Tallinn',
+  'Vilnius',
+];
 const ZONE_ABBR: Record<string, AbbrRow> = {
   'Europe/London': eu('GMT', 'BST', 0),
   'Europe/Dublin': eu('GMT', 'IST', 0),
