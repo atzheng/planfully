@@ -48,7 +48,7 @@ describe('buildItinerary', () => {
       NO_FILTER,
     );
     const rows = it.days[0]?.rows ?? [];
-    expect(rows[0]?.time).toBe('08:00 GMT+2');
+    expect(rows[0]?.time).toBe('08:00 CEST');
     expect(rows[1]?.time).toBe('12:00');
     expect(rows[2]?.time).toBe('18:00 EDT');
   });
@@ -67,7 +67,7 @@ describe('buildItinerary', () => {
       NO_FILTER,
     );
     expect(it.days).toHaveLength(1);
-    expect(it.days[0]?.rows[0]?.time).toBe('15:00 GMT+2 - Fri 17 Jul 11:00');
+    expect(it.days[0]?.rows[0]?.time).toBe('15:00 CEST - Fri 17 Jul 11:00');
     expect(it.days[0]?.rows[0]?.type).toBe('Lodging');
   });
 

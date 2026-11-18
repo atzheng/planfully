@@ -108,7 +108,7 @@ type TripMeta = {
 
 Each type has a zod schema named `<Type>Schema`. `eventsJsonSchema` is the JSON Schema for `ParsedEvent[]` (section 6) for LLM structured output.
 
-`time.ts` (luxon): `toInstant(t: LocalTime): number` (epoch ms), `fromInstant(ms: number, tz: string): LocalTime`, `dayKey(t: LocalTime): string` ('YYYY-MM-DD' in the event's zone), `eventInterval(e: Event): { start: number; end: number } | null` (null when unscheduled; `end` defaults to `start`).
+`time.ts` (luxon): `toInstant(t: LocalTime): number` (epoch ms), `fromInstant(ms: number, tz: string): LocalTime`, `dayKey(t: LocalTime): string` ('YYYY-MM-DD' in the event's zone), `eventInterval(e: Event): { start: number; end: number } | null` (null when unscheduled; `end` defaults to `start`). Zone names (planfully-bg3): `zoneAbbreviation(tz, ms)` / `localTimeAbbreviation(t: LocalTime)` give a browser-independent short name from our own IANA table ('WET'/'WEST' Lisbon, 'CET'/'CEST' Paris, 'JST', 'IST', ...); DST is detected by comparing luxon's numeric offset with the table's standard offset, never by parsing ICU names. Unknown zones (or unexpected offsets) give `utcOffsetLabel(minutes)`: 'UTC', 'UTC+2', 'UTC-3', 'UTC+5:30'. Invalid zone returns the input. Event sheet and PDF use it; never use luxon `offsetNameShort`.
 
 ## 3. Records and folding (`records.ts`, `fold.ts`)
 
