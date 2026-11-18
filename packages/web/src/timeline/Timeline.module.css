@@ -1,27 +1,67 @@
+/* Fills whatever the shell gives it: the canvas is the page. Controls float over it. */
 .timeline {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
+  position: relative;
+  flex: 1;
+  min-height: 0;
   min-width: 0;
 }
-.toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: var(--space-2) var(--space-3);
+/* Display zone: tiny label in the hour-gutter corner, opens the zone picker. */
+.tzCorner {
+  position: absolute;
+  top: 3px;
+  left: 2px;
+  z-index: 9;
 }
-.today {
-  min-height: var(--tap);
-  padding: 0 var(--space-4);
-  border: 1px solid var(--border);
+.todayPill {
+  position: absolute;
+  top: calc(28px + var(--space-2));
+  left: 50%;
+  z-index: 9;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: 32px;
+  padding: 0 var(--space-3) 0 var(--space-2);
+  transform: translateX(-50%);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-pill);
-  background: var(--surface);
+  background: var(--raised);
   color: var(--accent);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  box-shadow: var(--shadow-sm);
   cursor: pointer;
 }
-.today:disabled {
-  opacity: 0.5;
+.legend {
+  position: absolute;
+  bottom: var(--space-2);
+  left: var(--space-2);
+  z-index: 9;
+  max-width: calc(100% - 96px);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--raised);
+}
+/* +/- sits above the Add button (bottom right, 16px margin, 52px tall). Desktop only: phones pinch. */
+.zoomPair {
+  position: absolute;
+  right: var(--space-4);
+  bottom: calc(var(--space-4) + 52px + var(--space-3));
+  z-index: 9;
+  display: none;
+  flex-direction: column;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--raised);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+@media (min-width: 720px) {
+  .zoomPair {
+    display: flex;
+  }
 }
 .empty {
   position: absolute;
@@ -35,16 +75,15 @@
 }
 .scroller {
   position: relative;
-  height: calc(100dvh - 250px);
-  min-height: 320px;
+  height: 100%;
   overflow: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   /* Vertical pan stays native; pinch is handled in JS so it zooms the timeline, not the page. */
   touch-action: pan-x pan-y;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
   background: var(--surface);
+  /* Room below the last row for the Add button (52px + 16px margin) and the home indicator. */
+  padding-bottom: calc(52px + 2 * var(--space-4) + env(safe-area-inset-bottom));
 }
 .headingWrap {
   position: sticky;
@@ -56,7 +95,8 @@
 .heading {
   display: flex;
   align-items: center;
-  padding: 0 var(--space-3);
+  /* Leaves the corner for the zone label. */
+  padding: 0 var(--space-3) 0 60px;
   background: var(--surface-2);
   border-bottom: 1px solid var(--border);
   font-size: var(--text-md);
@@ -208,7 +248,7 @@
   cursor: pointer;
 }
 .block:focus-visible,
-.today:focus-visible,
+.todayPill:focus-visible,
 .unscheduledItem:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
@@ -243,29 +283,30 @@
 .compact .blockName {
   white-space: nowrap;
 }
-.zoomBar {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-}
 .zoomBtn {
-  min-width: var(--tap);
-  min-height: var(--tap);
-  padding: 0 var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-pill);
-  background: var(--surface);
-  color: var(--accent);
-  font: inherit;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-md);
+  height: var(--control-md);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
   cursor: pointer;
 }
-.zoomBtn:disabled,
+.zoomBtn + .zoomBtn {
+  border-top: 1px solid var(--border);
+}
+.zoomBtn:hover {
+  background: var(--surface-2);
+}
 .zoomBtn[aria-disabled='true'] {
-  opacity: 0.5;
+  opacity: 0.4;
 }
 .zoomBtn:focus-visible {
   outline: 2px solid var(--accent);
-  outline-offset: 1px;
+  outline-offset: -2px;
 }
 .cancelled {
   opacity: 0.7;
@@ -339,11 +380,6 @@
   overflow: hidden;
   clip: rect(0 0 0 0);
   white-space: nowrap;
-}
-.modeOn {
-  background: var(--accent);
-  color: var(--surface);
-  border-color: var(--accent);
 }
 
 /* Low-zoom summary chips and their event list (planfully-ieq). */

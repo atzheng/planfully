@@ -3,8 +3,15 @@ import type { ReactNode } from 'react';
 import { MemoryRouter, useLocation, useNavigationType } from 'react-router';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import type { Event } from '@planfully/shared';
-import { FilterBar } from './FilterBar';
-import { filterEvents, useFilter, useFilteredEvents, type Filter } from './filter';
+import { FilterButton, SearchField } from './FilterControls';
+import {
+  filterEvents,
+  filterSummary,
+  useFilter,
+  useFilterState,
+  useFilteredEvents,
+  type Filter,
+} from './filter';
 
 const mk = (id: string, over: Partial<Event> = {}): Event => ({
   id,
@@ -174,7 +181,19 @@ describe('useFilter', () => {
   });
 });
 
-describe('FilterBar', () => {
+/** The app bar's filter pieces: filters icon (panel on demand) and the search field. */
+function FilterBar({ phone = false, search = true }: { phone?: boolean; search?: boolean }) {
+  const api = useFilterState();
+  return (
+    <>
+      <FilterButton api={api} phone={phone} />
+      {search && <SearchField api={api} onClose={() => undefined} />}
+    </>
+  );
+}
+const openPanel = () => fireEvent.click(screen.getByRole('button', { name: /^Filters/ }));
+
+describe('filter controls', () => {
   test('count changes as filters change and survives via URL; clear-all resets; hash kept', () => {
     render(
       <MemoryRouter initialEntries={['/t/x#sec']}>
@@ -182,6 +201,8 @@ describe('FilterBar', () => {
         <Loc />
       </MemoryRouter>,
     );
+    expect(screen.queryByText(/of 6 events/)).toBeNull();
+    openPanel();
     expect(screen.getByText(/of 6 events/).textContent).toBe('5 of 6 events');
     fireEvent.click(screen.getByRole('button', { name: 'Lodging' }));
     expect(screen.getByText(/of 6 events/).textContent).toBe('1 of 6 events');
@@ -199,45 +220,57 @@ describe('FilterBar', () => {
   test('participant chips come from the roster; show cancelled', () => {
     render(
       <MemoryRouter initialEntries={['/t/x']}>
-        <FilterBar />
+        <FilterBar search={false} />
       </MemoryRouter>,
     );
+    openPanel();
     fireEvent.click(screen.getByRole('button', { name: 'Ann' }));
     expect(screen.getByText(/of 6 events/).textContent).toBe('4 of 6 events');
     fireEvent.click(screen.getByLabelText('Show cancelled'));
     expect(screen.getByText(/of 6 events/).textContent).toBe('5 of 6 events');
   });
 
-  test('initial URL state is applied (reload)', () => {
+  test('initial URL state is applied (reload) and counted on the button', () => {
     render(
       <MemoryRouter initialEntries={['/t/x?type=dining']}>
-        <FilterBar />
+        <FilterBar search={false} />
       </MemoryRouter>,
     );
+    expect(screen.getByRole('button', { name: 'Filters, 1 active' })).toBeTruthy();
+    openPanel();
     expect(screen.getByText(/of 6 events/).textContent).toBe('1 of 6 events');
     expect(screen.getByRole('button', { name: 'Dining' }).getAttribute('aria-pressed')).toBe(
       'true',
     );
   });
 
-  test('phone: collapses to a button opening a sheet', () => {
-    const mq = {
-      matches: true,
-      addEventListener: () => undefined,
-      removeEventListener: () => undefined,
-    };
-    vi.stubGlobal('matchMedia', () => mq);
-    window.matchMedia = (() => mq) as unknown as typeof window.matchMedia;
+  test('phone: the filters icon opens a bottom sheet with Done', () => {
     render(
       <MemoryRouter initialEntries={['/t/x?type=dining']}>
-        <FilterBar />
+        <FilterBar phone search={false} />
       </MemoryRouter>,
     );
-    expect(screen.queryByLabelText('Search events')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Filters (1)' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Filters, 1 active' }));
     expect(screen.getByRole('dialog', { name: 'Filters' })).toBeTruthy();
-    expect(screen.getByLabelText('Search events')).toBeTruthy();
-    vi.unstubAllGlobals();
+    fireEvent.click(screen.getByRole('button', { name: 'Show 1 event' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+});
+
+describe('filterSummary', () => {
+  const roster = [{ id: 'a', name: 'Alex' }];
+  test('empty when nothing is filtered', () => {
+    expect(filterSummary(F(), roster)).toBe('');
+  });
+  test('lists types, people, dates, search and cancelled', () => {
+    expect(filterSummary(F({ types: ['dining'], who: ['a'] }), roster)).toBe('Dining, Alex');
+    expect(
+      filterSummary(F({ q: ' bar ', from: '2026-05-02', to: '2026-05-09', cancelled: true }), []),
+    ).toBe('"bar", 2026-05-02 to 2026-05-09, Cancelled');
+    expect(filterSummary(F({ from: '2026-05-02', who: ['zz'] }), roster)).toBe(
+      'zz, from 2026-05-02',
+    );
   });
 });
 

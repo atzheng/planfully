@@ -1,6 +1,6 @@
 // Direct uploads (planfully-ecw.4): attach files to an event, or create receipt events from files.
 
-import { useRef, useState } from 'react';
+import { forwardRef, useImperativeHandle, useRef, useState } from 'react';
 import { Paperclip } from 'lucide-react';
 import { fromInstant, type Attachment, type Event } from '@planfully/shared';
 import { ApiError } from '../lib/api';
@@ -144,11 +144,18 @@ export function AttachButton({ event }: { event: Event }) {
   );
 }
 
-/** Create one receipt event per picked or captured file. */
-export function AddReceiptButton() {
+/** Handle for opening the file picker from a menu item. */
+export type ReceiptPicker = { pick(): void };
+
+/**
+ * Create one receipt event per picked or captured file. Renders the hidden file input and the
+ * upload status; the trigger lives elsewhere (the app bar's overflow menu) and calls `pick()`.
+ */
+export const AddReceiptAction = forwardRef<ReceiptPicker>(function AddReceiptAction(_props, ref) {
   const actions = useTripActions();
   const input = useRef<HTMLInputElement>(null);
   const { run, progress, error, busy } = useUploader();
+  useImperativeHandle(ref, () => ({ pick: () => !busy && input.current?.click() }), [busy]);
 
   const onFiles = async (list: FileList | null) => {
     const files = list ? Array.from(list) : [];
@@ -180,10 +187,7 @@ export function AddReceiptButton() {
         data-testid="receipt-input"
         onChange={(e) => void onFiles(e.target.files)}
       />
-      <Button onClick={() => input.current?.click()} disabled={busy}>
-        Add receipt
-      </Button>
       <Status progress={progress} error={error} />
     </>
   );
-}
+});
