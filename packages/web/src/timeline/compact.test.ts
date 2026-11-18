@@ -43,15 +43,15 @@ test('threshold and unit', () => {
 });
 
 test('groups by day with count, types, and start order', () => {
-  const a = ev('2026-06-02T15:00', { type: 'flight' });
+  const a = ev('2026-06-02T15:00', { type: 'transit', mode: 'flight' });
   const b = ev('2026-06-02T09:00', { type: 'dining' });
-  const c = ev('2026-06-02T18:00', { type: 'flight' });
+  const c = ev('2026-06-02T18:00', { type: 'transit', mode: 'flight' });
   const d = ev('2026-06-03T09:00');
   const out = run([a, b, c, d], 2);
   expect(out).toHaveLength(2);
   const day = out.find((x) => x.eventIds.length === 3);
   expect(day?.eventIds).toEqual([b.id, a.id, c.id]);
-  expect(day?.types).toEqual(['dining', 'flight']);
+  expect(day?.types).toEqual(['dining', 'transit']);
   expect(day?.top).toBe(24 * 2);
 });
 
@@ -73,10 +73,10 @@ test('weeks at minimum zoom; chips never overlap and are tappable', () => {
 });
 
 test('separate lanes get separate buckets', () => {
-  const a = ev('2026-06-02T09:00', { type: 'flight' });
+  const a = ev('2026-06-02T09:00', { type: 'transit', mode: 'flight' });
   const b = ev('2026-06-02T10:00', { type: 'dining' });
   const out = run([a, b], 1, 'type');
-  expect(out.map((o) => o.laneKey).sort()).toEqual(['dining', 'flight']);
+  expect(out.map((o) => o.laneKey).sort()).toEqual(['dining', 'transit']);
 });
 
 test('weeks count from the axis origin so every chip has a full week', () => {

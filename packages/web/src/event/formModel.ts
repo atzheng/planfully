@@ -3,11 +3,13 @@
 
 import {
   EVENT_TYPES,
+  TRANSIT_MODES,
   EventSchema,
   toInstant,
   fromInstant,
   type Event,
   type EventType,
+  type TransitMode,
   type RecordBody,
   type Location,
   type LocalTime,
@@ -19,6 +21,8 @@ export type EventFields = Extract<RecordBody, { kind: 'patch' }>['fields'];
 export type FormValues = {
   name: string;
   type: EventType;
+  /** Transit mode; '' = unset. Only used when type is 'transit'. */
+  mode: TransitMode | '';
   startDate: string;
   startTime: string;
   startTz: string;
@@ -59,9 +63,8 @@ export function isPlace(l: Location | undefined): boolean {
 
 export type FormErrors = Partial<Record<keyof FormValues | 'form', string>>;
 
-export const TRANSPORT_TYPES: readonly EventType[] = ['flight', 'train', 'bus', 'ferry', 'car'];
-export const isTransport = (t: EventType): boolean => TRANSPORT_TYPES.includes(t);
-export { EVENT_TYPES };
+export const isTransport = (t: EventType): boolean => t === 'transit';
+export { EVENT_TYPES, TRANSIT_MODES };
 
 export function browserZone(): string {
   try {
@@ -88,6 +91,7 @@ export function initialValues(initial: Partial<Event> = {}, fallbackTz?: string)
   return {
     name: initial.name ?? '',
     type: initial.type ?? 'other',
+    mode: initial.mode ?? '',
     startDate: initial.start?.local.slice(0, 10) ?? '',
     startTime: initial.start?.local.slice(11, 16) ?? '',
     startTz,
@@ -188,6 +192,9 @@ export function buildFields(v: FormValues, original: Partial<Event> = {}): Build
     status: v.status,
     participants: v.participants,
   };
+  // The mode only exists on transit events: switching type away (or blanking it) clears it.
+  if (v.type === 'transit' && v.mode) fields.mode = v.mode;
+  else if (original.mode !== undefined) fields.mode = null;
   if (start.value) fields.start = start.value;
   else if (!start.error && original.start) fields.start = null;
   if (end.value) fields.end = end.value;

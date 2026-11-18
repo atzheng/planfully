@@ -1,7 +1,8 @@
 {
   "events": [
     {
-      "type": "train",
+      "type": "transit",
+      "mode": "train",
       "name": "6609",
       "start": { "local": "2026-06-16T09:07", "tz": "Europe/Paris" },
       "end": { "local": "2026-06-16T11:05", "tz": "Europe/Paris" },

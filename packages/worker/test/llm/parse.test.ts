@@ -39,7 +39,8 @@ function email(over: Partial<ParsedEmail> = {}): ParsedEmail {
 
 const validEvent = {
   name: 'UA 57 SFO to CDG',
-  type: 'flight',
+  type: 'transit',
+  mode: 'flight',
   start: { local: '2026-06-01T16:30', tz: 'America/Los_Angeles' },
   end: { local: '2026-06-02T12:05', tz: 'Europe/Paris' },
   confirmation: 'ABC123',
@@ -133,6 +134,16 @@ describe('parseEmail', () => {
       reason: 'invalid_output',
     });
     expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  test('legacy type is read as transit + mode; mode on a non-transit event is dropped', async () => {
+    const legacy = { ...validEvent, type: 'train', mode: undefined };
+    const dining = { ...validEvent, type: 'dining', mode: 'other' };
+    const { client } = fakeClient(reply(JSON.stringify([legacy, dining])));
+    const events = await parseEmail(email(), { ...base, client });
+    expect(events[0]).toMatchObject({ type: 'transit', mode: 'train' });
+    expect(events[1]).toMatchObject({ type: 'dining' });
+    expect(events[1]).not.toHaveProperty('mode');
   });
 
   test('partly invalid then valid on retry returns all events', async () => {

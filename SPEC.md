@@ -41,8 +41,9 @@ All fields except `id`, `name` and `type` are optional.
 type Event = {
   id: string
   name: string
-  type: 'flight' | 'train' | 'bus' | 'ferry' | 'car' | 'lodging' | 'dining'
+  type: 'transit' | 'lodging' | 'dining'
       | 'activity' | 'attraction' | 'receipt' | 'other'
+  mode?: 'flight' | 'train' | 'bus' | 'ferry' | 'car' | 'other'   // transit only
   start?: { local: string; tz: string }   // ISO local time + IANA zone
   end?:   { local: string; tz: string }
   confirmation?: string

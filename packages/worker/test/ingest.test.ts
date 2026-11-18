@@ -2,7 +2,10 @@ import { env as baseEnv } from 'cloudflare:workers';
 import type Anthropic from '@anthropic-ai/sdk';
 import { afterEach, beforeAll, describe, expect, test, vi } from 'vitest';
 import {
+  dedupeTag,
   deriveTripKeys,
+  fromBase64Url,
+  sealJson,
   fold,
   generateSecret,
   open,
@@ -12,7 +15,7 @@ import {
   fromBase64,
 } from '@planfully/shared';
 import type { Attachment, Event, OpenedRecord, RecordBody } from '@planfully/shared';
-import { listRecords } from '../src/db/records';
+import { appendRecord, listRecords } from '../src/db/records';
 import { getTripById } from '../src/db/trips';
 import {
   defaultRoute,
@@ -89,7 +92,8 @@ function fakeClient(events: unknown[] | Error) {
 
 const leg = (over: Record<string, unknown> = {}) => ({
   name: 'UA 100 SFO to JFK',
-  type: 'flight',
+  type: 'transit',
+  mode: 'flight',
   start: { local: '2026-06-01T08:00', tz: 'America/Los_Angeles' },
   end: { local: '2026-06-01T16:30', tz: 'America/New_York' },
   confirmation: 'ABC123',
@@ -319,7 +323,8 @@ describe('default route', () => {
 describe('review fixes', () => {
   const train = (day: string, over: Record<string, unknown> = {}) => ({
     name: `Train ${day}`,
-    type: 'train',
+    type: 'transit',
+    mode: 'train',
     start: { local: `2026-06-${day}T09:00`, tz: 'Europe/Lisbon' },
     confirmation: 'TRN777',
     location: { name: 'Lisboa Santa Apolónia' },
@@ -367,6 +372,56 @@ describe('review fixes', () => {
     expect(notice?.name).toBe(`Not everything from "${SUBJECT}" could be added`);
     expect(notice?.attachments).toEqual([source]);
     expect(events.find((e) => !e.needsReview)?.attachments).toEqual([source]);
+  });
+});
+
+describe('legacy transport types', () => {
+  test('a booking stored with legacy type flight merges with a new-format change email', async () => {
+    const { trip, keys } = await setup();
+    // What ingest wrote before the merge: type 'flight', tag from the legacy type string.
+    const legacyTag = await dedupeTag(
+      fromBase64(trip.dedupeKey),
+      'flight',
+      'ABC123|SFO|JFK|2026-06-01',
+    );
+    const oldEvent = {
+      id: crypto.randomUUID(),
+      name: 'UA 100 SFO to JFK',
+      type: 'flight',
+      start: { local: '2026-06-01T08:00', tz: 'America/Los_Angeles' },
+      end: { local: '2026-06-01T16:30', tz: 'America/New_York' },
+      confirmation: 'ABC123',
+      location: { name: 'San Francisco (SFO)' },
+      endLocation: { name: 'New York (JFK)' },
+      attachments: [],
+      participants: [],
+      status: 'confirmed',
+      source: 'email',
+      createdAt: '2026-05-01T00:00:00.000Z',
+    };
+    await appendRecord(baseEnv, trip.id, {
+      ciphertext: await sealJson(fromBase64Url(trip.publicKey), { kind: 'put', event: oldEvent }),
+      dedupe: legacyTag,
+    });
+    await ingest(trip, [
+      leg({
+        start: { local: '2026-06-01T09:15', tz: 'America/Los_Angeles' },
+        attachmentIndexes: [],
+      }),
+    ]);
+    const recs = await opened(trip.id, keys.privateKey);
+    expect(recs).toHaveLength(2);
+    expect(recs[1]?.dedupe).toBe(legacyTag);
+    const events = fold(recs);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ type: 'transit', mode: 'flight' });
+    expect(events[0]?.start?.local).toBe('2026-06-01T09:15');
+  });
+  test('legacy type from the LLM is normalised to transit + mode', async () => {
+    const { trip, keys } = await setup();
+    await ingest(trip, [leg({ type: 'train', mode: undefined })]);
+    const [ev] = fold(await opened(trip.id, keys.privateKey));
+    expect(ev).toMatchObject({ type: 'transit', mode: 'train' });
   });
 });
 

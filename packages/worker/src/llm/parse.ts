@@ -235,8 +235,10 @@ function sanitize(
   attached: Set<number>,
 ): ParsedEvent[] {
   const ids = new Set(roster.map((m) => m.id));
-  return events.map((e) => ({
+  return events.map(({ mode, ...e }) => ({
     ...e,
+    // mode belongs to transit only; the model sometimes adds it elsewhere.
+    ...(e.type === 'transit' && mode ? { mode } : {}),
     participants: [...new Set(e.participants.filter((p) => ids.has(p)))],
     attachmentIndexes: [...new Set(e.attachmentIndexes.filter((i) => attached.has(i)))],
   }));

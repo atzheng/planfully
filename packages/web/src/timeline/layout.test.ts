@@ -80,12 +80,12 @@ test('multi-day event is an ordinary long block', () => {
 });
 
 test('type lanes: one per type present, in canonical order', () => {
-  const f = ev('2026-06-01T09:00', null, { type: 'flight' });
+  const f = ev('2026-06-01T09:00', null, { type: 'transit', mode: 'flight' });
   const d = ev('2026-06-01T09:00', null, { type: 'dining' });
-  const f2 = ev('2026-06-01T09:00', null, { type: 'flight' });
+  const f2 = ev('2026-06-01T09:00', null, { type: 'transit', mode: 'flight' });
   const r = layoutEvents([d, f, f2], scale, { mode: 'type', roster: [] });
-  expect(r.lanes.map((l) => l.key)).toEqual(['flight', 'dining']);
-  expect(r.blocks.filter((b) => b.laneKey === 'flight')).toHaveLength(2);
+  expect(r.lanes.map((l) => l.key)).toEqual(['transit', 'dining']);
+  expect(r.blocks.filter((b) => b.laneKey === 'transit')).toHaveLength(2);
 });
 
 test('participant lanes: duplicated per participant, empty means everyone', () => {

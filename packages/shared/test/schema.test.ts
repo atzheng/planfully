@@ -3,7 +3,9 @@ import {
   EventSchema,
   LocalTimeSchema,
   OpenedRecordSchema,
+  ParsedEventObjectSchema,
   ParsedEventSchema,
+  dedupeTypeFor,
   RecordBodySchema,
   StoredRecordSchema,
   TripMetaSchema,
@@ -160,7 +162,47 @@ describe('eventsJsonSchema', () => {
   });
   test('property set matches ParsedEventSchema', () => {
     expect(Object.keys(eventsJsonSchema.items.properties).sort()).toEqual(
-      Object.keys(ParsedEventSchema.shape).sort(),
+      Object.keys(ParsedEventObjectSchema.shape).sort(),
     );
+  });
+});
+
+describe('legacy transport types', () => {
+  for (const old of ['flight', 'train', 'bus', 'ferry', 'car'] as const) {
+    test(`stored ${old} record reads as transit + mode`, () => {
+      const stored = { ...flightEvent, type: old } as Record<string, unknown>;
+      delete stored.mode;
+      const e = EventSchema.parse(stored);
+      expect(e.type).toBe('transit');
+      expect(e.mode).toBe(old);
+      const rec = RecordBodySchema.parse({ kind: 'put', event: stored });
+      expect(rec.kind === 'put' && rec.event).toMatchObject({ type: 'transit', mode: old });
+    });
+  }
+  test('patch with legacy type is normalised; null mode clears', () => {
+    const p = RecordBodySchema.parse({ kind: 'patch', target: 'x', fields: { type: 'train' } });
+    expect(p.kind === 'patch' && p.fields).toEqual({ type: 'transit', mode: 'train' });
+    const c = RecordBodySchema.parse({ kind: 'patch', target: 'x', fields: { mode: null } });
+    expect(c.kind === 'patch' && c.fields).toEqual({ mode: null });
+  });
+  test('new shape unchanged; explicit mode wins; parsed events normalise too', () => {
+    expect(EventSchema.parse(flightEvent)).toEqual(flightEvent);
+    expect(EventSchema.parse({ ...flightEvent, type: 'bus', mode: 'ferry' }).mode).toBe('ferry');
+    expect(EventSchema.safeParse({ ...flightEvent, mode: 'rocket' }).success).toBe(false);
+    const { id: _i, attachments: _a, source: _s, createdAt: _c, ...rest } = flightEvent;
+    const pe = ParsedEventSchema.parse({
+      ...rest,
+      type: 'flight',
+      mode: undefined,
+      attachmentIndexes: [],
+    });
+    expect(pe).toMatchObject({ type: 'transit', mode: 'flight' });
+  });
+  test('dedupeTypeFor keeps legacy tag input', () => {
+    expect(dedupeTypeFor('transit', 'flight')).toBe('flight');
+    expect(dedupeTypeFor('transit', 'car')).toBe('car');
+    expect(dedupeTypeFor('transit', 'other')).toBe('transit');
+    expect(dedupeTypeFor('transit', undefined)).toBe('transit');
+    expect(dedupeTypeFor('lodging', 'flight')).toBe('lodging');
   });
 });

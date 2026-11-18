@@ -5,6 +5,8 @@ import {
   anchorMsAt,
   scrollTopForAnchor,
   dayHeading,
+  eventIcon,
+  eventKindLabel,
   localStartLabel,
   roundRangeToHours,
   timelineRange,
@@ -82,4 +84,16 @@ test('localStartLabel shows the event own wall clock', () => {
 test('validZone', () => {
   expect(validZone('Europe/Paris', 'UTC')).toBe('Europe/Paris');
   expect(validZone('Nope/Zone', 'UTC')).toBe('UTC');
+});
+
+describe('transit mode', () => {
+  test('mode drives the icon and label; unset or other falls back to the type', () => {
+    expect(eventIcon({ type: 'transit', mode: 'flight' })).toBe('✈');
+    expect(eventIcon({ type: 'transit', mode: 'train' })).toBe('🚆');
+    expect(eventIcon({ type: 'transit' })).toBe('🧭');
+    expect(eventIcon({ type: 'dining', mode: 'flight' })).toBe('🍽');
+    expect(eventKindLabel({ type: 'transit', mode: 'car' })).toBe('car');
+    expect(eventKindLabel({ type: 'transit', mode: 'other' })).toBe('transit');
+    expect(eventKindLabel({ type: 'lodging' })).toBe('lodging');
+  });
 });

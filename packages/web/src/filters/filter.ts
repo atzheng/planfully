@@ -68,10 +68,16 @@ export function filterEvents(events: readonly Event[], filter: Filter): Event[] 
   });
 }
 
+const LEGACY_TRANSIT = ['flight', 'train', 'bus', 'ferry', 'car'];
+
 const typesCodec = {
   parse: (raw: string) => {
     const list = stringListCodec.parse(raw);
-    return list?.filter((t): t is EventType => (EVENT_TYPES as readonly string[]).includes(t));
+    // Old URLs filter by flight/train/bus/ferry/car; those types were merged into transit.
+    const mapped = list?.map((t) => (LEGACY_TRANSIT.includes(t) ? 'transit' : t));
+    return mapped
+      ?.filter((t): t is EventType => (EVENT_TYPES as readonly string[]).includes(t))
+      .filter((t, i, a) => a.indexOf(t) === i);
   },
   serialize: (v: EventType[]) => stringListCodec.serialize(v),
 };

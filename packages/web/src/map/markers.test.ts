@@ -35,20 +35,26 @@ describe('buildMapModel', () => {
   test('transport with both ends gives two markers and a path', () => {
     const m = buildMapModel([
       mk('f', {
-        type: 'flight',
+        type: 'transit',
+        mode: 'flight',
         location: { lat: 10, lng: 20 },
         endLocation: { lat: 30, lng: 40 },
       }),
     ]);
     expect(m.markers.map((k) => k.role)).toEqual(['start', 'end']);
     expect(m.paths).toEqual([
-      { eventId: 'f', type: 'flight', from: { lat: 10, lng: 20 }, to: { lat: 30, lng: 40 } },
+      {
+        eventId: 'f',
+        type: 'transit',
+        from: { lat: 10, lng: 20 },
+        to: { lat: 30, lng: 40 },
+      },
     ]);
   });
 
   test('transport with one end has no path; non-transport ignores endLocation', () => {
     const m = buildMapModel([
-      mk('t', { type: 'train', endLocation: { lat: 5, lng: 6 } }),
+      mk('t', { type: 'transit', mode: 'train', endLocation: { lat: 5, lng: 6 } }),
       mk('d', { type: 'dining', location: { lat: 1, lng: 1 }, endLocation: { lat: 2, lng: 2 } }),
     ]);
     expect(m.paths).toEqual([]);
@@ -102,11 +108,24 @@ describe('helpers', () => {
     expect(boundsOf(at(170, 179, -175))).toMatchObject({ west: 170, east: -175 });
   });
 
+  test('transit markers carry the mode for the pin icon', () => {
+    const m = buildMapModel([
+      mk('f', {
+        type: 'transit',
+        mode: 'ferry',
+        location: { lat: 10, lng: 20 },
+        endLocation: { lat: 30, lng: 40 },
+      }),
+    ]);
+    expect(m.markers.map((k) => k.mode)).toEqual(['ferry', 'ferry']);
+    expect(m.paths).toHaveLength(1);
+  });
+
   test('locatedEvents', () => {
     const es = [
       mk('a', { location: { lat: 1, lng: 2 } }),
       mk('b'),
-      mk('c', { type: 'bus', endLocation: { lat: 1, lng: 2 } }),
+      mk('c', { type: 'transit', mode: 'bus', endLocation: { lat: 1, lng: 2 } }),
     ];
     expect(locatedEvents(es).map((e) => e.id)).toEqual(['a', 'c']);
   });

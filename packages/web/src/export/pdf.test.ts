@@ -108,7 +108,8 @@ describe('buildItinerary', () => {
         ev({
           id: 'f',
           name: 'Flight',
-          type: 'flight',
+          type: 'transit',
+          mode: 'flight',
           status: 'cancelled',
           start: at('2026-07-14T09:00'),
           location: { name: 'CDG' },
@@ -166,7 +167,7 @@ describe('describeFilter', () => {
       describeFilter(
         {
           q: ' paris ',
-          types: ['flight', 'lodging'],
+          types: ['transit', 'lodging'],
           from: '2026-07-01',
           to: '2026-07-10',
           who: ['b', 'zz'],
@@ -176,7 +177,7 @@ describe('describeFilter', () => {
       ),
     ).toEqual([
       'Search: "paris"',
-      'Types: Flight, Lodging',
+      'Types: Transit, Lodging',
       'Dates: 2026-07-01 to 2026-07-10',
       'Participants: Bob, Former participant',
       'Including cancelled events',

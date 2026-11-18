@@ -1,5 +1,5 @@
 // Pure helpers for the map view: events -> markers, paths and bounds.
-import type { Event, EventType } from '@planfully/shared';
+import type { Event, EventType, TransitMode } from '@planfully/shared';
 
 export type LatLng = { lat: number; lng: number };
 
@@ -8,6 +8,8 @@ export type Marker = {
   lat: number;
   lng: number;
   type: EventType;
+  /** transit mode, for the pin icon */
+  mode?: TransitMode;
   label: string;
   /** 'end' for the arrival point of a transport event. */
   role: 'start' | 'end';
@@ -19,8 +21,9 @@ export type Bounds = { north: number; south: number; east: number; west: number 
 
 export type MapModel = { markers: Marker[]; paths: Path[]; bounds: Bounds | null };
 
-const TRANSPORT: ReadonlySet<EventType> = new Set(['flight', 'train', 'bus', 'ferry', 'car']);
-export const isTransport = (t: EventType): boolean => TRANSPORT.has(t);
+export const isTransport = (t: EventType): boolean => t === 'transit';
+
+const modeOf = (e: Event): { mode?: TransitMode } => (e.mode ? { mode: e.mode } : {});
 
 /** Spread radius in degrees (about 15 m) for markers that share a coordinate. */
 export const SPREAD_DEG = 0.00015;
@@ -100,8 +103,24 @@ export function buildMapModel(events: readonly Event[]): MapModel {
   for (const e of events) {
     const from = point(e.location);
     const to = isTransport(e.type) ? point(e.endLocation) : null;
-    if (from) markers.push({ eventId: e.id, ...from, type: e.type, label: e.name, role: 'start' });
-    if (to) markers.push({ eventId: e.id, ...to, type: e.type, label: e.name, role: 'end' });
+    if (from)
+      markers.push({
+        eventId: e.id,
+        ...from,
+        type: e.type,
+        ...modeOf(e),
+        label: e.name,
+        role: 'start',
+      });
+    if (to)
+      markers.push({
+        eventId: e.id,
+        ...to,
+        type: e.type,
+        ...modeOf(e),
+        label: e.name,
+        role: 'end',
+      });
     if (from && to) paths.push({ eventId: e.id, type: e.type, from, to });
   }
   // Bounds come from the true coordinates, not the spread ones.

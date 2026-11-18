@@ -3,7 +3,8 @@ import type { Event, ParsedEvent, TripMeta } from '../src/schema';
 export const flightEvent: Event = {
   id: '11111111-1111-4111-8111-111111111111',
   name: 'UA 57 SFO to CDG',
-  type: 'flight',
+  type: 'transit',
+  mode: 'flight',
   start: { local: '2026-06-01T16:30', tz: 'America/Los_Angeles' },
   end: { local: '2026-06-02T12:05', tz: 'Europe/Paris' },
   confirmation: 'ABC123',
@@ -60,7 +61,8 @@ export const sampleEvents: Event[] = [flightEvent, lodgingEvent, landmarkEvent];
 export const sampleParsedEvents: ParsedEvent[] = [
   {
     name: 'UA 57 SFO to CDG',
-    type: 'flight',
+    type: 'transit',
+    mode: 'flight',
     start: { local: '2026-06-01T16:30', tz: 'America/Los_Angeles' },
     end: { local: '2026-06-02T12:05', tz: 'Europe/Paris' },
     confirmation: 'ABC123',

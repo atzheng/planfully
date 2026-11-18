@@ -4,6 +4,7 @@ import { DateTime } from 'luxon';
 import { dayKey, toInstant, type Event, type RosterMember } from '@planfully/shared';
 import type { Filter } from '../filters/filter';
 import { participantNames } from '../event/format';
+import { eventKindLabel } from '../timeline/model';
 import {
   chooseFont,
   coverageFor,
@@ -102,7 +103,7 @@ function row(e: Event, roster: readonly RosterMember[], time: string): Itinerary
     id: e.id,
     time,
     name: e.status === 'cancelled' ? `${e.name} (cancelled)` : e.name,
-    type: cap(e.type),
+    type: cap(eventKindLabel(e)),
     confirmation: e.confirmation ?? '',
     location: locationText(e),
     participants: participantNames(e, roster),
