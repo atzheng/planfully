@@ -26,7 +26,10 @@ vi.mock('../trip/store', () => ({
 
 vi.mock('../event/UploadButtons', () => ({ AddReceiptButton: () => null }));
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllEnvs();
+});
 
 describe('codecs', () => {
   test('string', () => {
@@ -120,7 +123,8 @@ describe('useQueryState', () => {
 });
 
 describe('app shell', () => {
-  test('view switch changes ?view= and the hash survives', () => {
+  test('view switch changes ?view= and the hash survives', async () => {
+    vi.stubEnv('VITE_GOOGLE_MAPS_KEY', '');
     render(
       <MemoryRouter initialEntries={['/t/x#abc']}>
         <App />
@@ -130,7 +134,7 @@ describe('app shell', () => {
     expect(screen.getByText('No events yet.')).toBeTruthy();
     act(() => screen.getByRole('button', { name: 'Map' }).click());
     expect(screen.getByTestId('loc').textContent).toBe('/t/x?view=map#abc');
-    expect(screen.getByText('MapView')).toBeTruthy();
+    expect(await screen.findByText('Map key not configured')).toBeTruthy();
     act(() => screen.getByRole('button', { name: 'Timeline' }).click());
     expect(screen.getByTestId('loc').textContent).toBe('/t/x#abc');
   });
