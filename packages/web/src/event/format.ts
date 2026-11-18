@@ -2,6 +2,7 @@
 
 import { DateTime } from 'luxon';
 import {
+  localTimeAbbreviation,
   toInstant,
   type Event,
   type LocalTime,
@@ -9,11 +10,11 @@ import {
   type RosterMember,
 } from '@planfully/shared';
 
-/** 'Tue 14 Jul 2026, 09:30 GMT+2' in the event's own zone. */
+/** 'Tue 14 Jul 2026, 09:30 CEST' in the event's own zone. */
 export function formatLocalTime(t: LocalTime): string {
   const dt = DateTime.fromISO(t.local, { zone: t.tz });
   if (!dt.isValid) return `${t.local} ${t.tz}`;
-  return `${dt.toFormat('ccc d LLL yyyy, HH:mm')} ${dt.offsetNameShort ?? t.tz}`;
+  return `${dt.toFormat('ccc d LLL yyyy, HH:mm')} ${localTimeAbbreviation(t)}`;
 }
 
 export function formatDuration(start: LocalTime, end: LocalTime): string | null {

@@ -1,7 +1,13 @@
 // PDF itinerary. buildItinerary is pure; renderPdf loads jsPDF lazily (separate chunk).
 
 import { DateTime } from 'luxon';
-import { dayKey, toInstant, type Event, type RosterMember } from '@planfully/shared';
+import {
+  dayKey,
+  localTimeAbbreviation,
+  toInstant,
+  type Event,
+  type RosterMember,
+} from '@planfully/shared';
 import type { Filter } from '../filters/filter';
 import { participantNames } from '../event/format';
 import { eventKindLabel } from '../timeline/model';
@@ -16,7 +22,7 @@ import {
 
 export type ItineraryRow = {
   id: string;
-  /** '09:30 GMT+2' (zone only when it differs from the previous row); '' when unscheduled */
+  /** '09:30 CEST' (zone only when it differs from the previous row); '' when unscheduled */
   time: string;
   name: string;
   type: string;
@@ -54,6 +60,8 @@ export function describeFilter(filter: Filter, roster: readonly RosterMember[]):
   const out: string[] = [];
   if (filter.q.trim()) out.push(`Search: "${filter.q.trim()}"`);
   if (filter.types.length) out.push(`Types: ${filter.types.map(cap).join(', ')}`);
+  if (filter.excludeTypes?.length)
+    out.push(`Excluding types: ${filter.excludeTypes.map(cap).join(', ')}`);
   if (filter.from && filter.to) out.push(`Dates: ${filter.from} to ${filter.to}`);
   else if (filter.from) out.push(`From: ${filter.from}`);
   else if (filter.to) out.push(`Until: ${filter.to}`);
@@ -63,13 +71,22 @@ export function describeFilter(filter: Filter, roster: readonly RosterMember[]):
     );
     out.push(`Participants: ${names.join(', ')}`);
   }
+  if (filter.excludeWho?.length) {
+    const names = filter.excludeWho.map(
+      (id) => roster.find((r) => r.id === id)?.name ?? 'Former participant',
+    );
+    out.push(`Excluding participants: ${names.join(', ')}`);
+  }
   if (filter.cancelled) out.push('Including cancelled events');
   return out;
 }
 
 function zoneAbbr(t: { local: string; tz: string }): string {
-  const dt = DateTime.fromISO(t.local, { zone: t.tz });
-  return dt.isValid ? (dt.offsetNameShort ?? t.tz) : t.tz;
+  try {
+    return localTimeAbbreviation(t);
+  } catch {
+    return t.tz;
+  }
 }
 
 function locationText(e: Event): string {

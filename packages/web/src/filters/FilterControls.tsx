@@ -1,15 +1,23 @@
 import { useEffect, useRef, useState } from 'react';
-import { ListFilter, Search, X } from 'lucide-react';
+import { Ban, Check, ListFilter, Search, X } from 'lucide-react';
 import { EVENT_TYPES, type EventType } from '@planfully/shared';
 import { useTrip } from '../trip/store';
 import { Badge } from '../ui/Badge';
 import { Button, type ButtonSize } from '../ui/Button';
-import { Chip } from '../ui/Chip';
 import { IconButton } from '../ui/IconButton';
 import { Input } from '../ui/Input';
 import { Popover } from '../ui/Popover';
 import { Sheet } from '../ui/Sheet';
-import { activeFilterCount, filterEvents, isFilterActive, type FilterApi } from './filter';
+import {
+  NEXT_CHIP_STATE,
+  activeFilterCount,
+  chipState,
+  filterEvents,
+  isFilterActive,
+  withChipState,
+  type ChipState,
+  type FilterApi,
+} from './filter';
 import styles from './FilterControls.module.css';
 
 const PHONE_QUERY = '(max-width: 719px)';
@@ -31,8 +39,52 @@ export function useIsPhone(): boolean {
 }
 
 const label = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
-const toggle = <T,>(list: readonly T[], v: T): T[] =>
-  list.includes(v) ? list.filter((x) => x !== v) : [...list, v];
+
+const STATE_WORD: Record<ChipState, string> = {
+  none: 'not filtered',
+  include: 'included',
+  exclude: 'excluded',
+};
+const NEXT_ACTION: Record<ChipState, string> = {
+  none: 'include',
+  include: 'exclude',
+  exclude: 'clear',
+};
+
+/**
+ * Three-state filter chip: none -> include -> exclude -> none. The state shows in the icon and
+ * strike-through as well as the colour; the aria-label gives the state and what a press does.
+ */
+function TriChip({
+  state,
+  name,
+  onChange,
+}: {
+  state: ChipState;
+  name: string;
+  onChange: (next: ChipState) => void;
+}) {
+  const cls = [
+    styles.tri,
+    state === 'include' ? styles.inc : '',
+    state === 'exclude' ? styles.exc : '',
+  ]
+    .join(' ')
+    .trim();
+  return (
+    <button
+      type="button"
+      className={cls}
+      data-state={state}
+      aria-label={`${name}: ${STATE_WORD[state]}. Activate to ${NEXT_ACTION[state]}`}
+      onClick={() => onChange(NEXT_CHIP_STATE[state])}
+    >
+      {state === 'include' && <Check size={14} aria-hidden="true" />}
+      {state === 'exclude' && <Ban size={14} aria-hidden="true" />}
+      <span className={styles.triText}>{name}</span>
+    </button>
+  );
+}
 
 /** Search field that replaces the app bar contents while open. */
 export function SearchField({ api, onClose }: { api: FilterApi; onClose: () => void }) {
@@ -78,13 +130,15 @@ function Panel({ api, onDone }: { api: FilterApi; onDone?: () => void }) {
         <h3 className={styles.heading}>Type</h3>
         <div className={styles.group} role="group" aria-label="Types">
           {EVENT_TYPES.map((t: EventType) => (
-            <Chip
+            <TriChip
               key={t}
-              selected={filter.types.includes(t)}
-              onClick={() => setFilter({ types: toggle(filter.types, t) })}
-            >
-              {label(t)}
-            </Chip>
+              name={label(t)}
+              state={chipState(filter.types, filter.excludeTypes, t)}
+              onChange={(next) => {
+                const r = withChipState(filter.types, filter.excludeTypes, t, next);
+                setFilter({ types: r.include, excludeTypes: r.exclude });
+              }}
+            />
           ))}
         </div>
       </section>
@@ -93,13 +147,15 @@ function Panel({ api, onDone }: { api: FilterApi; onDone?: () => void }) {
           <h3 className={styles.heading}>Who</h3>
           <div className={styles.group} role="group" aria-label="Participants">
             {roster.map((m) => (
-              <Chip
+              <TriChip
                 key={m.id}
-                selected={filter.who.includes(m.id)}
-                onClick={() => setFilter({ who: toggle(filter.who, m.id) })}
-              >
-                {m.name}
-              </Chip>
+                name={m.name}
+                state={chipState(filter.who, filter.excludeWho, m.id)}
+                onChange={(next) => {
+                  const r = withChipState(filter.who, filter.excludeWho, m.id, next);
+                  setFilter({ who: r.include, excludeWho: r.exclude });
+                }}
+              />
             ))}
           </div>
         </section>
