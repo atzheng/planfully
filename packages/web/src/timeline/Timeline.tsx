@@ -506,6 +506,13 @@ export function Timeline({ gutter: gutterProp }: { gutter?: ReactNode } = {}) {
               className={styles.scroller}
               ref={scroller}
               onScroll={measure}
+              tabIndex={0}
+              aria-label="Timeline canvas. Plus and minus zoom."
+              onKeyDown={(ev) => {
+                if (ev.ctrlKey || ev.metaKey || ev.altKey || ev.target !== ev.currentTarget) return;
+                if (ev.key === '+' || ev.key === '=') zoomButton(1);
+                else if (ev.key === '-') zoomButton(-1);
+              }}
               data-testid="timeline-scroller"
             >
               {empty && (

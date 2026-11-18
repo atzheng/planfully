@@ -157,10 +157,12 @@ export function FilterButton({
   api,
   phone,
   size,
+  className,
 }: {
   api: FilterApi;
   phone: boolean;
   size?: ButtonSize;
+  className?: string;
 }) {
   const [open, setOpen] = useState(false);
   const anchor = useRef<HTMLButtonElement>(null);
@@ -172,6 +174,7 @@ export function FilterButton({
         <IconButton
           ref={anchor}
           size={size}
+          className={className}
           label={n > 0 ? `Filters, ${n} active` : 'Filters'}
           aria-haspopup="dialog"
           aria-expanded={open}

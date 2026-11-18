@@ -109,6 +109,12 @@ export function AppBar({ view, setView }: { view: View; setView: (v: View) => vo
   const [searching, setSearching] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   const receipt = useRef<ReceiptPicker>(null);
+  const searchBtn = useRef<HTMLButtonElement>(null);
+  const closeSearch = () => {
+    setSearching(false);
+    // The field unmounts; hand focus back to the icon that opened it.
+    setTimeout(() => searchBtn.current?.focus(), 0);
+  };
 
   const summary = filterSummary(api.filter, roster ?? []);
   const onTimeline = view === 'timeline';
@@ -192,72 +198,86 @@ export function AppBar({ view, setView }: { view: View; setView: (v: View) => vo
     },
   ];
 
+  const syncChip =
+    waiting > 0 ? (
+      <button
+        type="button"
+        className={`${styles.sync} ${accessLost ? styles.syncLost : ''}`}
+        data-testid="sync-waiting"
+        role="status"
+        aria-label={
+          accessLost
+            ? `Link no longer has access: ${waiting} ${waiting === 1 ? 'change' : 'changes'} not sent. Select to discard`
+            : `${waiting} ${waiting === 1 ? 'change' : 'changes'} waiting to sync`
+        }
+        title={
+          accessLost
+            ? `${waiting} not sent: link no longer has access. Click to discard`
+            : `${waiting} waiting to sync`
+        }
+        onClick={() => {
+          if (accessLost && window.confirm('Discard the changes that could not be sent?')) {
+            void getTripQueue(store).discard();
+          }
+        }}
+      >
+        <CloudOff size={14} aria-hidden="true" />
+        {accessLost ? `Not sent: ${waiting}` : waiting}
+      </button>
+    ) : null;
+
   return (
     <>
       <header className={styles.bar} data-slot="app-bar">
         {searching ? (
-          <SearchField api={api} onClose={() => setSearching(false)} />
+          <>
+            <SearchField api={api} onClose={closeSearch} />
+            {syncChip}
+          </>
         ) : (
           <>
-            <h1 className={styles.title} data-slot="trip-name">
-              <Menu
-                label="Trip menu"
-                align="start"
-                items={tripItems}
-                trigger={(p) => (
-                  <button type="button" className={styles.titleButton} {...p}>
-                    <span className={styles.titleText}>{name ?? `Trip ${tripId}`}</span>
-                    <ChevronDown size={14} aria-hidden="true" className={styles.titleChevron} />
-                  </button>
-                )}
-              />
-            </h1>
-            {summary && (
-              <button
-                type="button"
-                className={styles.summary}
-                data-testid="filter-summary"
-                aria-label={`Clear filters: ${summary}`}
-                title="Clear filters"
-                onClick={api.clear}
-              >
-                <span className={styles.summaryText}>{summary}</span>
-                <X size={14} aria-hidden="true" />
-              </button>
-            )}
-            <div className={styles.spacer} />
-            {waiting > 0 && (
-              <button
-                type="button"
-                className={`${styles.sync} ${accessLost ? styles.syncLost : ''}`}
-                data-testid="sync-waiting"
-                role="status"
-                aria-label={
-                  accessLost
-                    ? `Link no longer has access: ${waiting} ${waiting === 1 ? 'change' : 'changes'} not sent. Select to discard`
-                    : `${waiting} ${waiting === 1 ? 'change' : 'changes'} waiting to sync`
-                }
-                title={
-                  accessLost
-                    ? `${waiting} not sent: link no longer has access. Click to discard`
-                    : `${waiting} waiting to sync`
-                }
-                onClick={() => {
-                  if (accessLost && window.confirm('Discard the changes that could not be sent?')) {
-                    void getTripQueue(store).discard();
-                  }
-                }}
-              >
-                <CloudOff size={14} aria-hidden="true" />
-                {waiting}
-              </button>
-            )}
-            <IconButton size={size} label="Search" onClick={() => setSearching(true)}>
+            <div className={styles.lead}>
+              <h1 className={styles.title} data-slot="trip-name">
+                <Menu
+                  label="Trip menu"
+                  align="start"
+                  items={tripItems}
+                  trigger={(p) => (
+                    <button type="button" className={styles.titleButton} {...p}>
+                      <span className={styles.titleText}>{name ?? `Trip ${tripId}`}</span>
+                      <ChevronDown size={14} aria-hidden="true" className={styles.titleChevron} />
+                    </button>
+                  )}
+                />
+              </h1>
+              {summary && (
+                <button
+                  type="button"
+                  className={styles.summary}
+                  data-testid="filter-summary"
+                  aria-label={`Clear filters: ${summary}`}
+                  title="Clear filters"
+                  onClick={api.clear}
+                >
+                  <span className={styles.summaryText}>{summary}</span>
+                  <X size={14} aria-hidden="true" />
+                </button>
+              )}
+            </div>
+            {syncChip}
+            <IconButton
+              ref={searchBtn}
+              size={size}
+              className={styles.iconBtn}
+              label="Search"
+              onClick={() => setSearching(true)}
+            >
               <Search size={18} aria-hidden="true" />
             </IconButton>
-            <FilterButton api={api} phone={phone} size={size} />
+            <FilterButton api={api} phone={phone} size={size} className={styles.iconBtn} />
             <IconButton
               size={size}
+              className={styles.iconBtn}
               label={onTimeline ? 'Show map' : 'Show timeline'}
               data-testid="view-toggle"
               onClick={() => setView(onTimeline ? 'map' : 'timeline')}
@@ -272,7 +292,13 @@ export function AppBar({ view, setView }: { view: View; setView: (v: View) => vo
               label="More"
               items={items}
               trigger={(p) => (
-                <IconButton size={size} label="More" data-testid="overflow" {...p}>
+                <IconButton
+                  size={size}
+                  className={styles.iconBtn}
+                  label="More"
+                  data-testid="overflow"
+                  {...p}
+                >
                   <MoreHorizontal size={18} aria-hidden="true" />
                 </IconButton>
               )}
