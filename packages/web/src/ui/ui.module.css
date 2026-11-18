@@ -459,3 +459,61 @@
     border-right: 0;
   }
 }
+
+/* ---- Avatar (participant initials) ---- */
+.avatar {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-subtle);
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+}
+.avatarSm {
+  width: auto;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 2px;
+}
+.avatarNeutral {
+  background: var(--surface-2);
+  color: var(--text-muted);
+}
+.avatar[data-tone='1'] {
+  background: var(--person-1-bg);
+  color: var(--person-1-fg);
+}
+.avatar[data-tone='2'] {
+  background: var(--person-2-bg);
+  color: var(--person-2-fg);
+}
+.avatar[data-tone='3'] {
+  background: var(--person-3-bg);
+  color: var(--person-3-fg);
+}
+.avatar[data-tone='4'] {
+  background: var(--person-4-bg);
+  color: var(--person-4-fg);
+}
+.avatar[data-tone='5'] {
+  background: var(--person-5-bg);
+  color: var(--person-5-fg);
+}
+.avatar[data-tone='6'] {
+  background: var(--person-6-bg);
+  color: var(--person-6-fg);
+}
+.avatar[data-tone='7'] {
+  background: var(--person-7-bg);
+  color: var(--person-7-fg);
+}
+.avatar[data-tone='8'] {
+  background: var(--person-8-bg);
+  color: var(--person-8-fg);
+}
