@@ -444,6 +444,30 @@
   white-space: nowrap;
 }
 
+/* Condensed time (6s9): a collapsed stretch with no events, hatched, labelled in the axis. */
+.gapBand {
+  position: absolute;
+  left: 0;
+  right: 0;
+  background: repeating-linear-gradient(
+    135deg,
+    transparent 0 6px,
+    color-mix(in srgb, var(--border-strong) 45%, transparent) 6px 7px
+  );
+  border-block: 1px dashed var(--border-strong);
+}
+.gapLabel {
+  position: absolute;
+  right: 6px;
+  display: flex;
+  align-items: center;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--text-muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
 .heading b {
   color: var(--text);
   font-weight: var(--weight-semibold);
