@@ -15,7 +15,8 @@
   top: var(--space-3);
   left: 50%;
   transform: translateX(-50%);
-  max-width: calc(100% - var(--space-4));
+  /* Symmetric clearance for the locate button at the top right. */
+  max-width: calc(100% - 2 * (var(--tap) + var(--space-4)));
   margin: 0;
   padding: var(--space-1) var(--space-3);
   border: 1px solid var(--border);
