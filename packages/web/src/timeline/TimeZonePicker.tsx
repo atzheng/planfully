@@ -10,6 +10,7 @@ import {
   zoneOptions,
   zoneSummary,
 } from './zones';
+import { ZoneSearchList } from './ZoneSearchList';
 import styles from './TimeZonePicker.module.css';
 
 /**
@@ -54,6 +55,16 @@ export function TimeZonePicker({
   );
   const zones = useMemo(() => (searching ? allZones() : []), [searching]);
   const results = useMemo(() => searchZones(query, zones), [query, zones]);
+
+  const items = useMemo(
+    () =>
+      results.map((z) => ({
+        value: sameZone(z, browserZone) ? '' : z,
+        name: cityName(z),
+        meta: `${z.split('/')[0]} · ${offsetLabel(z, atMs)}`,
+      })),
+    [results, browserZone, atMs],
+  );
 
   const close = (refocus: boolean) => {
     setOpen(false);
@@ -174,38 +185,16 @@ export function TimeZonePicker({
             </ul>
           ) : (
             <div className={styles.search}>
-              <input
-                type="search"
-                className={styles.input}
-                data-testid="tz-search"
-                placeholder="Search city or region"
-                aria-label="Search time zones"
-                value={query}
-                autoComplete="off"
-                onChange={(e) => setQuery(e.target.value)}
+              <ZoneSearchList
+                label="Search time zones"
+                query={query}
+                onQueryChange={setQuery}
+                items={items}
+                onPick={pick}
+                emptyText={query.trim() !== '' ? 'No matching zone.' : undefined}
+                inputTestId="tz-search"
+                itemTestId="tz-result"
               />
-              <ul className={styles.list} aria-label="Matching time zones">
-                {results.map((z) => (
-                  <li key={z}>
-                    <button
-                      type="button"
-                      className={styles.item}
-                      data-testid="tz-result"
-                      onClick={() => pick(sameZone(z, browserZone) ? '' : z)}
-                    >
-                      <span className={styles.itemName}>{cityName(z)}</span>
-                      <span className={styles.itemMeta}>
-                        {z.split('/')[0]} · {offsetLabel(z, atMs)}
-                      </span>
-                    </button>
-                  </li>
-                ))}
-                {query.trim() !== '' && results.length === 0 && (
-                  <li className={styles.none} role="status">
-                    No matching zone.
-                  </li>
-                )}
-              </ul>
               <button type="button" className={styles.back} onClick={() => setSearching(false)}>
                 Back
               </button>

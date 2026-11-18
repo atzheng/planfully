@@ -1,4 +1,4 @@
-import { useId, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { Event } from '@planfully/shared';
 import { useTrip } from '../trip/store';
 import { Button } from '../ui/Button';
@@ -6,6 +6,16 @@ import { Chip } from '../ui/Chip';
 import { Field } from '../ui/Field';
 import { Input, Select, Textarea } from '../ui/Input';
 import { Popover } from '../ui/Popover';
+import { ZoneSearchList } from '../timeline/ZoneSearchList';
+import {
+  allZones,
+  canonicalZone,
+  cityName,
+  offsetLabel,
+  sameZone,
+  searchZones,
+  tripZones,
+} from '../timeline/zones';
 import { PlaceSearch } from './PlaceSearch';
 import {
   buildFields,
@@ -14,7 +24,6 @@ import {
   geoOf,
   initialValues,
   isTransport,
-  timeZones,
   type EventFields,
   type FormErrors,
   type FormValues,
@@ -48,16 +57,34 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 function ZoneButton({
   label,
   value,
-  zones,
+  tripZoneList,
   onChange,
 }: {
   label: string;
   value: string;
-  zones: readonly string[];
+  /** Zones used by the trip, offered before any search. */
+  tripZoneList: readonly string[];
   onChange: (tz: string) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
   const ref = useRef<HTMLButtonElement>(null);
+  const atMs = useMemo(() => Date.now(), []);
+  const items = useMemo(() => {
+    const zs = query.trim() === '' ? tripZoneList : searchZones(query, allZones());
+    return zs.map((z) => {
+      const c = canonicalZone(z) ?? z;
+      return {
+        value: c,
+        name: cityName(c),
+        meta: `${c.split('/')[0]} · ${offsetLabel(c, atMs)}`,
+        active: sameZone(c, value),
+      };
+    });
+  }, [query, tripZoneList, value, atMs]);
+  useEffect(() => {
+    if (!open) setQuery('');
+  }, [open]);
   return (
     <>
       <button
@@ -86,21 +113,19 @@ function ZoneButton({
           setOpen(false);
         }}
       >
-        <Select
-          aria-label={label}
-          className={styles.zoneSelect}
-          value={value}
-          onChange={(e) => {
-            onChange(e.target.value);
-            setOpen(false);
-          }}
-        >
-          {zones.map((z) => (
-            <option key={z} value={z}>
-              {z}
-            </option>
-          ))}
-        </Select>
+        <div className={styles.zonePop}>
+          <ZoneSearchList
+            label={label}
+            query={query}
+            onQueryChange={setQuery}
+            items={items}
+            onPick={(z) => {
+              onChange(z);
+              setOpen(false);
+            }}
+            emptyText={query.trim() !== '' ? 'No matching zone.' : undefined}
+          />
+        </div>
       </Popover>
     </>
   );
@@ -118,7 +143,11 @@ export function EventForm({
   const [v, setV] = useState<FormValues>(() => initialValues(initial, defaultTz));
   const [errors, setErrors] = useState<FormErrors>({});
   const [busy, setBusy] = useState(false);
-  const zones = useMemo(() => timeZones([v.startTz, v.endTz]), [v.startTz, v.endTz]);
+  const trip = useTrip((s) => s.events);
+  const tripZoneList = useMemo(
+    () => tripZones(trip, [v.startTz, v.endTz]),
+    [trip, v.startTz, v.endTz],
+  );
   const set = <K extends keyof FormValues>(k: K, val: FormValues[K]) =>
     setV((prev) => ({ ...prev, [k]: val }));
   const id = (k: string) => `${uid}-${k}`;
@@ -192,7 +221,7 @@ export function EventForm({
           <ZoneButton
             label={`${name} time zone`}
             value={v[zk]}
-            zones={zones}
+            tripZoneList={tripZoneList}
             onChange={(tz) => set(zk, tz)}
           />
         </div>

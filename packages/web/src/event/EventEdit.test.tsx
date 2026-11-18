@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import {
@@ -112,6 +112,37 @@ describe('edit and delete', () => {
     fireEvent.keyDown(select, { key: 'Tab' });
     expect(screen.queryByRole('combobox', { name: 'Start time zone' })).toBeNull();
     expect(document.activeElement).toBe(trigger);
+    expect(screen.getByRole('dialog')).toBeTruthy();
+  });
+
+  test('zone popover lists trip zones first, finds Kolkata by "kolk", Enter selects', async () => {
+    await setup();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    fireEvent.click(screen.getByRole('button', { name: /Start time zone/ }));
+    const box = await screen.findByRole('combobox', { name: 'Start time zone' });
+    const first = within(screen.getByRole('listbox', { name: 'Matching time zones' })).getAllByRole(
+      'option',
+    )[0];
+    expect(first?.textContent).toContain('Lisbon');
+    fireEvent.change(box, { target: { value: 'kolk' } });
+    expect(
+      within(screen.getByRole('listbox', { name: 'Matching time zones' })).getAllByRole('option')[0]
+        ?.textContent,
+    ).toContain('Kolkata');
+    fireEvent.keyDown(box, { key: 'ArrowDown' });
+    fireEvent.keyDown(box, { key: 'ArrowUp' });
+    fireEvent.keyDown(box, { key: 'Enter' });
+    expect(screen.queryByRole('combobox', { name: 'Start time zone' })).toBeNull();
+    expect(screen.getByRole('button', { name: /Start time zone: Asia\/Kolkata/ })).toBeTruthy();
+  });
+
+  test('Escape in the zone popover closes only the popover', async () => {
+    await setup();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    fireEvent.click(screen.getByRole('button', { name: /Start time zone/ }));
+    const box = await screen.findByRole('combobox', { name: 'Start time zone' });
+    fireEvent.keyDown(box, { key: 'Escape' });
+    expect(screen.queryByRole('combobox', { name: 'Start time zone' })).toBeNull();
     expect(screen.getByRole('dialog')).toBeTruthy();
   });
 

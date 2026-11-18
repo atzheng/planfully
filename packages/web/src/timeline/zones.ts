@@ -184,3 +184,22 @@ export function searchZones(query: string, zones: readonly string[], limit = 50)
     .map((x) => x.z)
     .slice(0, limit);
 }
+
+/** Distinct canonical zones used by event starts/ends (most used first), after `extra` (e.g. the form's current zones). */
+export function tripZones(events: readonly Event[], extra: readonly string[] = []): string[] {
+  const counts = new Map<string, number>();
+  for (const z of extra) {
+    const c = canonicalZone(z);
+    if (c) counts.set(c, (counts.get(c) ?? 0) + 1e6);
+  }
+  for (const e of events) {
+    for (const t of [e.start, e.end]) {
+      const c = t?.tz ? canonicalZone(t.tz) : null;
+      if (c) counts.set(c, (counts.get(c) ?? 0) + 1);
+    }
+  }
+  return [...counts.entries()]
+    .map(([z, n], i) => ({ z, n, i }))
+    .sort((a, b) => b.n - a.n || a.i - b.i)
+    .map((x) => x.z);
+}
