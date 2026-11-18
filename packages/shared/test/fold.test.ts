@@ -105,6 +105,22 @@ const cases: Case[] = [
     expected: [ev('a', { notes: 'keep', start: flightEvent.start, name: 'n2' })],
   },
   {
+    name: 'a patch to a non-transit type drops the mode',
+    log: [
+      put(1, ev('a', { type: 'transit', mode: 'train' }), 't'),
+      patch(2, 'a', { type: 'activity' }),
+    ],
+    expected: [ev('a', { type: 'activity', pinned: ['type'] })],
+  },
+  {
+    name: 'a put with a non-transit type drops the earlier mode',
+    log: [
+      put(1, ev('a', { type: 'transit', mode: 'bus' }), 't'),
+      put(2, ev('a', { type: 'dining' }), 't'),
+    ],
+    expected: [ev('a', { type: 'dining' })],
+  },
+  {
     name: 'patched fields are pinned against later email puts',
     log: [
       put(1, ev('a', { name: 'orig', notes: 'n' }), 't'),
