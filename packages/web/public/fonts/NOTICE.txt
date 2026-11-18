@@ -6,6 +6,7 @@ Subset builds (Unicode ranges only, hinting removed) of:
   (https://github.com/notofonts/thai)
 - NotoSansJP-Regular.ttf: Noto Sans JP, Copyright 2014-2021 Adobe (http://www.adobe.com/),
   with Reserved Font Name 'Source' (https://github.com/google/fonts/tree/main/ofl/notosansjp)
+- NotoSansKR-Regular.ttf: Noto Sans KR (https://github.com/google/fonts/tree/main/ofl/notosanskr)
 
 All are licensed under the SIL Open Font License, Version 1.1: see OFL.txt (the full licence text).
 Subsetting script: packages/web/scripts/build-pdf-fonts.py. Used only by the PDF export.
