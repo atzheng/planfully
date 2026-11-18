@@ -102,6 +102,59 @@ function tinyEml(subject: string): Uint8Array {
   );
 }
 
+function b64Lines(bytes: Uint8Array): string {
+  let s = '';
+  for (const b of bytes) s += String.fromCharCode(b);
+  return (btoa(s).match(/.{1,76}/g) ?? []).join('\r\n');
+}
+
+/** An HTML email with an inline (cid) image, a remote image, a link and a PDF attachment. */
+function richEml(): Uint8Array {
+  const html = [
+    '<html><body style="font-family:Georgia,serif">',
+    '<h2 style="color:#7a1f3d">Rental car confirmation</h2>',
+    '<p>Hello Alex, your car is booked. <a href="https://example.com/manage">Manage booking</a></p>',
+    '<p><img src="cid:logo@planfully" width="120" height="40" alt="inline logo" style="background:#7a1f3d"></p>',
+    '<p><img src="https://tracker.example.com/open.gif?u=1" width="80" height="20" alt="remote image"></p>',
+    '<script>document.body.innerHTML="SCRIPT RAN"</script>',
+    '<p>Pick-up: Lisbon airport, terminal 1.</p>',
+    '</body></html>',
+  ].join('\r\n');
+  const parts = [
+    'From: Hertz Bookings <bookings@example.com>',
+    'To: Alex <alex@example.com>, Sam <sam@example.com>',
+    'Subject: Your rental car is confirmed',
+    'Date: Mon, 04 May 2026 14:05:00 +0000',
+    'MIME-Version: 1.0',
+    'Content-Type: multipart/mixed; boundary="mix"',
+    '',
+    '--mix',
+    'Content-Type: multipart/related; boundary="rel"',
+    '',
+    '--rel',
+    'Content-Type: text/html; charset=utf-8',
+    '',
+    html,
+    '--rel',
+    'Content-Type: image/png',
+    'Content-Transfer-Encoding: base64',
+    'Content-ID: <logo@planfully>',
+    'Content-Disposition: inline; filename="logo.png"',
+    '',
+    b64Lines(tinyPng()),
+    '--rel--',
+    '--mix',
+    'Content-Type: application/pdf; name="rental-confirmation.pdf"',
+    'Content-Disposition: attachment; filename="rental-confirmation.pdf"',
+    'Content-Transfer-Encoding: base64',
+    '',
+    b64Lines(tinyPdf('Rental confirmation')),
+    '--mix--',
+    '',
+  ];
+  return enc.encode(parts.join('\r\n'));
+}
+
 export function buildSampleTrip(
   now: Date = new Date(),
   newId: () => string = () => crypto.randomUUID(),
@@ -328,6 +381,7 @@ export function buildSampleTrip(
         'file',
         tinyPdf('Rental car deposit EUR 300'),
       ),
+      attach('rental-confirmation.eml', 'message/rfc822', 'source-email', richEml()),
     ],
     participants: [ALEX, JO],
   });
