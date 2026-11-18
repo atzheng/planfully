@@ -30,10 +30,32 @@ export type FormValues = {
   locationAddress: string;
   endLocationName: string;
   endLocationAddress: string;
+  /** Coordinates and place id of the location, set by place search or a map point. */
+  locationGeo: Geo | null;
+  endLocationGeo: Geo | null;
+  /** Coordinates came from a place (search result or an existing place): editing its text drops them. */
+  locationPicked: boolean;
+  endLocationPicked: boolean;
   participants: string[];
   status: Event['status'];
   notes: string;
 };
+
+export type Geo = Pick<Location, 'lat' | 'lng' | 'placeId'>;
+
+export function geoOf(l: Location | undefined): Geo | null {
+  if (!l || (l.lat === undefined && l.lng === undefined && l.placeId === undefined)) return null;
+  const g: Geo = {};
+  if (l.lat !== undefined) g.lat = l.lat;
+  if (l.lng !== undefined) g.lng = l.lng;
+  if (l.placeId !== undefined) g.placeId = l.placeId;
+  return g;
+}
+
+/** A located place with text, as opposed to a bare map point. */
+export function isPlace(l: Location | undefined): boolean {
+  return Boolean(geoOf(l) && (l?.name || l?.address));
+}
 
 export type FormErrors = Partial<Record<keyof FormValues | 'form', string>>;
 
@@ -77,6 +99,10 @@ export function initialValues(initial: Partial<Event> = {}, fallbackTz?: string)
     locationAddress: initial.location?.address ?? '',
     endLocationName: initial.endLocation?.name ?? '',
     endLocationAddress: initial.endLocation?.address ?? '',
+    locationGeo: geoOf(initial.location),
+    endLocationGeo: geoOf(initial.endLocation),
+    locationPicked: isPlace(initial.location),
+    endLocationPicked: isPlace(initial.endLocation),
     participants: initial.participants ?? [],
     status: initial.status ?? 'confirmed',
     notes: initial.notes ?? '',
@@ -113,19 +139,23 @@ function keepIfSame(input: string, original: string | undefined): string {
 function buildLocation(
   name: string,
   address: string,
+  geo: Geo | null,
   original: Location | undefined,
 ): Location | null | undefined {
   const n = name.trim();
   const a = address.trim();
-  if (n === (original?.name ?? '').trim() && a === (original?.address ?? '').trim()) {
-    return original;
-  }
-  if (!n && !a) return original ? null : undefined;
-  // Text changed: coordinates and place id would now point somewhere else, so they are dropped.
+  const sameText = n === (original?.name ?? '').trim() && a === (original?.address ?? '').trim();
+  const sameGeo = JSON.stringify(geo) === JSON.stringify(geoOf(original));
+  if (sameText && sameGeo) return original;
+  // Text changed but the coordinates are the old ones: they would now point somewhere else, so
+  // they are dropped. A bare map point (no text yet) keeps its coordinates when a name is added.
+  const stale = sameGeo && (original?.name || original?.address);
+  const keep = stale ? null : geo;
+  if (!n && !a && !keep) return original ? null : undefined;
   const loc: Location = {};
   if (n) loc.name = n;
   if (a) loc.address = a;
-  return loc;
+  return { ...loc, ...keep };
 }
 
 export type BuildResult = { ok: true; fields: EventFields } | { ok: false; errors: FormErrors };
@@ -168,10 +198,15 @@ export function buildFields(v: FormValues, original: Partial<Event> = {}): Build
   const notes = keepIfSame(v.notes, original.notes);
   if (notes) fields.notes = notes;
   else if (original.notes !== undefined) fields.notes = null;
-  const loc = buildLocation(v.locationName, v.locationAddress, original.location);
+  const loc = buildLocation(v.locationName, v.locationAddress, v.locationGeo, original.location);
   if (loc !== undefined) fields.location = loc;
   if (isTransport(v.type)) {
-    const endLoc = buildLocation(v.endLocationName, v.endLocationAddress, original.endLocation);
+    const endLoc = buildLocation(
+      v.endLocationName,
+      v.endLocationAddress,
+      v.endLocationGeo,
+      original.endLocation,
+    );
     if (endLoc !== undefined) fields.endLocation = endLoc;
   } else if (original.endLocation) {
     // The arrival fields are hidden for non-transport types; leave any existing value alone.

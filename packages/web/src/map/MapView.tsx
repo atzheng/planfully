@@ -1,6 +1,7 @@
 import { MarkerClusterer } from '@googlemaps/markerclusterer';
 import { AdvancedMarker, APIProvider, Map, useMap } from '@vis.gl/react-google-maps';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useAddEvent } from '../event/AddEvent';
 import { stringCodec, useQueryState } from '../lib/queryState';
 import { useFilteredEvents } from '../filters/filter';
 import { TYPE_HUE, TYPE_ICON } from '../timeline/model';
@@ -100,6 +101,7 @@ function MapCanvas({
         <FitBounds model={model} />
         <Paths model={model} />
         <ClusteredMarkers model={model} onOpen={onOpen} />
+        <AddAtPoint />
         {children}
       </Map>
       {model.markers.length === 0 && (
@@ -132,6 +134,104 @@ function FitBounds({ model }: { model: MapModel }) {
       map.setOptions({ maxZoom: null });
     };
   }, [map, key]);
+  return null;
+}
+
+const LONG_PRESS_MS = 500;
+const LONG_PRESS_SLOP_PX = 10;
+
+/**
+ * Right-click, or a long press on touch, on the map surface starts a new event at that point.
+ * Uses the Maps API's own events for the position, and ignores any that started on a marker,
+ * cluster, control or info window so those keep their own behaviour (and context menus).
+ */
+const NOT_SURFACE = 'gmp-advanced-marker, [role="button"], button, a, .gmnoprint, .gm-style-iw';
+function onBareMap(e: google.maps.MapMouseEvent): boolean {
+  const dom = e.domEvent as Event | undefined;
+  const path = dom?.composedPath?.() ?? [];
+  return !path.some((n) => n instanceof Element && n.matches(NOT_SURFACE));
+}
+
+function AddAtPoint() {
+  const map = useMap();
+  const add = useAddEvent();
+  const addRef = useRef(add);
+  addRef.current = add;
+  useEffect(() => {
+    const div = map?.getDiv();
+    if (!map || !div) return;
+    const open = (ll: google.maps.LatLng | null | undefined) => {
+      if (ll) addRef.current?.openAtPoint(ll.lat(), ll.lng());
+    };
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let origin: { x: number; y: number } | null = null;
+    let lastType = 'mouse';
+    const down = new Set<number>();
+    /** Set when a second finger joins: no press starts again until every pointer is up. */
+    let blocked = false;
+    const cancel = () => {
+      clearTimeout(timer);
+      origin = null;
+    };
+    // Pointer bookkeeping only (no preventDefault): which pointers are down, and where.
+    const onDown = (e: PointerEvent) => {
+      down.add(e.pointerId);
+      lastType = e.pointerType;
+      if (down.size > 1) {
+        blocked = true;
+        cancel();
+      } else if (e.isPrimary) {
+        origin = { x: e.clientX, y: e.clientY };
+      }
+    };
+    const onMove = (e: PointerEvent) => {
+      if (
+        origin &&
+        e.isPrimary &&
+        Math.hypot(e.clientX - origin.x, e.clientY - origin.y) > LONG_PRESS_SLOP_PX
+      ) {
+        cancel();
+      }
+    };
+    const onUp = (e: PointerEvent) => {
+      down.delete(e.pointerId);
+      if (down.size === 0) blocked = false;
+      cancel();
+    };
+    div.addEventListener('pointerdown', onDown, true);
+    div.addEventListener('pointermove', onMove, true);
+    div.addEventListener('pointerup', onUp, true);
+    div.addEventListener('pointercancel', onUp, true);
+
+    const listeners = [
+      map.addListener('contextmenu', (e: google.maps.MapMouseEvent) => {
+        if (!onBareMap(e)) return;
+        // A touch long press can raise this too; the provider opens only once.
+        (e.domEvent as Event | undefined)?.preventDefault?.();
+        open(e.latLng);
+      }),
+      map.addListener('mousedown', (e: google.maps.MapMouseEvent) => {
+        if (lastType === 'mouse' || blocked || down.size !== 1 || !onBareMap(e)) return;
+        clearTimeout(timer);
+        const ll = e.latLng;
+        timer = setTimeout(() => {
+          origin = null;
+          open(ll);
+        }, LONG_PRESS_MS);
+      }),
+      map.addListener('mouseup', cancel),
+      map.addListener('dragstart', cancel),
+      map.addListener('zoom_changed', cancel),
+    ];
+    return () => {
+      cancel();
+      listeners.forEach((l) => l.remove());
+      div.removeEventListener('pointerdown', onDown, true);
+      div.removeEventListener('pointermove', onMove, true);
+      div.removeEventListener('pointerup', onUp, true);
+      div.removeEventListener('pointercancel', onUp, true);
+    };
+  }, [map]);
   return null;
 }
 

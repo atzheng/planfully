@@ -3,9 +3,11 @@ import type { Event } from '@planfully/shared';
 import { useTrip } from '../trip/store';
 import { Button } from '../ui/Button';
 import { Chip } from '../ui/Chip';
+import { PlaceSearch } from './PlaceSearch';
 import {
   buildFields,
   EVENT_TYPES,
+  geoOf,
   initialValues,
   isTransport,
   timeZones,
@@ -75,6 +77,40 @@ export function EventForm({
     value: v[k] as string,
     onChange: (e: { target: { value: string } }) => set(k, e.target.value as never),
   });
+
+  /** Name input with place search. Picking fills name, address and coordinates; typing after a pick drops them. */
+  const place = (k: 'location' | 'endLocation') => (
+    <PlaceSearch
+      id={id(`${k}Name`)}
+      value={v[`${k}Name`]}
+      onChange={(t) =>
+        setV((prev) => ({
+          ...prev,
+          [`${k}Name`]: t,
+          // Coordinates from a picked place no longer match once the name is edited.
+          [`${k}Geo`]: prev[`${k}Picked`] ? null : prev[`${k}Geo`],
+          [`${k}Picked`]: false,
+        }))
+      }
+      onPick={(p) =>
+        setV((prev) => ({
+          ...prev,
+          [`${k}Name`]: p.name ?? '',
+          [`${k}Address`]: p.address ?? '',
+          [`${k}Geo`]: geoOf(p),
+          [`${k}Picked`]: geoOf(p) !== null,
+        }))
+      }
+    />
+  );
+
+  const setAddress = (k: 'location' | 'endLocation', t: string) =>
+    setV((prev) => ({
+      ...prev,
+      [`${k}Address`]: t,
+      [`${k}Geo`]: prev[`${k}Picked`] ? null : prev[`${k}Geo`],
+      [`${k}Picked`]: false,
+    }));
 
   const submit = async (e: { preventDefault(): void }) => {
     e.preventDefault();
@@ -162,20 +198,28 @@ export function EventForm({
       <fieldset className={styles.group}>
         <legend>Location</legend>
         <Field label="Name" id={id('locationName')}>
-          <input type="text" {...text('locationName')} />
+          {place('location')}
         </Field>
         <Field label="Address" id={id('locationAddress')}>
-          <input type="text" {...text('locationAddress')} />
+          <input
+            type="text"
+            {...text('locationAddress')}
+            onChange={(e) => setAddress('location', e.target.value)}
+          />
         </Field>
       </fieldset>
       {isTransport(v.type) && (
         <fieldset className={styles.group}>
           <legend>Arrives at</legend>
           <Field label="Name" id={id('endLocationName')}>
-            <input type="text" {...text('endLocationName')} />
+            {place('endLocation')}
           </Field>
           <Field label="Address" id={id('endLocationAddress')}>
-            <input type="text" {...text('endLocationAddress')} />
+            <input
+              type="text"
+              {...text('endLocationAddress')}
+              onChange={(e) => setAddress('endLocation', e.target.value)}
+            />
           </Field>
         </fieldset>
       )}
