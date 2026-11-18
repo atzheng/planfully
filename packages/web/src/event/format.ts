@@ -96,6 +96,11 @@ export function matchesMagic(mime: string, head: Uint8Array): boolean {
   }
 }
 
+/** Sync variant for bytes already in memory. */
+export function canOpenInlineBytes(bytes: Uint8Array, mime: string): boolean {
+  return opensInline(mime) && matchesMagic(mime, bytes.subarray(0, 1024));
+}
+
 /** Whether a blob may be opened inline: allowlisted type AND matching signature. */
 export async function canOpenInline(blob: Blob, mime: string): Promise<boolean> {
   if (!opensInline(mime)) return false;

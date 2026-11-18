@@ -79,7 +79,7 @@ function toBase64(bytes: Uint8Array): string {
 }
 
 /** Largest .eml the in-app viewer will parse; above this only a download is offered. */
-export const MAX_EMAIL_BYTES = 10 * 1024 * 1024;
+export const MAX_EMAIL_BYTES = 5 * 1024 * 1024;
 /** Inline (cid:) images larger than this, or beyond the total budget, are left out of the srcdoc. */
 export const MAX_INLINE_IMAGE_BYTES = 2 * 1024 * 1024;
 export const MAX_INLINE_TOTAL_BYTES = 8 * 1024 * 1024;

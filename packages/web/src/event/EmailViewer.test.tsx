@@ -142,3 +142,25 @@ describe('EmailViewer', () => {
     expect(document.querySelector('pre b')).toBeNull();
   });
 });
+
+describe('openOrDownload', () => {
+  test('opens a valid PDF synchronously in the click tick, downloads a fake one', async () => {
+    const { openOrDownload } = await import('./EmailViewer');
+    URL.createObjectURL = vi.fn(() => 'blob:x');
+    URL.revokeObjectURL = vi.fn();
+    const open = vi.fn();
+    vi.stubGlobal('open', open);
+    const base = {
+      filename: 'a.pdf',
+      mimeType: 'application/pdf',
+      disposition: 'attachment' as const,
+    };
+    openOrDownload({ ...base, content: new TextEncoder().encode('%PDF-1.7 x') });
+    expect(open).toHaveBeenCalledTimes(1); // no await before it
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    openOrDownload({ ...base, content: new TextEncoder().encode('<script>') });
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(click).toHaveBeenCalledTimes(1);
+    click.mockRestore();
+  });
+});

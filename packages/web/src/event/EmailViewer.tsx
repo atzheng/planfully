@@ -16,7 +16,7 @@ import {
   type ParsedAttachment,
   type ParsedEmail,
 } from './emailModel';
-import { canOpenInline, formatSize } from './format';
+import { canOpenInlineBytes, formatSize } from './format';
 import { parseEmail } from './parseEmail';
 import styles from './EmailViewer.module.css';
 
@@ -26,10 +26,12 @@ type Load =
   | { state: 'toolarge'; size: number; email: ParsedEmail }
   | { state: 'ready'; email: ParsedEmail };
 
-async function openOrDownload(a: ParsedAttachment) {
-  const blob = new Blob([contentBytes(a.content) as BlobPart], { type: a.mimeType });
+/** Synchronous on purpose: window.open must run in the click's user-gesture tick (Safari/iOS). */
+export function openOrDownload(a: ParsedAttachment) {
+  const bytes = contentBytes(a.content);
+  const blob = new Blob([bytes as BlobPart], { type: a.mimeType });
   const url = URL.createObjectURL(blob);
-  if (await canOpenInline(blob, a.mimeType)) {
+  if (canOpenInlineBytes(bytes, a.mimeType)) {
     window.open(url, '_blank');
   } else {
     const link = document.createElement('a');
