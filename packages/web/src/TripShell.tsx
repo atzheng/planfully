@@ -7,6 +7,7 @@ import { EventSheet } from './event/EventSheet';
 import { FilterBar } from './filters/FilterBar';
 import { getTripQueue } from './offline/queue';
 import { enumCodec, stringCodec, useQueryState } from './lib/queryState';
+import { ThemeToggle } from './theme/ThemeToggle';
 import { Timeline } from './timeline/Timeline';
 import { useTrip, useTripStore } from './trip/store';
 import { Chip } from './ui/Chip';
@@ -43,6 +44,7 @@ export function TripShell() {
             <AddEventButton />
             {status === 'ready' && <AddReceiptButton />}
             <ExportMenu />
+            <ThemeToggle />
             <Link
               to={{ pathname: `/t/${encodeURIComponent(tripId ?? '')}/settings`, hash }}
               className={styles.settingsLink}
