@@ -18,7 +18,8 @@
   color: var(--text-muted);
 }
 .tempLine,
-.windLine {
+.windLine,
+.rainLine {
   fill: none;
   stroke-linejoin: round;
   stroke-linecap: round;
@@ -32,11 +33,13 @@
   stroke-width: 1.5;
   stroke-dasharray: 4 3;
 }
-.tempBar {
-  fill: var(--wx-temp);
+.rainLine {
+  stroke: var(--wx-rain);
+  stroke-width: 1.5;
 }
-.rain {
+.rainArea {
   fill: var(--wx-rain);
+  opacity: 0.18;
 }
 .band {
   opacity: 1;

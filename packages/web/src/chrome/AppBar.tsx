@@ -1,5 +1,5 @@
 // The one slim bar above the canvas (planfully-zbj.3). Everything else (filters, search, view,
-// receipts, export, theme, zone, lanes, weather, fit) sits behind an icon here; see CONTRACTS.md 7.
+// receipts, export, theme, zone, lanes, fit; weather and units are in the bar) sits behind an icon here; see CONTRACTS.md 7.
 
 import { useRef, useState } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router';
@@ -41,6 +41,7 @@ import { useTrip, useTripStore } from '../trip/store';
 import { Button } from '../ui/Button';
 import { IconButton } from '../ui/IconButton';
 import { Menu, type MenuItem } from '../ui/Menu';
+import { useUnits } from '../weather/useUnits';
 import { Sheet } from '../ui/Sheet';
 import styles from './AppBar.module.css';
 
@@ -107,6 +108,7 @@ export function AppBar({ view, setView }: { view: View; setView: (v: View) => vo
   const [tzRaw] = useQueryState('tz', stringCodec, '');
   const [laneMode, setLaneMode] = useQueryState('lanes', laneModeCodec, 'none');
   const [wxOn, setWxOn] = useQueryState('wx', booleanCodec, false);
+  const { system, setSystem } = useUnits();
   const [condense, setCondense] = useQueryState('condense', booleanCodec, false);
   const [searching, setSearching] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
@@ -156,14 +158,6 @@ export function AppBar({ view, setView }: { view: View; setView: (v: View) => vo
             testId: `lanes-${m}`,
             onSelect: () => setLaneMode(m),
           })),
-          {
-            label: 'Weather',
-            icon: <Cloud size={16} aria-hidden="true" />,
-            checked: wxOn,
-            keepOpen: true,
-            testId: 'wx-toggle',
-            onSelect: () => setWxOn(!wxOn),
-          },
           {
             label: 'Condense empty time',
             icon: <ChevronsDownUp size={16} aria-hidden="true" />,
@@ -275,6 +269,33 @@ export function AppBar({ view, setView }: { view: View; setView: (v: View) => vo
               )}
             </div>
             {syncChip}
+            {onTimeline && wxOn && (
+              <IconButton
+                size={size}
+                className={`${styles.iconBtn} ${styles.unitsBtn}`}
+                label={
+                  system === 'imperial'
+                    ? 'Units: imperial. Switch to metric'
+                    : 'Units: metric. Switch to imperial'
+                }
+                data-testid="units-toggle"
+                onClick={() => setSystem(system === 'imperial' ? 'metric' : 'imperial')}
+              >
+                {system === 'imperial' ? '°F' : '°C'}
+              </IconButton>
+            )}
+            {onTimeline && (
+              <IconButton
+                size={size}
+                className={`${styles.iconBtn} ${wxOn ? styles.iconBtnOn : ''}`}
+                label="Weather"
+                aria-pressed={wxOn}
+                data-testid="wx-toggle"
+                onClick={() => setWxOn(!wxOn)}
+              >
+                <Cloud size={18} aria-hidden="true" />
+              </IconButton>
+            )}
             <IconButton
               ref={searchBtn}
               size={size}
