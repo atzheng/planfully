@@ -23,6 +23,23 @@ export function defaultUnits(locale?: string): Units {
   };
 }
 
+/** The app-bar toggle: imperial = °F, mph, inches; metric = °C, km/h, mm. */
+export type UnitSystem = 'metric' | 'imperial';
+export const UNITS_KEY = 'planfully.units';
+
+export function unitsFor(system: UnitSystem): Units {
+  return system === 'imperial' ? { temp: 'F', wind: 'mph' } : { temp: 'C', wind: 'kmh' };
+}
+
+/** The locale's system: imperial where Fahrenheit is the default, else metric. */
+export function defaultSystem(locale?: string): UnitSystem {
+  return defaultUnits(locale).temp === 'F' ? 'imperial' : 'metric';
+}
+
+export function isUnitSystem(v: unknown): v is UnitSystem {
+  return v === 'metric' || v === 'imperial';
+}
+
 export const cToF = (c: number) => (c * 9) / 5 + 32;
 export const kphToMph = (k: number) => k / 1.609344;
 export const mmToIn = (mm: number) => mm / 25.4;

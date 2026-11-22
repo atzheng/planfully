@@ -3,7 +3,8 @@ import { createPortal } from 'react-dom';
 import { stringCodec, useQueryState } from '../lib/queryState';
 import { HOUR_MS } from '../weather/resolve';
 import { useWeather } from '../weather/useWeather';
-import { convertTemp, defaultUnits } from '../weather/units';
+import { convertTemp } from '../weather/units';
+import { useUnits } from '../weather/useUnits';
 import { validZone } from './model';
 import { useTimeScale, useVisibleRange } from './scale';
 import {
@@ -24,10 +25,9 @@ import styles from './WeatherStrip.module.css';
 /** Width of the gutter column when the weather strip is shown (the plain gutter is 64px). */
 export const WEATHER_GUTTER_PX = 96;
 const PAD = 4;
-/** Horizontal tracks inside the strip: temperature, wind, rain. */
-const TEMP = { x: 0, w: 44 };
-const WIND = { x: 46, w: 22 };
-const RAIN = { x: 70, w: 26 };
+/** Temperature, wind and rain are overlaid lines, each scaled to the strip's full width (x89). */
+const X0 = PAD;
+const X1 = WEATHER_GUTTER_PX - PAD;
 const MIN_DAY_LABEL_PX = 34;
 const browserZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 
@@ -48,12 +48,41 @@ function pathOf(
   return d;
 }
 
+/** Closed area between the left edge and the line, one subpath per run of adjacent buckets. */
+function areaOf(
+  buckets: readonly Bucket[],
+  x: (b: Bucket) => number,
+  y: (ms: number) => number,
+): string {
+  let d = '';
+  let run: string[] = [];
+  let first = 0;
+  let last = 0;
+  let prevEnd = NaN;
+  const flush = () => {
+    if (run.length) d += `M${X0} ${first.toFixed(1)}L${run.join('L')}L${X0} ${last.toFixed(1)}Z`;
+    run = [];
+  };
+  for (const b of buckets) {
+    if (b.fromMs !== prevEnd) {
+      flush();
+      first = y(b.fromMs);
+    }
+    const mid = y((b.fromMs + b.toMs) / 2);
+    run.push(`${x(b).toFixed(1)} ${mid.toFixed(1)}`);
+    last = y(b.toMs);
+    prevEnd = b.toMs;
+  }
+  flush();
+  return d;
+}
+
 export function WeatherStrip() {
   const scale = useTimeScale();
   const visible = useVisibleRange();
   const [tzRaw] = useQueryState('tz', stringCodec, '');
   const zone = useMemo(() => validZone(tzRaw, browserZone()), [tzRaw]);
-  const units = useMemo(() => defaultUnits(), []);
+  const { units } = useUnits();
   const range = useMemo(() => fetchRange(visible), [visible]);
   const weather = useWeather(range.fromMs, range.toMs);
   const step = stepFor(scale.pxPerHour);
@@ -89,9 +118,10 @@ export function WeatherStrip() {
   const height = Math.max(1, scale.toY(range.toMs) - top);
   const y = (ms: number) => scale.toY(ms) - top;
   const tSpan = Math.max(1, extents.tempMax - extents.tempMin);
-  const tx = (c: number) => TEMP.x + PAD + ((c - extents.tempMin) / tSpan) * (TEMP.w - 2 * PAD);
-  const wx = (kph: number) => WIND.x + PAD + (kph / max.wind) * (WIND.w - 2 * PAD);
-  const rainW = (mm: number) => (mm <= 0 ? 0 : Math.max(2, (mm / max.rain) * (RAIN.w - PAD)));
+  const tx = (c: number) => X0 + ((c - extents.tempMin) / tSpan) * (X1 - X0);
+  const wx = (kph: number) => X0 + (kph / max.wind) * (X1 - X0);
+  const rx = (b: Bucket) => X0 + ((b.precipPeak ?? b.precipSum) / max.rain) * (X1 - X0);
+  const windOf = (b: Bucket) => wx(step === 'day' ? b.windMax : b.windAvg);
 
   const showAt = (ms: number, clientX: number, clientY: number) => {
     const hit: Hit | null = hitAt(strip.segments, ms);
@@ -170,47 +200,10 @@ export function WeatherStrip() {
             className={styles.change}
           />
         )}
-        {step === 'day' ? (
-          s.buckets.map((b) => {
-            const by = y(b.fromMs);
-            const bh = y(b.toMs) - by;
-            const thick = Math.min(6, Math.max(2, bh - 2));
-            const cy = showDay ? Math.min(by + 18, by + bh - thick - 1) : by + bh / 2 - thick / 2;
-            return (
-              <rect
-                key={b.fromMs}
-                x={tx(b.tempMin)}
-                y={cy}
-                width={Math.max(3, tx(b.tempMax) - tx(b.tempMin))}
-                height={thick}
-                rx={3}
-                className={styles.tempBar}
-              />
-            );
-          })
-        ) : (
-          <path d={pathOf(s.buckets, (b) => tx(b.tempAvg), y)} className={styles.tempLine} />
-        )}
-        <path
-          d={pathOf(s.buckets, (b) => wx(step === 'day' ? b.windMax : b.windAvg), y)}
-          className={styles.windLine}
-        />
-        {s.buckets.map((b) => {
-          const w = rainW(b.precipPeak ?? b.precipSum);
-          if (w === 0) return null;
-          const by = y(b.fromMs);
-          return (
-            <rect
-              key={b.fromMs}
-              x={RAIN.x + PAD}
-              y={by + 1}
-              width={w}
-              height={Math.max(1, y(b.toMs) - by - 2)}
-              rx={2}
-              className={styles.rain}
-            />
-          );
-        })}
+        <path d={areaOf(s.buckets, rx, y)} className={styles.rainArea} />
+        <path d={pathOf(s.buckets, rx, y)} className={styles.rainLine} />
+        <path d={pathOf(s.buckets, windOf, y)} className={styles.windLine} />
+        <path d={pathOf(s.buckets, (b) => tx(b.tempAvg), y)} className={styles.tempLine} />
         {placeLabelY !== null && (
           <text x={3} y={placeLabelY} className={styles.place} data-testid="wx-place">
             {s.segment.label.length > 14 ? `${s.segment.label.slice(0, 13)}…` : s.segment.label}
@@ -261,7 +254,7 @@ export function WeatherStrip() {
         {labels.map((d, k) => (
           <text
             key={d.startMs}
-            x={TEMP.x + PAD}
+            x={X0}
             y={dayYs[k]}
             className={styles.dayLabel}
             data-testid="wx-day"
@@ -300,7 +293,7 @@ export function WeatherStrip() {
 
 /** Legend for the weather toolbar: marks differ in shape as well as colour. */
 export function WeatherLegend() {
-  const units = useMemo(() => defaultUnits(), []);
+  const { units } = useUnits();
   return (
     <ul className={styles.legend} aria-label="Weather key" data-testid="wx-legend">
       <li>
@@ -317,9 +310,10 @@ export function WeatherLegend() {
       </li>
       <li>
         <svg width="22" height="10" aria-hidden="true">
-          <rect x="2" y="1" width="14" height="8" rx="2" className={styles.rain} />
+          <path d="M2 9 L8 9 L12 3 L16 6 L20 6 L20 9 Z" className={styles.rainArea} />
+          <path d="M2 9 L8 9 L12 3 L16 6 L20 6" className={styles.rainLine} />
         </svg>
-        Rain
+        Rain {units.temp === 'F' ? 'in' : 'mm'}
       </li>
     </ul>
   );
