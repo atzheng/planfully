@@ -44,3 +44,8 @@ export function dayHeadingParts(ms: number, tz: string): { weekday: string; rest
   const dt = DateTime.fromMillis(ms, { zone: tz });
   return { weekday: dt.toFormat('ccc'), rest: dt.toFormat('d LLL') };
 }
+
+/** Sunrise/sunset label in `tz`: '6:42 AM' (12-hour) or '06:42' (24-hour). */
+export function clockLabel(ms: number, tz: string, hour12: boolean): string {
+  return DateTime.fromMillis(ms, { zone: tz }).toFormat(hour12 ? 'h:mm a' : 'HH:mm');
+}
