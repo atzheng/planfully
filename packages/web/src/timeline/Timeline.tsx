@@ -21,7 +21,17 @@ import { badgePlacement, participantBadges } from './badges';
 import { laneModeCodec } from './lanes';
 import { useRegisterFit, useTimelineControls } from './controls';
 import { roundRangeToHours, timelineRange, validZone } from './model';
-import { axisHourLabel, dayHeadingParts, localTimeRange, placeLabel, prefers12h } from './labels';
+import {
+  axisHourLabel,
+  clockLabel,
+  dayHeadingParts,
+  localTimeRange,
+  placeLabel,
+  prefers12h,
+} from './labels';
+import { dayNight } from './sun';
+import type { DayNight } from './sun';
+import { hourlyLocations } from '../weather/resolve';
 import { Avatar } from '../ui/Avatar';
 import { Badge } from '../ui/Badge';
 import { anchorMsAt, scrollTopForAnchor } from './model';
@@ -47,7 +57,7 @@ import {
   useZoom,
   wheelPx,
 } from './zoom';
-import { ChevronDown, ChevronUp, Minus, Plus } from 'lucide-react';
+import { ChevronDown, ChevronUp, Minus, Plus, Sunrise, Sunset } from 'lucide-react';
 import { TimeZonePicker } from './TimeZonePicker';
 import { WEATHER_GUTTER_PX, WeatherLegend, WeatherStrip } from './WeatherStrip';
 import styles from './Timeline.module.css';
@@ -69,6 +79,8 @@ const RAIL_LABEL_MIN_PX = 48;
 const NO_ROSTER: readonly RosterMember[] = [];
 const NO_BLOCKS: Layout['blocks'] = [];
 const NO_GAPS: readonly Gap[] = [];
+/** Vertical room a sunrise/sunset label needs; closer marks are skipped. */
+const SUN_LABEL_MIN_PX = 16;
 const browserZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 
 const Blocks = memo(function Blocks({
@@ -292,6 +304,54 @@ const TickLabels = memo(function TickLabels({
   );
 });
 
+/** Night shading and sunrise/sunset times (planfully-5xa), under the blocks. */
+const SunLayer = memo(function SunLayer({
+  sun,
+  scale,
+  zone,
+}: {
+  sun: DayNight;
+  scale: TimeScale;
+  zone: string;
+}) {
+  const hour12 = useMemo(() => prefers12h(), []);
+  let lastY = -Infinity;
+  return (
+    <>
+      {sun.nights.map((n) => {
+        const top = scale.toY(n.fromMs);
+        return (
+          <div
+            key={n.fromMs}
+            className={styles.night}
+            style={{ top, height: scale.toY(n.toMs) - top }}
+            data-testid="night-band"
+          />
+        );
+      })}
+      {sun.marks.map((m) => {
+        if (scale.gaps.some((g) => m.ms >= g.fromMs && m.ms < g.toMs)) return null;
+        const y = scale.toY(m.ms);
+        if (y - lastY < SUN_LABEL_MIN_PX) return null;
+        lastY = y;
+        const Icon = m.kind === 'rise' ? Sunrise : Sunset;
+        return (
+          <span
+            key={m.ms}
+            className={styles.sunLabel}
+            data-kind={m.kind}
+            style={{ top: y }}
+            data-testid="sun-label"
+          >
+            <Icon size={11} strokeWidth={1.75} />
+            {clockLabel(m.ms, zone, hour12)}
+          </span>
+        );
+      })}
+    </>
+  );
+});
+
 export function Timeline({ gutter: gutterProp }: { gutter?: ReactNode } = {}) {
   const events = useFilteredEvents();
   const totalEvents = useTrip((s) => s.events.length);
@@ -373,6 +433,11 @@ export function Timeline({ gutter: gutterProp }: { gutter?: ReactNode } = {}) {
   const tickList = useMemo(
     () => (range ? ticks(scale, range.fromMs, range.toMs, zone) : []),
     [range, scale, zone],
+  );
+  // Day/night follows where the trip is, so it uses all events, not just the filtered ones.
+  const sun = useMemo(
+    () => (range ? dayNight(hourlyLocations(allEvents, range.fromMs, range.toMs)) : null),
+    [allEvents, range],
   );
   const height = range ? scale.toY(range.toMs) : lastHeight.current;
   if (range) lastHeight.current = height;
@@ -650,6 +715,7 @@ export function Timeline({ gutter: gutterProp }: { gutter?: ReactNode } = {}) {
                         </div>
                       )}
                       <div className={styles.tickLayer} aria-hidden="true">
+                        {sun && <SunLayer sun={sun} scale={scale} zone={zone} />}
                         <Ticks list={tickList} scale={scale} />
                         {scale.gaps.map((g) => (
                           <div

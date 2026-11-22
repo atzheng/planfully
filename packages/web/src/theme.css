@@ -34,6 +34,8 @@
   /* Hairlines */
   --border: var(--gray-4);
   --border-strong: var(--gray-6);
+  /* Timeline night bands (sunset to sunrise): a faint cool tint over the surface. */
+  --night-shade: rgb(40 60 120 / 0.055);
   /* Form-control outlines: >= 3:1 against bg and surface (WCAG 1.4.11). */
   --border-control: #7a8291;
 
@@ -137,6 +139,7 @@
   --gray-10: #eceff4;
 
   --text-subtle: #8b93a3;
+  --night-shade: rgb(0 0 0 / 0.22);
   --border-control: #6b7383;
 
   --raised: #20242b;
